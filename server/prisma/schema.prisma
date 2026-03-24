@@ -1,0 +1,258 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  name         String
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  memberships TenantMember[]
+
+  @@map("users")
+}
+
+/// 企业租户
+model Tenant {
+  id            String   @id @default(cuid())
+  name          String
+  slug          String   @unique
+  planId        String?  @map("plan_id")
+  balanceTokens Decimal  @default(500000) @map("balance_tokens") @db.Decimal(18, 2)
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  plan        Plan?        @relation(fields: [planId], references: [id], onDelete: SetNull)
+  members     TenantMember[]
+  appKeys     AppKey[]
+  requestLogs ApiRequestLog[]
+  usageRows   UsageRecord[]
+  billingRows BillingRecord[]
+  subscriptions Subscription[]
+  promptTemplates PromptTemplate[]
+  walletRecharges WalletRechargeOrder[]
+  invoiceRequests InvoiceRequest[]
+
+  @@map("tenants")
+}
+
+model TenantMember {
+  id       String @id @default(cuid())
+  userId   String @map("user_id")
+  tenantId String @map("tenant_id")
+  role     String @default("admin")
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, tenantId])
+  @@map("tenant_members")
+}
+
+model Plan {
+  id                    String   @id @default(cuid())
+  name                  String
+  code                  String   @unique
+  monthlyTokenQuota     Int      @map("monthly_token_quota")
+  pricePerMillionTokens Decimal  @map("price_per_million_tokens") @db.Decimal(10, 4)
+  description           String?  @db.Text
+  createdAt             DateTime @default(now()) @map("created_at")
+
+  tenants        Tenant[]
+  subscriptions  Subscription[]
+
+  @@map("plans")
+}
+
+/// 演示：租户套餐续费/周期（一条记录代表当前合约快照）
+model Subscription {
+  id                    String   @id @default(cuid())
+  tenantId              String   @map("tenant_id")
+  planId                String   @map("plan_id")
+  status                String   @default("active")
+  externalRef           String?  @map("external_ref")
+  currentPeriodStart    DateTime @map("current_period_start")
+  currentPeriodEnd      DateTime @map("current_period_end")
+  cancelAtPeriodEnd     Boolean  @default(false) @map("cancel_at_period_end")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  plan   Plan   @relation(fields: [planId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId])
+  @@map("subscriptions")
+}
+
+/// 演示：Prompt 模板（tenantId 为空表示平台级，对所有租户可见）
+model PromptTemplate {
+  id           String   @id @default(cuid())
+  tenantId     String?  @map("tenant_id")
+  name         String
+  description  String?  @db.Text
+  snippet      String   @db.Text
+  usesHint     Int      @default(0) @map("uses_hint")
+  savedUsdHint String   @default("0.00") @map("saved_usd_hint") @db.VarChar(24)
+  sortOrder    Int      @default(0) @map("sort_order")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("prompt_templates")
+}
+
+/// 供应商（mock）
+model Provider {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  status    String   @default("active")
+  baseUrl   String   @map("base_url")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  requestLogs ApiRequestLog[]
+
+  @@map("providers")
+}
+
+model AppKey {
+  id              String    @id @default(cuid())
+  tenantId        String    @map("tenant_id")
+  name            String
+  description     String?   @db.Text
+  token           String    @unique
+  status          String    @default("active")
+  qpsLimit        Int?      @map("qps_limit")
+  dailyBudgetUsd  Decimal?  @map("daily_budget_usd") @db.Decimal(12, 4)
+  allowedModels   Json      @default("[]") @map("allowed_models")
+  lastUsedAt      DateTime? @map("last_used_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  tenant       Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  requestLogs  ApiRequestLog[]
+
+  @@index([tenantId])
+  @@map("app_keys")
+}
+
+model ApiRequestLog {
+  id                 String   @id @default(cuid())
+  tenantId           String   @map("tenant_id")
+  appKeyId           String   @map("app_key_id")
+  providerId         String   @map("provider_id")
+  model              String   
+  promptTokens       Int      @map("prompt_tokens")
+  completionTokens   Int      @map("completion_tokens")
+  totalTokens        Int      @map("total_tokens")
+  latencyMs          Int      @map("latency_ms")
+  cacheHit           Boolean  @default(false) @map("cache_hit")
+  routingPrimary     String?  @map("routing_primary")
+  routingActual      String?  @map("routing_actual")
+  routingReason      String?  @map("routing_reason")
+  statusCode         Int      @map("status_code")
+  idempotencyKey     String?  @map("idempotency_key")
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  appKey    AppKey    @relation(fields: [appKeyId], references: [id], onDelete: Cascade)
+  provider  Provider  @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  usage     UsageRecord?
+  billing   BillingRecord?
+
+  @@index([tenantId, createdAt])
+  @@map("api_request_logs")
+}
+
+model UsageRecord {
+  id          String   @id @default(cuid())
+  logId       String   @unique @map("log_id")
+  tenantId    String   @map("tenant_id")
+  period      String
+  totalTokens Int      @map("total_tokens")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  tenant Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  log    ApiRequestLog  @relation(fields: [logId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, period])
+  @@map("usage_records")
+}
+
+model BillingRecord {
+  id          String   @id @default(cuid())
+  logId       String   @unique @map("log_id")
+  tenantId    String   @map("tenant_id")
+  amountUsd   Decimal  @map("amount_usd") @db.Decimal(12, 6)
+  currency    String   @default("USD")
+  type        String   @default("usage")
+  description String   @db.Text
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  tenant Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  log    ApiRequestLog @relation(fields: [logId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@map("billing_records")
+}
+
+/// 在线充值订单（演示：人民币充值 → 到账 tokens）
+model WalletRechargeOrder {
+  id             String    @id @default(cuid())
+  tenantId       String    @map("tenant_id")
+  orderNo        String    @unique @map("order_no")
+  /// 充值金额数值（与 currency 对应；USD 时也写入此列）
+  amountCny      Decimal   @map("amount_cny") @db.Decimal(12, 2)
+  currency       String    @default("CNY") @db.VarChar(3)
+  payChannel     String    @map("pay_channel")
+  /// pending_payment | pending_review | success | cancelled | failed
+  status         String    @default("pending_payment")
+  creditedTokens Decimal   @map("credited_tokens") @db.Decimal(18, 2)
+  payerName      String?   @map("payer_name")
+  needInvoice    Boolean   @default(false) @map("need_invoice")
+  remark         String?   @db.Text
+  paidAt         DateTime? @map("paid_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@map("wallet_recharge_orders")
+}
+
+/// 自动化开票申请（演示流程与状态机）
+model InvoiceRequest {
+  id                 String    @id @default(cuid())
+  tenantId           String    @map("tenant_id")
+  requestNo          String    @unique @map("request_no")
+  titleType          String    @map("title_type")
+  invoiceType        String    @map("invoice_type")
+  buyerName          String    @map("buyer_name")
+  buyerTaxNo         String    @map("buyer_tax_no")
+  buyerAddressPhone  String?   @map("buyer_address_phone") @db.Text
+  buyerBankAccount   String?   @map("buyer_bank_account") @db.Text
+  amountCny          Decimal   @map("amount_cny") @db.Decimal(12, 2)
+  email              String
+  status             String    @default("submitted")
+  invoiceNo          String?   @map("invoice_no")
+  invoiceCode        String?   @map("invoice_code")
+  pdfUrl             String?   @map("pdf_url")
+  rejectReason       String?   @map("reject_reason") @db.Text
+  issuedAt           DateTime? @map("issued_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@map("invoice_requests")
+}

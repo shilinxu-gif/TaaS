@@ -1,0 +1,19 @@
+{
+  "name": "crm-taas",
+  "private": true,
+  "scripts": {
+    "setup": "node server/scripts/check-node.cjs && npm run env:server && npm install --prefix server && npm install --prefix client && npm run db:ready",
+    "setup:local": "node server/scripts/check-node.cjs && npm run env:server && npm install --prefix server && npm install --prefix client && npm run prisma:generate --prefix server && npm run prisma:deploy --prefix server && npm run prisma:seed --prefix server",
+    "db:up": "node scripts/ensure-root-env.cjs && docker compose up -d postgres",
+    "db:down": "docker compose down",
+    "dev:stack": "docker compose up api web",
+    "dev:stack:bg": "docker compose up -d api web",
+    "env:server": "node scripts/ensure-root-env.cjs && node server/scripts/ensure-env.cjs",
+    "db:ready": "npm run db:up && npm run env:server && npm run prisma:generate --prefix server && npm run prisma:deploy --prefix server && npm run prisma:seed --prefix server",
+    "dev:server": "npm run dev --prefix server",
+    "dev:client": "npm run dev --prefix client",
+    "build": "npm run build --prefix server && npm run build --prefix client",
+    "prisma:migrate": "npm run prisma:migrate --prefix server",
+    "prisma:generate": "npm run prisma:generate --prefix server"
+  }
+}

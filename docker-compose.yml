@@ -1,0 +1,80 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-crm}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-crm}
+      POSTGRES_DB: ${POSTGRES_DB:-crm}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - crm_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\"",
+        ]
+      interval: 3s
+      timeout: 5s
+      retries: 15
+
+  api:
+    image: node:20-bookworm
+    working_dir: /app
+    volumes:
+      # 源码来自宿主机，node_modules 用容器内 Linux 版本，避免 Mac/Windows 目录挂进容器导致 Prisma 等崩溃
+      - ./server:/app
+      - api_node_modules:/app/node_modules
+    ports:
+      - "3001:3001"
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-crm}:${POSTGRES_PASSWORD:-crm}@postgres:5432/${POSTGRES_DB:-crm}?schema=public
+      JWT_SECRET: ${JWT_SECRET:-dev-docker-secret-change-me}
+      PORT: "3001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3001/health/live').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      # 首次容器内 npm install + migrate + seed 可能较慢，放宽容忍时间
+      start_period: 600s
+    command: >
+      bash -lc "npm install &&
+      npx prisma generate &&
+      npx prisma migrate deploy &&
+      npx prisma db seed &&
+      npx tsx watch src/index.ts"
+
+  web:
+    image: node:20-bookworm
+    working_dir: /project/client
+    volumes:
+      - .:/project
+      - web_client_node_modules:/project/client/node_modules
+    ports:
+      - "5173:5173"
+    environment:
+      API_PROXY_TARGET: http://api:3001
+      # 告诉 Vite：当前是 compose 的 web 服务，代理可解析主机名 api
+      VITE_DOCKER_COMPOSE_WEB: "1"
+    depends_on:
+      api:
+        condition: service_healthy
+    command: >
+      bash -lc "npm install &&
+      npm run dev -- --host 0.0.0.0"
+
+volumes:
+  crm_pg_data:
+  api_node_modules:
+  web_client_node_modules:
