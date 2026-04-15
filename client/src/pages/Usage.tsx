@@ -306,6 +306,10 @@ export function Usage() {
                 <dd>
                   <code className="usage-code-sm">{selected.id}</code>
                 </dd>
+                <dt>请求 ID</dt>
+                <dd>{selected.requestId ?? "—"}</dd>
+                <dt>链路追踪</dt>
+                <dd>{selected.traceId ?? "—"}</dd>
                 <dt>租户</dt>
                 <dd>{selected.tenantName}</dd>
                 <dt>AppKey</dt>
@@ -333,6 +337,11 @@ export function Usage() {
                     </span>
                   ) : null}
                 </dd>
+                <dt>计费快照</dt>
+                <dd>
+                  输入 ${selected.inputUnitPriceUsd} / 百万，输出 $
+                  {selected.outputUnitPriceUsd} / 百万
+                </dd>
                 <dt>缓存</dt>
                 <dd>{selected.cacheHit ? "命中" : "未命中"}</dd>
                 <dt>供应商</dt>
@@ -344,6 +353,10 @@ export function Usage() {
                 <dd>{selected.latencyMs} ms</dd>
                 <dt>HTTP 状态</dt>
                 <dd>{statusBadge(selected.statusCode)}</dd>
+                <dt>供应商错误码</dt>
+                <dd>{selected.providerErrorCode ?? "—"}</dd>
+                <dt>重试次数</dt>
+                <dd>{selected.retryCount}</dd>
                 <dt>路由</dt>
                 <dd>
                   {selected.routingPrimary ?? "—"} → {selected.routingActual ?? "—"}
@@ -355,6 +368,12 @@ export function Usage() {
                 <dd>{selected.idempotencyKey ?? "—"}</dd>
                 <dt>账期</dt>
                 <dd>{selected.period}</dd>
+                <dt>对账状态</dt>
+                <dd>{selected.reconciliationStatus ?? "—"}</dd>
+                <dt>开票状态</dt>
+                <dd>{selected.invoiceStatus ?? "—"}</dd>
+                <dt>来源 IP</dt>
+                <dd>{selected.requestSourceIp ?? "—"}</dd>
               </dl>
               {selected.billingDescription ? (
                 <div className="usage-drawer-note">

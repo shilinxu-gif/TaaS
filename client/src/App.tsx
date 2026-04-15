@@ -9,6 +9,7 @@ import { Invoices } from "./pages/Invoices";
 import { Recharge } from "./pages/Recharge";
 import { Login } from "./pages/Login";
 import { Optimization } from "./pages/Optimization";
+import { Ops } from "./pages/Ops";
 import { Register } from "./pages/Register";
 import { Routing } from "./pages/Routing";
 import { Usage } from "./pages/Usage";
@@ -47,6 +48,7 @@ export function App() {
         <Route path="usage" element={<Usage />} />
         <Route path="optimization" element={<Optimization />} />
         <Route path="routing" element={<Routing />} />
+        <Route path="ops" element={<Ops />} />
         <Route path="billing" element={<Billing />} />
         <Route path="recharge" element={<Recharge />} />
         <Route path="invoices" element={<Invoices />} />

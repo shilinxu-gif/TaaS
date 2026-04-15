@@ -8,6 +8,9 @@ const requiredDelegates = [
   "tenantMember",
   "walletRechargeOrder",
   "invoiceRequest",
+  "tenantRoutingStrategy",
+  "tenantCacheSettings",
+  "auditLog",
 ] as const;
 for (const name of requiredDelegates) {
   const d = delegates[name];

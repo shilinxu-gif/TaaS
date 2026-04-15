@@ -62,7 +62,7 @@ services:
       - .:/project
       - web_client_node_modules:/project/client/node_modules
     ports:
-      - "5173:5173"
+      - "5174:5174"
     environment:
       API_PROXY_TARGET: http://api:3001
       # 告诉 Vite：当前是 compose 的 web 服务，代理可解析主机名 api
@@ -72,7 +72,7 @@ services:
         condition: service_healthy
     command: >
       bash -lc "npm install &&
-      npm run dev -- --host 0.0.0.0"
+      npm run dev -- --host 0.0.0.0 --port 5174"
 
 volumes:
   crm_pg_data:

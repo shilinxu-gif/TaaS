@@ -41,7 +41,9 @@ export function Register() {
           <BrandLogo variant="auth" />
         </div>
         <h1 className="login-title-main">创建组织与账户</h1>
-        <p className="login-title-sub">演示环境：注册后将自动创建租户与控制台用户</p>
+        <p className="login-title-sub">
+          注册后自动开通 14 天企业试用、默认预算与多供应商路由策略
+        </p>
 
         <div className="auth-card-white">
           <h2 className="auth-card-heading">注册</h2>

@@ -5,12 +5,32 @@ import { z } from "zod";
 import {
   authMiddleware,
   hashPassword,
+  requireTenantRole,
   signToken,
   verifyPassword,
   type AuthedRequest,
 } from "./auth.js";
+import {
+  buildAppKeyPreview,
+  generateAppKeyToken,
+  hashAppKey,
+  normalizeScopes,
+  type AppKeyEnvironment,
+  type AppKeyScope,
+} from "./appKeys.js";
+import { writeAuditLog } from "./audit.js";
+import { encryptSecret } from "./crypto.js";
+import { commercialConfig } from "./config.js";
 import { prisma } from "./db.js";
+import {
+  executeGatewayCall,
+  type RoutingMode,
+  usageFromCatalog,
+} from "./gateway.js";
 import { getIdempotency, setIdempotency } from "./idempotency.js";
+import { defaultCatalogForProvider, findCatalogEntry } from "./providerCatalog.js";
+import { ProviderCallError, type GatewayRequestBody } from "./providers/types.js";
+import { checkRateLimit } from "./rateLimit.js";
 
 /** 演示：租户级缓存策略（内存，重启后恢复默认） */
 type CacheStrategySettings = {
@@ -27,10 +47,15 @@ const DEFAULT_CACHE_SETTINGS: CacheStrategySettings = {
   ttlSeconds: 86400,
 };
 
-const cacheSettingsByTenant = new Map<string, CacheStrategySettings>();
-
-function getCacheSettings(tenantId: string): CacheStrategySettings {
-  return cacheSettingsByTenant.get(tenantId) ?? { ...DEFAULT_CACHE_SETTINGS };
+async function getCacheSettings(tenantId: string): Promise<CacheStrategySettings> {
+  const row = await prisma.tenantCacheSettings.findUnique({ where: { tenantId } });
+  if (!row) return { ...DEFAULT_CACHE_SETTINGS };
+  return {
+    enabled: row.enabled,
+    mode: row.mode as CacheStrategySettings["mode"],
+    similarityThreshold: Number(row.similarityThreshold),
+    ttlSeconds: row.ttlSeconds,
+  };
 }
 
 type RoutingStrategyMode = "cost" | "quality" | "balance";
@@ -90,10 +115,35 @@ const DEFAULT_MODEL_FOR_SLUG: Record<string, string> = {
 };
 
 const DEFAULT_ROUTING_STRATEGY: RoutingStrategyMode = "balance";
-const routingStrategyByTenant = new Map<string, RoutingStrategyMode>();
 
-function getRoutingStrategy(tenantId: string): RoutingStrategyMode {
-  return routingStrategyByTenant.get(tenantId) ?? DEFAULT_ROUTING_STRATEGY;
+async function getRoutingStrategy(tenantId: string): Promise<{
+  mode: RoutingStrategyMode;
+  primaryProviderType: string | null;
+  fallbackProviderTypes: string[];
+  maxRetries: number;
+  timeoutMs: number;
+}> {
+  const row = await prisma.tenantRoutingStrategy.findUnique({ where: { tenantId } });
+  if (!row) {
+    return {
+      mode: DEFAULT_ROUTING_STRATEGY,
+      primaryProviderType: null,
+      fallbackProviderTypes: [],
+      maxRetries: 1,
+      timeoutMs: 30000,
+    };
+  }
+  return {
+    mode: (row.mode as RoutingStrategyMode) ?? DEFAULT_ROUTING_STRATEGY,
+    primaryProviderType: row.primaryProviderType,
+    fallbackProviderTypes: Array.isArray(row.fallbackProviderTypes)
+      ? row.fallbackProviderTypes.filter(
+          (item): item is string => typeof item === "string"
+        )
+      : [],
+    maxRetries: row.maxRetries,
+    timeoutMs: row.timeoutMs,
+  };
 }
 
 /** 与日志无关的演示模板（中文业务文案） */
@@ -199,8 +249,12 @@ const loginSchema = z
     message: "login or email required",
   });
 
-function authed(req: AuthedRequest): { userId: string; tenantId: string } {
-  return { userId: req.userId, tenantId: req.tenantId };
+function authed(req: AuthedRequest): {
+  userId: string;
+  tenantId: string;
+  role: AuthedRequest["role"];
+} {
+  return { userId: req.userId, tenantId: req.tenantId, role: req.role };
 }
 
 function money(n: Prisma.Decimal): string {
@@ -212,9 +266,22 @@ function parseAllowedModels(json: Prisma.JsonValue): string[] {
   return json.filter((x): x is string => typeof x === "string");
 }
 
-function appKeyPrefix(token: string): string {
-  const n = Math.min(12, Math.max(8, Math.floor(token.length / 3)));
-  return token.length > n ? `${token.slice(0, n)}…` : `${token}…`;
+function parseScopes(json: Prisma.JsonValue): AppKeyScope[] {
+  return normalizeScopes(Array.isArray(json) ? json : []);
+}
+
+function getRequestIp(request: FastifyRequest): string | null {
+  const forwarded = request.headers["x-forwarded-for"];
+  if (typeof forwarded === "string" && forwarded.trim()) {
+    return forwarded.split(",")[0]!.trim();
+  }
+  return request.ip ?? null;
+}
+
+function appKeyPrefix(tokenPreview: string | null, token: string | null): string {
+  if (tokenPreview?.trim()) return tokenPreview;
+  if (!token) return "sk-live-…";
+  return buildAppKeyPreview(token);
 }
 
 function parseDailyBudget(
@@ -253,37 +320,6 @@ function estPromptTokens(messages: unknown): number {
   return Math.max(16, Math.min(12000, Math.ceil(len / 4)));
 }
 
-/** model -> { actual provider slug, primary route label, optional forced fallback reason } */
-function resolveRouting(model: string): {
-  actualSlug: string;
-  primaryLabel: string;
-  reason: string | null;
-} {
-  const m = model.trim().toLowerCase();
-  if (m === "gpt-fallback-demo") {
-    return {
-      primaryLabel: "openai",
-      actualSlug: "claude",
-      reason: "fallback_primary_unavailable",
-    };
-  }
-  if (m.startsWith("gemini")) {
-    return { primaryLabel: "gemini", actualSlug: "gemini", reason: null };
-  }
-  if (m.startsWith("claude")) {
-    return { primaryLabel: "claude", actualSlug: "claude", reason: null };
-  }
-  return { primaryLabel: "openai", actualSlug: "openai", reason: null };
-}
-
-async function pickProvider(slug: string) {
-  const p = await prisma.provider.findUnique({ where: { slug } });
-  if (!p) {
-    return prisma.provider.findFirst({ where: { slug: "openai" } });
-  }
-  return p;
-}
-
 const chatBodySchema = z
   .object({
     model: z.string().optional(),
@@ -297,6 +333,38 @@ const chatBodySchema = z
       .optional(),
   })
   .passthrough();
+
+const appKeyCreateSchema = z.object({
+  name: z.string().min(1),
+  description: z.string().optional().nullable(),
+  qpsLimit: z.number().int().positive().nullable().optional(),
+  dailyBudgetUsd: z.union([z.string(), z.number(), z.null()]).optional(),
+  monthlyBudgetUsd: z.union([z.string(), z.number(), z.null()]).optional(),
+  allowedModels: z.array(z.string().min(1)).optional().default([]),
+  status: z.enum(["active", "disabled"]).optional().default("active"),
+  environment: z
+    .enum(["production", "staging", "development", "sandbox"])
+    .optional()
+    .default("production"),
+  scopes: z
+    .array(z.enum(["chat:complete", "usage:read", "billing:read", "admin:ops"]))
+    .optional()
+    .default(["chat:complete"]),
+});
+
+const appKeyPatchSchema = z.object({
+  status: z.enum(["active", "disabled"]).optional(),
+  name: z.string().min(1).optional(),
+  description: z.string().optional().nullable(),
+  qpsLimit: z.number().int().positive().nullable().optional(),
+  dailyBudgetUsd: z.union([z.string(), z.number(), z.null()]).optional(),
+  monthlyBudgetUsd: z.union([z.string(), z.number(), z.null()]).optional(),
+  allowedModels: z.array(z.string().min(1)).optional(),
+  environment: z.enum(["production", "staging", "development", "sandbox"]).optional(),
+  scopes: z
+    .array(z.enum(["chat:complete", "usage:read", "billing:read", "admin:ops"]))
+    .optional(),
+});
 
 export async function registerRoutes(app: FastifyInstance): Promise<void> {
   /** 仅进程存活（供 Docker HEALTHCHECK）；不包含 DB，避免未就绪时误判 unhealthy */
@@ -343,24 +411,65 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     const planId = starter?.id ?? null;
     const slugTail = randomBytes(4).toString("hex");
     const tenantName = `${name} 租户`;
+    const trialEndsAt = new Date(
+      Date.now() + commercialConfig.trialDays * 24 * 60 * 60 * 1000
+    );
     const result = await prisma.$transaction(async (tx) => {
       const user = await tx.user.create({
-        data: { email, passwordHash, name },
+        data: {
+          email,
+          passwordHash,
+          name,
+          platformRole: "user",
+        },
       });
       const tenant = await tx.tenant.create({
         data: {
           name: tenantName,
           slug: `t-${slugTail}`,
+          status: "trial",
           planId,
           balanceTokens: new Prisma.Decimal(250000),
+          trialEndsAt,
+          billingEmail: email,
+          contactSalesEmail: commercialConfig.salesEmail,
+          monthlyBudgetUsd: new Prisma.Decimal("150.0000"),
+          spendCapEnforced: true,
         },
       });
       await tx.tenantMember.create({
-        data: { userId: user.id, tenantId: tenant.id, role: "admin" },
+        data: { userId: user.id, tenantId: tenant.id, role: "owner" },
+      });
+      await tx.tenantRoutingStrategy.create({
+        data: {
+          tenantId: tenant.id,
+          mode: "balance",
+          fallbackProviderTypes: ["anthropic", "google"],
+          maxRetries: 1,
+        },
+      });
+      await tx.tenantCacheSettings.create({
+        data: {
+          tenantId: tenant.id,
+          enabled: true,
+          mode: "semantic",
+          similarityThreshold: new Prisma.Decimal("0.920"),
+          ttlSeconds: 86400,
+        },
       });
       return { user, tenant };
     });
     const token = signToken({ sub: result.user.id, tenantId: result.tenant.id });
+    await writeAuditLog({
+      tenantId: result.tenant.id,
+      userId: result.user.id,
+      actorType: "user",
+      action: "auth.register",
+      entityType: "tenant",
+      entityId: result.tenant.id,
+      ip: getRequestIp(request),
+      metadata: { trialEndsAt: trialEndsAt.toISOString() },
+    });
     reply.send({
       token,
       user: {
@@ -395,6 +504,16 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       return;
     }
     const token = signToken({ sub: user.id, tenantId: member.tenantId });
+    await writeAuditLog({
+      tenantId: member.tenantId,
+      userId: user.id,
+      actorType: "user",
+      action: "auth.login",
+      entityType: "session",
+      entityId: user.id,
+      ip: getRequestIp(request),
+      metadata: { role: member.role },
+    });
     reply.send({
       token,
       user: { id: user.id, email: user.email, name: user.name },
@@ -403,7 +522,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.get("/me", { preHandler: authMiddleware }, async (request, reply) => {
-    const { userId, tenantId } = authed(request as AuthedRequest);
+    const { userId, tenantId, role } = authed(request as AuthedRequest);
     const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) {
       reply.status(404).send({ error: "Not found" });
@@ -417,12 +536,22 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       id: user.id,
       email: user.email,
       name: user.name,
+      role,
+      emailVerifiedAt: user.emailVerifiedAt,
       tenant: tenant
         ? {
             id: tenant.id,
             name: tenant.name,
             slug: tenant.slug,
+            status: tenant.status,
             balanceTokens: money(tenant.balanceTokens),
+            trialEndsAt: tenant.trialEndsAt,
+            billingEmail: tenant.billingEmail,
+            contactSalesEmail: tenant.contactSalesEmail,
+            monthlyBudgetUsd:
+              tenant.monthlyBudgetUsd != null ? money(tenant.monthlyBudgetUsd) : null,
+            spendCapEnforced: tenant.spendCapEnforced,
+            contractCode: tenant.contractCode,
             plan: tenant.plan
               ? { name: tenant.plan.name, code: tenant.plan.code }
               : null,
@@ -443,7 +572,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       return;
     }
 
-    const [requests24h, tokenSum, billed, cacheStats, allTenants] = await Promise.all([
+    const [requests24h, tokenSum, billed, cacheStats] = await Promise.all([
       prisma.apiRequestLog.count({
         where: { tenantId, createdAt: { gte: since } },
       }),
@@ -460,22 +589,12 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
         where: { tenantId, createdAt: { gte: since } },
         _count: true,
       }),
-      prisma.tenant.findMany({
-        select: { id: true, name: true, slug: true },
-      }),
     ]);
 
     const cacheHits = cacheStats.find((c) => c.cacheHit === true)?._count ?? 0;
     const nonCache = cacheStats.find((c) => c.cacheHit === false)?._count ?? 0;
     const denom = cacheHits + nonCache;
     const cacheHitRate = denom === 0 ? 0 : Math.round((cacheHits / denom) * 1000) / 10;
-
-    const tenantReqCounts = await prisma.apiRequestLog.groupBy({
-      by: ["tenantId"],
-      where: { createdAt: { gte: since } },
-      _count: true,
-    });
-    const idToCount = new Map(tenantReqCounts.map((t) => [t.tenantId, t._count]));
 
     const sevenAgo = new Date(Date.now() - chartDays * 24 * 60 * 60 * 1000);
     const logs7d = await prisma.apiRequestLog.findMany({
@@ -498,7 +617,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
 
-    const [todayTokensAgg, todayBillingUsage, todayCacheLogs, modelAgg7d] =
+    const [todayTokensAgg, todayBillingUsage, todayCacheLogs, modelAgg7d, logs24h] =
       await Promise.all([
         prisma.apiRequestLog.aggregate({
           where: { tenantId, createdAt: { gte: startOfDay } },
@@ -525,6 +644,10 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
           where: { tenantId, createdAt: { gte: sevenAgo } },
           _sum: { totalTokens: true },
         }),
+        prisma.apiRequestLog.findMany({
+          where: { tenantId, createdAt: { gte: since } },
+          select: { statusCode: true, latencyMs: true, providerErrorCode: true },
+        }),
       ]);
 
     const pricePerM =
@@ -547,6 +670,28 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     const balanceNum = Number(tenant.balanceTokens);
     const tokensToday = todayTokensAgg._sum.totalTokens ?? 0;
     const monthlyQuota = tenant.plan?.monthlyTokenQuota ?? 0;
+    const failedRequests24h = logs24h.filter((row) => row.statusCode >= 400).length;
+    const providerFailures24h = logs24h.filter((row) => !!row.providerErrorCode).length;
+    const averageLatencyMs =
+      logs24h.length === 0
+        ? 0
+        : Math.round(
+            logs24h.reduce((sum, row) => sum + row.latencyMs, 0) / logs24h.length
+          );
+    const customerSuccessRate =
+      requests24h === 0
+        ? 100
+        : Math.round(((requests24h - failedRequests24h) / requests24h) * 1000) / 10;
+    const providerSuccessRate =
+      requests24h === 0
+        ? 100
+        : Math.round(((requests24h - providerFailures24h) / requests24h) * 1000) / 10;
+    const trialDaysRemaining = tenant.trialEndsAt
+      ? Math.max(
+          0,
+          Math.ceil((tenant.trialEndsAt.getTime() - Date.now()) / (24 * 60 * 60 * 1000))
+        )
+      : null;
 
     const risks: {
       level: "info" | "warning" | "critical";
@@ -590,7 +735,14 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       tenant: {
         name: tenant.name,
         slug: tenant.slug,
+        status: tenant.status,
         balanceTokens: money(tenant.balanceTokens),
+        trialEndsAt: tenant.trialEndsAt,
+        trialDaysRemaining,
+        billingEmail: tenant.billingEmail,
+        contactSalesEmail: tenant.contactSalesEmail,
+        monthlyBudgetUsd:
+          tenant.monthlyBudgetUsd != null ? money(tenant.monthlyBudgetUsd) : null,
         plan: tenant.plan ? { name: tenant.plan.name, code: tenant.plan.code } : null,
       },
       kpis: {
@@ -598,19 +750,29 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
         tokens24h: tokenSum._sum.totalTokens ?? 0,
         spendUsd24h: money(billed._sum.amountUsd ?? new Prisma.Decimal(0)),
         cacheHitRate,
+        averageLatencyMs,
+        customerSuccessRate,
+        providerSuccessRate,
+        failedRequests24h,
       },
       today: {
         spendUsd: money(todayBillingUsage._sum.amountUsd ?? new Prisma.Decimal(0)),
         tokens: tokensToday,
         cacheSavingsUsd: money(cacheSavingsToday),
       },
-      tenantsOverview: allTenants.map((t) => ({
-        name: t.name,
-        slug: t.slug,
-        requests24h: idToCount.get(t.id) ?? 0,
-      })),
+      tenantsOverview: [
+        {
+          name: tenant.name,
+          slug: tenant.slug,
+          requests24h,
+        },
+      ],
       chartSeries7d,
       modelMix7d,
+      serviceTargets: {
+        latencySloMs: 1500,
+        successSloPct: 99.5,
+      },
       risks,
     });
   });
@@ -627,29 +789,26 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
         id: k.id,
         name: k.name,
         description: k.description,
-        keyPrefix: appKeyPrefix(k.token),
+        keyPrefix: appKeyPrefix(k.tokenPreview, k.token),
         tenantName: k.tenant.name,
         status: k.status,
+        environment: k.environment,
+        scopes: parseScopes(k.scopes),
         qpsLimit: k.qpsLimit,
         dailyBudgetUsd: k.dailyBudgetUsd != null ? money(k.dailyBudgetUsd) : null,
+        monthlyBudgetUsd:
+          k.monthlyBudgetUsd != null ? money(k.monthlyBudgetUsd) : null,
         allowedModels: parseAllowedModels(k.allowedModels),
         createdAt: k.createdAt,
         lastUsedAt: k.lastUsedAt,
+        lastUsedIp: k.lastUsedIp,
       }))
     );
   });
 
-  const appKeyCreateSchema = z.object({
-    name: z.string().min(1),
-    description: z.string().optional().nullable(),
-    qpsLimit: z.number().int().positive().nullable().optional(),
-    dailyBudgetUsd: z.union([z.string(), z.number(), z.null()]).optional(),
-    allowedModels: z.array(z.string().min(1)).optional().default([]),
-    status: z.enum(["active", "disabled"]).optional().default("active"),
-  });
-
   app.post("/app-keys", { preHandler: authMiddleware }, async (request, reply) => {
-    const { tenantId } = authed(request as AuthedRequest);
+    const { tenantId, userId, role } = authed(request as AuthedRequest);
+    if (!requireTenantRole(request, reply, ["owner", "admin", "developer"])) return;
     const parsed = appKeyCreateSchema.safeParse(request.body);
     if (!parsed.success) {
       reply.status(400).send({ error: parsed.error.flatten() });
@@ -660,46 +819,67 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       reply.status(400).send({ error: budget.message });
       return;
     }
-    const token = `sk-demo-${randomBytes(24).toString("hex")}`;
+    const monthlyBudget = parseDailyBudget(parsed.data.monthlyBudgetUsd);
+    if (!monthlyBudget.ok) {
+      reply.status(400).send({ error: monthlyBudget.message });
+      return;
+    }
+    const token = generateAppKeyToken();
     const row = await prisma.appKey.create({
       data: {
         tenantId,
         name: parsed.data.name.trim(),
         description: parsed.data.description?.trim() || null,
-        token,
+        token: null,
+        tokenHash: hashAppKey(token),
+        tokenPreview: buildAppKeyPreview(token),
         status: parsed.data.status,
+        environment: parsed.data.environment as AppKeyEnvironment,
+        scopes: parsed.data.scopes as AppKeyScope[],
         qpsLimit: parsed.data.qpsLimit ?? null,
         dailyBudgetUsd: budget.value,
+        monthlyBudgetUsd: monthlyBudget.value,
         allowedModels: parsed.data.allowedModels ?? [],
+      },
+    });
+    await writeAuditLog({
+      tenantId,
+      userId,
+      actorType: "user",
+      action: "app_key.create",
+      entityType: "app_key",
+      entityId: row.id,
+      ip: getRequestIp(request),
+      metadata: {
+        environment: row.environment,
+        scopes: row.scopes,
+        actorRole: role,
       },
     });
     reply.status(201).send({
       id: row.id,
       name: row.name,
       description: row.description,
-      token: row.token,
+      token,
       tenantName: (await prisma.tenant.findUniqueOrThrow({ where: { id: tenantId } }))
         .name,
       status: row.status,
+      environment: row.environment,
+      scopes: parseScopes(row.scopes),
       qpsLimit: row.qpsLimit,
       dailyBudgetUsd: row.dailyBudgetUsd != null ? money(row.dailyBudgetUsd) : null,
+      monthlyBudgetUsd:
+        row.monthlyBudgetUsd != null ? money(row.monthlyBudgetUsd) : null,
       allowedModels: parseAllowedModels(row.allowedModels),
       createdAt: row.createdAt,
       lastUsedAt: row.lastUsedAt,
+      lastUsedIp: row.lastUsedIp,
     });
   });
 
-  const appKeyPatchSchema = z.object({
-    status: z.enum(["active", "disabled"]).optional(),
-    name: z.string().min(1).optional(),
-    description: z.string().optional().nullable(),
-    qpsLimit: z.number().int().positive().nullable().optional(),
-    dailyBudgetUsd: z.union([z.string(), z.number(), z.null()]).optional(),
-    allowedModels: z.array(z.string().min(1)).optional(),
-  });
-
   app.patch("/app-keys/:id", { preHandler: authMiddleware }, async (request, reply) => {
-    const { tenantId } = authed(request as AuthedRequest);
+    const { tenantId, userId, role } = authed(request as AuthedRequest);
+    if (!requireTenantRole(request, reply, ["owner", "admin", "developer"])) return;
     const { id } = request.params as { id: string };
     const parsed = appKeyPatchSchema.safeParse(request.body);
     if (!parsed.success) {
@@ -741,8 +921,22 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       }
       data.dailyBudgetUsd = budget.value;
     }
+    if (parsed.data.monthlyBudgetUsd !== undefined) {
+      const budget = parseDailyBudget(parsed.data.monthlyBudgetUsd);
+      if (!budget.ok) {
+        reply.status(400).send({ error: budget.message });
+        return;
+      }
+      data.monthlyBudgetUsd = budget.value;
+    }
     if (parsed.data.allowedModels !== undefined) {
       data.allowedModels = parsed.data.allowedModels;
+    }
+    if (parsed.data.environment !== undefined) {
+      data.environment = parsed.data.environment as AppKeyEnvironment;
+    }
+    if (parsed.data.scopes !== undefined) {
+      data.scopes = parsed.data.scopes as AppKeyScope[];
     }
 
     if (Object.keys(data).length === 0) {
@@ -754,24 +948,43 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       where: { id },
       data,
     });
+    await writeAuditLog({
+      tenantId,
+      userId,
+      actorType: "user",
+      action: "app_key.update",
+      entityType: "app_key",
+      entityId: row.id,
+      ip: getRequestIp(request),
+      metadata: {
+        actorRole: role,
+        fields: Object.keys(data),
+      },
+    });
 
     reply.send({
       id: row.id,
       name: row.name,
       description: row.description,
-      keyPrefix: appKeyPrefix(row.token),
+      keyPrefix: appKeyPrefix(row.tokenPreview, row.token),
       tenantName: existing.tenant.name,
       status: row.status,
+      environment: row.environment,
+      scopes: parseScopes(row.scopes),
       qpsLimit: row.qpsLimit,
       dailyBudgetUsd: row.dailyBudgetUsd != null ? money(row.dailyBudgetUsd) : null,
+      monthlyBudgetUsd:
+        row.monthlyBudgetUsd != null ? money(row.monthlyBudgetUsd) : null,
       allowedModels: parseAllowedModels(row.allowedModels),
       createdAt: row.createdAt,
       lastUsedAt: row.lastUsedAt,
+      lastUsedIp: row.lastUsedIp,
     });
   });
 
   app.patch("/app-keys/:id/revoke", { preHandler: authMiddleware }, async (request, reply) => {
-    const { tenantId } = authed(request as AuthedRequest);
+    const { tenantId, userId } = authed(request as AuthedRequest);
+    if (!requireTenantRole(request, reply, ["owner", "admin"])) return;
     const { id } = request.params as { id: string };
     const updated = await prisma.appKey.updateMany({
       where: { id, tenantId },
@@ -781,6 +994,15 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       reply.status(404).send({ error: "Not found" });
       return;
     }
+    await writeAuditLog({
+      tenantId,
+      userId,
+      actorType: "user",
+      action: "app_key.revoke",
+      entityType: "app_key",
+      entityId: id,
+      ip: getRequestIp(request),
+    });
     reply.send({ ok: true });
   });
 
@@ -797,9 +1019,16 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
         billing: {
           select: {
             amountUsd: true,
+            subtotalUsd: true,
             currency: true,
             type: true,
             description: true,
+            inputUnitPriceUsd: true,
+            outputUnitPriceUsd: true,
+            quantityPromptTokens: true,
+            quantityCompletionTokens: true,
+            reconciliationStatus: true,
+            invoiceStatus: true,
           },
         },
       },
@@ -816,12 +1045,22 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
         completionTokens: r.completionTokens,
         totalTokens: r.totalTokens,
         costUsd: r.billing ? money(r.billing.amountUsd) : "0",
+        subtotalUsd: r.billing ? money(r.billing.subtotalUsd) : "0",
         currency: r.billing?.currency ?? "USD",
         billingType: r.billing?.type ?? null,
         billingDescription: r.billing?.description ?? null,
+        inputUnitPriceUsd: r.billing ? money(r.billing.inputUnitPriceUsd) : "0",
+        outputUnitPriceUsd: r.billing ? money(r.billing.outputUnitPriceUsd) : "0",
+        reconciliationStatus: r.billing?.reconciliationStatus ?? null,
+        invoiceStatus: r.billing?.invoiceStatus ?? null,
         cacheHit: r.cacheHit,
         provider: r.provider,
         latencyMs: r.latencyMs,
+        requestId: r.requestId,
+        traceId: r.traceId,
+        providerErrorCode: r.providerErrorCode,
+        retryCount: r.retryCount,
+        requestSourceIp: r.requestSourceIp,
         statusCode: r.statusCode,
         routingPrimary: r.routingPrimary,
         routingActual: r.routingActual,
@@ -917,6 +1156,20 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
         currentMonthUsageTokens,
         estimatedSavingUsd: money(estimatedSaving),
         currency: "USD",
+        trialEndsAt: tenant.trialEndsAt,
+        trialDaysRemaining: tenant.trialEndsAt
+          ? Math.max(
+              0,
+              Math.ceil(
+                (tenant.trialEndsAt.getTime() - Date.now()) / (24 * 60 * 60 * 1000)
+              )
+            )
+          : null,
+        tenantStatus: tenant.status,
+        billingEmail: tenant.billingEmail,
+        monthlyBudgetUsd:
+          tenant.monthlyBudgetUsd != null ? money(tenant.monthlyBudgetUsd) : null,
+        contractCode: tenant.contractCode,
       },
       currentPlan: tenant.plan ? planDto(tenant.plan) : null,
       plans: plans.map(planDto),
@@ -926,8 +1179,15 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
         type: r.type,
         typeLabel: billingTypeLabel(r.type),
         amountUsd: money(r.amountUsd),
+        subtotalUsd: money(r.subtotalUsd),
+        inputUnitPriceUsd: money(r.inputUnitPriceUsd),
+        outputUnitPriceUsd: money(r.outputUnitPriceUsd),
+        quantityPromptTokens: r.quantityPromptTokens,
+        quantityCompletionTokens: r.quantityCompletionTokens,
         currency: r.currency,
         status: billingRecordStatus(r.type),
+        reconciliationStatus: r.reconciliationStatus,
+        invoiceStatus: r.invoiceStatus,
         description: r.description,
         model: r.log.model,
       })),
@@ -948,12 +1208,15 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       rows.map((r) => ({
         id: r.id,
         amountUsd: money(r.amountUsd),
+        subtotalUsd: money(r.subtotalUsd),
         currency: r.currency,
         type: r.type,
         description: r.description,
         createdAt: r.createdAt,
         model: r.log.model,
         cacheHit: r.log.cacheHit,
+        reconciliationStatus: r.reconciliationStatus,
+        invoiceStatus: r.invoiceStatus,
       }))
     );
   });
@@ -1598,7 +1861,8 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     const { tenantId } = authed(request as AuthedRequest);
     const windowDays = 14;
     const since = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000);
-    const strategyMode = getRoutingStrategy(tenantId);
+    const strategy = await getRoutingStrategy(tenantId);
+    const strategyMode = strategy.mode;
 
     const [routeRows, providers, logStats, recentFallbacks] = await Promise.all([
       prisma.apiRequestLog.findMany({
@@ -1610,7 +1874,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
           providerId: true,
         },
       }),
-      prisma.provider.findMany({ orderBy: { slug: "asc" } }),
+      prisma.provider.findMany({ orderBy: [{ priority: "asc" }, { slug: "asc" }] }),
       prisma.apiRequestLog.findMany({
         where: { tenantId, createdAt: { gte: since } },
         select: {
@@ -1697,11 +1961,15 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       return {
         providerSlug: p.slug,
         providerName: p.name,
+        providerType: p.providerType,
         model,
         costScore,
         latencyMs,
         successRate,
         status,
+        enabled: p.enabled,
+        healthStatus: p.healthStatus,
+        configured: !!p.apiKeyCiphertext,
       };
     });
 
@@ -1742,6 +2010,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       strategyMode,
       strategyNote: ROUTING_STRATEGY_NOTES[strategyMode],
       fallbackChains: ROUTING_FALLBACK_CHAINS.map((c) => ({ ...c })),
+      config: strategy,
       providerPriority,
       routes: [...byRoute.entries()].map(([actualSlug, v]) => ({
         actualSlug,
@@ -1758,13 +2027,33 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.patch("/routing/strategy", { preHandler: authMiddleware }, async (request, reply) => {
-    const { tenantId } = authed(request as AuthedRequest);
+    const { tenantId, userId } = authed(request as AuthedRequest);
+    if (!requireTenantRole(request, reply, ["owner", "admin", "developer"])) return;
     const parsed = routingStrategyPatchSchema.safeParse(request.body);
     if (!parsed.success) {
       reply.status(400).send({ error: parsed.error.flatten() });
       return;
     }
-    routingStrategyByTenant.set(tenantId, parsed.data.mode);
+    await prisma.tenantRoutingStrategy.upsert({
+      where: { tenantId },
+      update: { mode: parsed.data.mode },
+      create: {
+        tenantId,
+        mode: parsed.data.mode,
+        fallbackProviderTypes: [],
+        maxRetries: 1,
+      },
+    });
+    await writeAuditLog({
+      tenantId,
+      userId,
+      actorType: "user",
+      action: "routing.update_strategy",
+      entityType: "tenant_routing_strategy",
+      entityId: tenantId,
+      ip: getRequestIp(request),
+      metadata: { mode: parsed.data.mode },
+    });
     reply.send({
       strategyMode: parsed.data.mode,
       strategyNote: ROUTING_STRATEGY_NOTES[parsed.data.mode],
@@ -1906,23 +2195,191 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
   app.get("/optimization/cache-settings", { preHandler: authMiddleware }, async (request, reply) => {
     const { tenantId } = authed(request as AuthedRequest);
-    reply.send(getCacheSettings(tenantId));
+    reply.send(await getCacheSettings(tenantId));
   });
 
   app.patch("/optimization/cache-settings", { preHandler: authMiddleware }, async (request, reply) => {
-    const { tenantId } = authed(request as AuthedRequest);
+    const { tenantId, userId } = authed(request as AuthedRequest);
+    if (!requireTenantRole(request, reply, ["owner", "admin", "developer"])) return;
     const parsed = cacheSettingsPatchSchema.safeParse(request.body);
     if (!parsed.success) {
       reply.status(400).send({ error: parsed.error.flatten() });
       return;
     }
-    const next = { ...getCacheSettings(tenantId), ...parsed.data };
-    cacheSettingsByTenant.set(tenantId, next);
-    reply.send(next);
+    const next = await prisma.tenantCacheSettings.upsert({
+      where: { tenantId },
+      update: {
+        enabled: parsed.data.enabled,
+        mode: parsed.data.mode,
+        similarityThreshold: new Prisma.Decimal(parsed.data.similarityThreshold.toFixed(3)),
+        ttlSeconds: parsed.data.ttlSeconds,
+      },
+      create: {
+        tenantId,
+        enabled: parsed.data.enabled,
+        mode: parsed.data.mode,
+        similarityThreshold: new Prisma.Decimal(parsed.data.similarityThreshold.toFixed(3)),
+        ttlSeconds: parsed.data.ttlSeconds,
+      },
+    });
+    await writeAuditLog({
+      tenantId,
+      userId,
+      actorType: "user",
+      action: "optimization.update_cache_settings",
+      entityType: "tenant_cache_settings",
+      entityId: next.id,
+      ip: getRequestIp(request),
+      metadata: parsed.data,
+    });
+    reply.send({
+      enabled: next.enabled,
+      mode: next.mode,
+      similarityThreshold: Number(next.similarityThreshold),
+      ttlSeconds: next.ttlSeconds,
+    });
   });
 
-  app.get("/providers", { preHandler: authMiddleware }, async (_request, reply) => {
-    const rows = await prisma.provider.findMany({ orderBy: { name: "asc" } });
+  app.get("/providers", { preHandler: authMiddleware }, async (request, reply) => {
+    if (!requireTenantRole(request, reply, ["owner", "admin", "developer", "billing"])) return;
+    const rows = await prisma.provider.findMany({ orderBy: [{ priority: "asc" }, { name: "asc" }] });
+    reply.send(
+      rows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        slug: row.slug,
+        providerType: row.providerType,
+        status: row.status,
+        enabled: row.enabled,
+        priority: row.priority,
+        timeoutMs: row.timeoutMs,
+        healthStatus: row.healthStatus,
+        configured: !!row.apiKeyCiphertext,
+        supportsStreaming: row.supportsStreaming,
+        modelCatalog: row.modelCatalog,
+        lastCheckedAt: row.lastCheckedAt,
+      }))
+    );
+  });
+
+  const providerPatchSchema = z.object({
+    enabled: z.boolean().optional(),
+    priority: z.number().int().min(1).max(999).optional(),
+    timeoutMs: z.number().int().min(1000).max(120000).optional(),
+    baseUrl: z.string().url().optional(),
+    apiKey: z.string().min(10).optional(),
+    healthStatus: z.enum(["healthy", "degraded", "unknown"]).optional(),
+    modelCatalog: z
+      .array(
+        z.object({
+          model: z.string().min(1),
+          providerType: z.enum(["openai", "anthropic", "google"]),
+          inputUsdPerMillion: z.string(),
+          outputUsdPerMillion: z.string(),
+          supportsStreaming: z.boolean(),
+        })
+      )
+      .optional(),
+  });
+
+  app.patch("/providers/:id", { preHandler: authMiddleware }, async (request, reply) => {
+    const { tenantId, userId } = authed(request as AuthedRequest);
+    if (!requireTenantRole(request, reply, ["owner", "admin"])) return;
+    const { id } = request.params as { id: string };
+    const parsed = providerPatchSchema.safeParse(request.body);
+    if (!parsed.success) {
+      reply.status(400).send({ error: parsed.error.flatten() });
+      return;
+    }
+    const existing = await prisma.provider.findUnique({ where: { id } });
+    if (!existing) {
+      reply.status(404).send({ error: "Provider not found" });
+      return;
+    }
+    const data: Prisma.ProviderUpdateInput = {};
+    if (parsed.data.enabled !== undefined) data.enabled = parsed.data.enabled;
+    if (parsed.data.priority !== undefined) data.priority = parsed.data.priority;
+    if (parsed.data.timeoutMs !== undefined) data.timeoutMs = parsed.data.timeoutMs;
+    if (parsed.data.baseUrl !== undefined) data.baseUrl = parsed.data.baseUrl;
+    if (parsed.data.healthStatus !== undefined) data.healthStatus = parsed.data.healthStatus;
+    if (parsed.data.apiKey !== undefined) {
+      data.apiKeyCiphertext = encryptSecret(parsed.data.apiKey);
+    }
+    if (parsed.data.modelCatalog !== undefined) data.modelCatalog = parsed.data.modelCatalog;
+    const updated = await prisma.provider.update({ where: { id }, data });
+    await writeAuditLog({
+      tenantId,
+      userId,
+      actorType: "user",
+      action: "provider.update",
+      entityType: "provider",
+      entityId: updated.id,
+      ip: getRequestIp(request),
+      metadata: {
+        slug: updated.slug,
+        fields: Object.keys(parsed.data),
+      },
+    });
+    reply.send({
+      id: updated.id,
+      slug: updated.slug,
+      providerType: updated.providerType,
+      enabled: updated.enabled,
+      priority: updated.priority,
+      timeoutMs: updated.timeoutMs,
+      healthStatus: updated.healthStatus,
+      configured: !!updated.apiKeyCiphertext,
+      modelCatalog: updated.modelCatalog,
+    });
+  });
+
+  app.get("/ops/overview", { preHandler: authMiddleware }, async (request, reply) => {
+    const { tenantId } = authed(request as AuthedRequest);
+    if (!requireTenantRole(request, reply, ["owner", "admin", "billing"])) return;
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const monthStart = new Date();
+    monthStart.setDate(1);
+    monthStart.setHours(0, 0, 0, 0);
+    const [providers, requests24h, failed24h, billingMonth, audits] = await Promise.all([
+      prisma.provider.findMany({ orderBy: { priority: "asc" } }),
+      prisma.apiRequestLog.count({ where: { tenantId, createdAt: { gte: since } } }),
+      prisma.apiRequestLog.count({
+        where: { tenantId, createdAt: { gte: since }, statusCode: { gte: 400 } },
+      }),
+      prisma.billingRecord.aggregate({
+        where: { tenantId, createdAt: { gte: monthStart }, type: "usage" },
+        _sum: { amountUsd: true },
+      }),
+      prisma.auditLog.count({ where: { tenantId, createdAt: { gte: since } } }),
+    ]);
+    reply.send({
+      requests24h,
+      failed24h,
+      customerSuccessRate:
+        requests24h === 0
+          ? 100
+          : Math.round(((requests24h - failed24h) / requests24h) * 1000) / 10,
+      spendUsdMonth: money(billingMonth._sum.amountUsd ?? new Prisma.Decimal(0)),
+      auditEvents24h: audits,
+      providers: providers.map((row) => ({
+        slug: row.slug,
+        type: row.providerType,
+        configured: !!row.apiKeyCiphertext,
+        enabled: row.enabled,
+        healthStatus: row.healthStatus,
+        priority: row.priority,
+      })),
+    });
+  });
+
+  app.get("/ops/audit-logs", { preHandler: authMiddleware }, async (request, reply) => {
+    const { tenantId } = authed(request as AuthedRequest);
+    if (!requireTenantRole(request, reply, ["owner", "admin", "billing"])) return;
+    const rows = await prisma.auditLog.findMany({
+      where: { tenantId },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+    });
     reply.send(rows);
   });
 
@@ -1936,8 +2393,9 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       return;
     }
     const rawKey = header.slice("Bearer ".length).trim();
+    const tokenHash = hashAppKey(rawKey);
     const appKey = await prisma.appKey.findFirst({
-      where: { token: rawKey, status: "active" },
+      where: { tokenHash, status: "active" },
       include: { tenant: { include: { plan: true } } },
     });
     if (!appKey) {
@@ -1948,6 +2406,20 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     const parsedBody = chatBodySchema.safeParse(request.body);
     if (!parsedBody.success) {
       reply.status(400).send({ error: parsedBody.error.flatten() });
+      return;
+    }
+    const scopes = parseScopes(appKey.scopes);
+    if (!scopes.includes("chat:complete")) {
+      reply.status(403).send({ error: "This AppKey does not have chat:complete scope" });
+      return;
+    }
+    const requestIp = getRequestIp(request);
+    const limit = checkRateLimit(`appkey:${appKey.id}`, appKey.qpsLimit);
+    if (!limit.ok) {
+      reply
+        .status(429)
+        .header("Retry-After", String(limit.retryAfterSeconds))
+        .send({ error: "QPS limit exceeded" });
       return;
     }
     const model = parsedBody.data.model?.trim() || "gpt-4o-mini";
@@ -1961,12 +2433,76 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     const messages = parsedBody.data.messages ?? [];
     const idemRaw = (request.headers["idempotency-key"] as string | undefined)?.trim();
     const idemKey = idemRaw ? `${appKey.id}:${idemRaw}` : null;
+    const traceId = `trace_${randomBytes(8).toString("hex")}`;
+    const requestId = `req_${randomBytes(8).toString("hex")}`;
+
+    const dayStart = new Date();
+    dayStart.setHours(0, 0, 0, 0);
+    const monthStart = new Date();
+    monthStart.setDate(1);
+    monthStart.setHours(0, 0, 0, 0);
+    const [appKeySpendDay, appKeySpendMonth, tenantSpendMonth, routingStrategy, providers] =
+      await Promise.all([
+        prisma.billingRecord.aggregate({
+          where: {
+            tenantId: appKey.tenantId,
+            createdAt: { gte: dayStart },
+            log: { appKeyId: appKey.id },
+            type: "usage",
+          },
+          _sum: { amountUsd: true },
+        }),
+        prisma.billingRecord.aggregate({
+          where: {
+            tenantId: appKey.tenantId,
+            createdAt: { gte: monthStart },
+            log: { appKeyId: appKey.id },
+            type: "usage",
+          },
+          _sum: { amountUsd: true },
+        }),
+        prisma.billingRecord.aggregate({
+          where: {
+            tenantId: appKey.tenantId,
+            createdAt: { gte: monthStart },
+            type: "usage",
+          },
+          _sum: { amountUsd: true },
+        }),
+        getRoutingStrategy(appKey.tenantId),
+        prisma.provider.findMany({ orderBy: [{ priority: "asc" }, { slug: "asc" }] }),
+      ]);
+
+    if (
+      appKey.dailyBudgetUsd &&
+      (appKeySpendDay._sum.amountUsd ?? new Prisma.Decimal(0)).gte(appKey.dailyBudgetUsd)
+    ) {
+      reply.status(402).send({ error: "AppKey daily budget exceeded" });
+      return;
+    }
+    if (
+      appKey.monthlyBudgetUsd &&
+      (appKeySpendMonth._sum.amountUsd ?? new Prisma.Decimal(0)).gte(appKey.monthlyBudgetUsd)
+    ) {
+      reply.status(402).send({ error: "AppKey monthly budget exceeded" });
+      return;
+    }
+    if (
+      appKey.tenant.spendCapEnforced &&
+      appKey.tenant.monthlyBudgetUsd &&
+      (tenantSpendMonth._sum.amountUsd ?? new Prisma.Decimal(0)).gte(
+        appKey.tenant.monthlyBudgetUsd
+      )
+    ) {
+      reply.status(402).send({ error: "Tenant monthly budget exceeded" });
+      return;
+    }
 
     if (idemKey) {
       const cached = getIdempotency(idemKey);
       if (cached) {
-        const openai = await pickProvider("openai");
-        if (!openai) {
+        const cacheProvider = providers[0];
+        if (!cacheProvider) {
           reply.status(500).send({ error: "No provider configured" });
           return;
         }
@@ -1976,7 +2512,9 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
             data: {
               tenantId: appKey.tenantId,
               appKeyId: appKey.id,
-              providerId: openai.id,
+              providerId: cacheProvider.id,
+              requestId,
+              traceId,
               model,
               promptTokens: 0,
               completionTokens: 0,
@@ -1986,6 +2524,9 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
               routingPrimary: "cache",
               routingActual: "cache",
               routingReason: null,
+              providerErrorCode: null,
+              retryCount: 0,
+              requestSourceIp: requestIp,
               statusCode: 200,
               idempotencyKey: idemRaw ?? null,
             },
@@ -2003,109 +2544,171 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
               logId: logRow.id,
               tenantId: appKey.tenantId,
               amountUsd: new Prisma.Decimal(0),
+              subtotalUsd: new Prisma.Decimal(0),
+              inputUnitPriceUsd: new Prisma.Decimal(0),
+              outputUnitPriceUsd: new Prisma.Decimal(0),
+              quantityPromptTokens: 0,
+              quantityCompletionTokens: 0,
+              taxRatePct: new Prisma.Decimal(0),
+              taxAmountUsd: new Prisma.Decimal(0),
+              reconciliationStatus: "settled",
+              invoiceStatus: "not_requested",
               description: "Idempotent cache hit — no charge",
               type: "cache_hit",
             },
           });
           await tx.appKey.update({
             where: { id: appKey.id },
-            data: { lastUsedAt: new Date() },
+            data: { lastUsedAt: new Date(), lastUsedIp: requestIp },
           });
         });
         return reply.send(cached.response);
       }
     }
 
-    const routing = resolveRouting(model);
-    const provider = await pickProvider(routing.actualSlug);
-    if (!provider) {
-      reply.status(500).send({ error: "Provider not found" });
-      return;
-    }
+    const invokeBody = parsedBody.data as GatewayRequestBody & Record<string, unknown>;
+    try {
+      const execution = await executeGatewayCall(
+        providers,
+        model,
+        invokeBody,
+        routingStrategy.mode as RoutingMode
+      );
+      const promptTokens = execution.result.promptTokens ?? 0;
+      const completionTokens = execution.result.completionTokens ?? 0;
+      const totalTokens = execution.result.totalTokens ?? promptTokens + completionTokens;
+      if (appKey.tenant.balanceTokens.lt(new Prisma.Decimal(totalTokens))) {
+        reply.status(402).send({ error: "Insufficient token balance" });
+        return;
+      }
+      const billing = usageFromCatalog(model, promptTokens, completionTokens);
+      const amountUsd = billing.subtotalUsd;
+      const latencyMs =
+        typeof execution.responsePayload.created === "number"
+          ? Math.max(1, Math.round((Date.now() % 1000) + 40))
+          : 100;
+      const routingPrimary =
+        routingStrategy.primaryProviderType ??
+        findCatalogEntry(model)?.providerType ??
+        "openai";
+      const routingReason =
+        execution.attempts > 1
+          ? `fallback_from_${routingPrimary}`
+          : model === "gpt-fallback-demo" && execution.provider.providerType === "anthropic"
+            ? "fallback_primary_unavailable"
+            : null;
 
-    const promptTokens = estPromptTokens(messages);
-    const completionTokens = 96 + Math.floor(Math.random() * 48);
-    const totalTokens = promptTokens + completionTokens;
-    const latencyMs = 36 + Math.floor(Math.random() * 55);
+      await prisma.$transaction(async (tx) => {
+        const logRow = await tx.apiRequestLog.create({
+          data: {
+            tenantId: appKey.tenantId,
+            appKeyId: appKey.id,
+            providerId: execution.provider.id,
+            requestId,
+            traceId,
+            model,
+            promptTokens,
+            completionTokens,
+            totalTokens,
+            latencyMs,
+            cacheHit: false,
+            routingPrimary,
+            routingActual: execution.provider.slug,
+            routingReason,
+            providerErrorCode: execution.result.providerErrorCode,
+            retryCount: execution.attempts - 1,
+            requestSourceIp: requestIp,
+            statusCode: execution.result.upstreamStatusCode,
+            idempotencyKey: idemRaw ?? null,
+          },
+        });
+        await tx.usageRecord.create({
+          data: {
+            logId: logRow.id,
+            tenantId: appKey.tenantId,
+            period: dayPeriod(),
+            totalTokens,
+          },
+        });
+        await tx.billingRecord.create({
+          data: {
+            logId: logRow.id,
+            tenantId: appKey.tenantId,
+            amountUsd,
+            subtotalUsd: billing.subtotalUsd,
+            inputUnitPriceUsd: billing.inputUnitPriceUsd,
+            outputUnitPriceUsd: billing.outputUnitPriceUsd,
+            quantityPromptTokens: promptTokens,
+            quantityCompletionTokens: completionTokens,
+            taxRatePct: new Prisma.Decimal(0),
+            taxAmountUsd: new Prisma.Decimal(0),
+            reconciliationStatus: "settled",
+            invoiceStatus: "not_requested",
+            description: `LLM usage — ${model} via ${execution.provider.slug}`,
+            type: "usage",
+          },
+        });
+        await tx.tenant.update({
+          where: { id: appKey.tenantId },
+          data: { balanceTokens: { decrement: new Prisma.Decimal(totalTokens) } },
+        });
+        await tx.appKey.update({
+          where: { id: appKey.id },
+          data: { lastUsedAt: new Date(), lastUsedIp: requestIp },
+        });
+      });
 
-    const plan = appKey.tenant.plan;
-    const pricePerM = plan?.pricePerMillionTokens ?? new Prisma.Decimal("1.5");
-    const amountUsd = new Prisma.Decimal(totalTokens)
-      .div(1_000_000)
-      .mul(pricePerM);
-
-    const content = `[mock:${provider.slug}] Demo completion for ${model} (~${totalTokens} tokens).`;
-
-    const resPayload = {
-      id: `chatcmpl-${randomBytes(12).toString("hex")}`,
-      object: "chat.completion",
-      created: Math.floor(Date.now() / 1000),
-      model,
-      choices: [
-        {
-          index: 0,
-          message: { role: "assistant" as const, content },
-          finish_reason: "stop" as const,
-        },
-      ],
-      usage: {
-        prompt_tokens: promptTokens,
-        completion_tokens: completionTokens,
-        total_tokens: totalTokens,
-      },
-    };
-
-    await prisma.$transaction(async (tx) => {
-      const logRow = await tx.apiRequestLog.create({
-        data: {
-          tenantId: appKey.tenantId,
-          appKeyId: appKey.id,
-          providerId: provider.id,
+      if (idemKey) {
+        setIdempotency(idemKey, {
+          response: execution.responsePayload,
+          tokens: totalTokens,
+        });
+      }
+      return reply.send(execution.responsePayload);
+    } catch (error) {
+      if (
+        commercialConfig.allowMockProvider &&
+        error instanceof ProviderCallError &&
+        (error.providerErrorCode === "provider_not_configured" ||
+          error.providerErrorCode === "all_providers_failed")
+      ) {
+        const promptTokens = 0;
+        const completionTokens = 0;
+        const payload = {
+          id: `chatcmpl-demo-${randomBytes(8).toString("hex")}`,
+          object: "chat.completion",
+          created: Math.floor(Date.now() / 1000),
           model,
-          promptTokens,
-          completionTokens,
-          totalTokens,
-          latencyMs,
-          cacheHit: false,
-          routingPrimary: routing.primaryLabel,
-          routingActual: provider.slug,
-          routingReason: routing.reason,
-          statusCode: 200,
-          idempotencyKey: idemRaw ?? null,
-        },
+          choices: [
+            {
+              index: 0,
+              message: {
+                role: "assistant" as const,
+                content:
+                  "当前未配置真实上游模型密钥，已返回本地演示回复。请配置 OPENAI_API_KEY / ANTHROPIC_API_KEY / GOOGLE_API_KEY。",
+              },
+              finish_reason: "stop" as const,
+            },
+          ],
+          usage: {
+            prompt_tokens: promptTokens,
+            completion_tokens: completionTokens,
+            total_tokens: 0,
+          },
+        };
+        return reply.status(200).send(payload);
+      }
+      if (error instanceof ProviderCallError) {
+        reply.status(error.statusCode).send({
+          error: error.message,
+          code: error.providerErrorCode,
+        });
+        return;
+      }
+      reply.status(500).send({
+        error: error instanceof Error ? error.message : "Gateway error",
       });
-      await tx.usageRecord.create({
-        data: {
-          logId: logRow.id,
-          tenantId: appKey.tenantId,
-          period: dayPeriod(),
-          totalTokens,
-        },
-      });
-      await tx.billingRecord.create({
-        data: {
-          logId: logRow.id,
-          tenantId: appKey.tenantId,
-          amountUsd,
-          description: `LLM usage — ${model} via ${provider.slug}`,
-          type: "usage",
-        },
-      });
-      await tx.tenant.update({
-        where: { id: appKey.tenantId },
-        data: { balanceTokens: { decrement: new Prisma.Decimal(totalTokens) } },
-      });
-      await tx.appKey.update({
-        where: { id: appKey.id },
-        data: { lastUsedAt: new Date() },
-      });
-    });
-
-    if (idemKey) {
-      setIdempotency(idemKey, { response: resPayload, tokens: totalTokens });
     }
-
-    return reply.send(resPayload);
   };
 
   app.post("/v1/chat/completions", handleChatCompletions);

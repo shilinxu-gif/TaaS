@@ -71,6 +71,13 @@ export function Routing() {
           <h2 className="rt-card-title">当前模型策略</h2>
           <p className="rt-card-desc muted">{d.strategyNote}</p>
         </div>
+        <p className="muted rt-strategy-hint">
+          首选供应商：{d.config?.primaryProviderType ?? "自动"}
+          {d.config?.fallbackProviderTypes?.length
+            ? ` · fallback：${d.config.fallbackProviderTypes.join(" → ")}`
+            : ""}
+          {d.config ? ` · 重试 ${d.config.maxRetries} 次 · 超时 ${d.config.timeoutMs} ms` : ""}
+        </p>
         <div className="rt-mode-row" role="radiogroup" aria-label="策略模式">
           {modes.map((m) => (
             <button
@@ -140,6 +147,7 @@ export function Routing() {
               <tr>
                 <th>优先级</th>
                 <th>供应商</th>
+                <th>类型</th>
                 <th>模型</th>
                 <th>经济性评分</th>
                 <th>延迟</th>
@@ -152,6 +160,7 @@ export function Routing() {
                 <tr key={row.providerSlug}>
                   <td className="rt-priority">{row.priority}</td>
                   <td className="rt-td-name">{row.providerName}</td>
+                  <td>{row.providerType}</td>
                   <td>
                     <code className="rt-code">{row.model}</code>
                   </td>
@@ -164,7 +173,12 @@ export function Routing() {
                     })}
                     %
                   </td>
-                  <td>{statusBadge(row.status)}</td>
+                  <td>
+                    {statusBadge(row.status)}
+                    <span className="muted rt-route-sub">
+                      {row.configured ? ` · ${row.healthStatus}` : " · 未配置"}
+                    </span>
+                  </td>
                 </tr>
               ))}
             </tbody>

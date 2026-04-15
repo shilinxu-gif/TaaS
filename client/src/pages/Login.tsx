@@ -1,8 +1,8 @@
-import { useCallback, useState } from "react";
+import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api, type User } from "../api";
 import { useAuth } from "../auth";
-import { IconLock, IconShield, IconUser } from "../icons";
+import { IconLock, IconUser } from "../icons";
 import { BrandLogo } from "../BrandLogo";
 
 type LoginRes = {
@@ -10,32 +10,16 @@ type LoginRes = {
   user: User;
 };
 
-function randomCaptcha(): string {
-  return String(Math.floor(1000 + Math.random() * 9000));
-}
-
 export function Login() {
   const navigate = useNavigate();
   const { login, refreshMe } = useAuth();
   const [loginName, setLoginName] = useState("");
   const [password, setPassword] = useState("");
-  const [captchaCode, setCaptchaCode] = useState(randomCaptcha);
-  const [captchaInput, setCaptchaInput] = useState("");
   const [error, setError] = useState("");
-
-  const refreshCaptcha = useCallback(() => {
-    setCaptchaCode(randomCaptcha());
-    setCaptchaInput("");
-  }, []);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
-    if (captchaInput.trim() !== captchaCode) {
-      setError("Captcha does not match");
-      refreshCaptcha();
-      return;
-    }
     try {
       const res = await api<LoginRes>("/auth/login", {
         method: "POST",
@@ -46,7 +30,6 @@ export function Login() {
       navigate("/dashboard", { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sign-in failed");
-      refreshCaptcha();
     }
   }
 
@@ -65,7 +48,7 @@ export function Login() {
             <p className="login-tagline-en">
               AI is changing the world…
             </p>
-            <p className="login-title-sub">多模型路由 · 计量与计费演示</p>
+            <p className="login-title-sub">多模型路由 · 企业计费 · 可审计 AI 网关</p>
           </div>
         </div>
         <div className="login-col login-col--right">
@@ -98,38 +81,7 @@ export function Login() {
                   required
                 />
               </div>
-              <div className="captcha-row">
-                <div className="input-row login-captcha-input-wrap">
-                  <span className="input-icon">
-                    <IconShield />
-                  </span>
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    autoComplete="off"
-                    placeholder="Captcha"
-                    value={captchaInput}
-                    onChange={(e) => setCaptchaInput(e.target.value)}
-                    required
-                  />
-                </div>
-                <div className="captcha-box" title="Captcha">
-                  {captchaCode}
-                </div>
-                <button
-                  type="button"
-                  className="captcha-refresh"
-                  onClick={refreshCaptcha}
-                  aria-label="Refresh captcha"
-                >
-                  <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden>
-                    <path
-                      fill="currentColor"
-                      d="M17.65 6.35A7.958 7.958 0 0012 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0112 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"
-                    />
-                  </svg>
-                </button>
-              </div>
+              <p className="muted">企业试用默认 14 天，注册后自动创建租户、预算与路由策略。</p>
               {error ? <p className="error">{error}</p> : null}
               <button type="submit" className="btn-login-main">
                 登录

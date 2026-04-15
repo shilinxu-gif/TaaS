@@ -8,6 +8,7 @@ import {
   IcDashboard,
   IcInvoiceDoc,
   IcKey,
+  IcOps,
   IcReceipt,
   IcRoute,
   IcWallet,
@@ -27,6 +28,7 @@ const links: {
   { to: "/usage", label: "用量", Icon: IcChart },
   { to: "/optimization", label: "成本优化", Icon: IcBolt },
   { to: "/routing", label: "路由调度", Icon: IcRoute },
+  { to: "/ops", label: "运营与审计", Icon: IcOps },
   { to: "/billing", label: "计费中心", Icon: IcReceipt },
   { to: "/recharge", label: "在线充值", Icon: IcWallet },
   { to: "/invoices", label: "自动化开票", Icon: IcInvoiceDoc },
@@ -36,6 +38,7 @@ export function Layout() {
   const { user, logout } = useAuth();
   const initial = user?.name?.charAt(0) ?? "?";
   const tenantLabel = user?.tenant?.name ?? "—";
+  const tenantStatus = user?.tenant?.status ?? "";
   const [navCollapsed, setNavCollapsed] = useState(() => {
     try {
       return localStorage.getItem(NAV_COLLAPSED_KEY) === "1";
@@ -72,7 +75,10 @@ export function Layout() {
           <BrandLogo variant="header" />
         </div>
         <div className="desk-header-right">
-          <span className="muted saas-tenant-pill">{tenantLabel}</span>
+          <span className="muted saas-tenant-pill">
+            {tenantLabel}
+            {tenantStatus ? ` · ${tenantStatus}` : ""}
+          </span>
           <div className="desk-user">
             <span className="desk-user-avatar">{initial}</span>
             <span>{user?.name}</span>

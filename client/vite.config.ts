@@ -79,12 +79,12 @@ export default defineConfig({
   plugins: [react()],
   server: {
     host: true,
-    port: 5173,
+    port: 5174,
     proxy: apiProxy,
   },
   preview: {
     host: true,
-    port: 4173,
+    port: 4174,
     proxy: apiProxy,
   },
 });

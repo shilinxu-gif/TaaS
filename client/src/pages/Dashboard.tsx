@@ -50,6 +50,15 @@ export function Dashboard() {
               <span className="dash-plan">{d.tenant.plan.name}</span>
             ) : null}
           </p>
+          {d.tenant.status === "trial" ? (
+            <p className="muted">
+              试用中
+              {d.tenant.trialDaysRemaining != null
+                ? ` · 剩余 ${d.tenant.trialDaysRemaining} 天`
+                : ""}
+              {d.tenant.contactSalesEmail ? ` · 升级联系 ${d.tenant.contactSalesEmail}` : ""}
+            </p>
+          ) : null}
         </div>
       </header>
 
@@ -87,6 +96,27 @@ export function Dashboard() {
       </section>
 
       <div className="dash-grid-2">
+        <section className="dash-card">
+          <h2 className="dash-card-title">服务水平</h2>
+          <p className="dash-card-desc muted">
+            客户成功率 {d.kpis.customerSuccessRate.toFixed(1)}% · 上游成功率{" "}
+            {d.kpis.providerSuccessRate.toFixed(1)}% · 平均延迟 {d.kpis.averageLatencyMs} ms
+          </p>
+          <ul className="dash-chart-list">
+            <li className="dash-chart-item">
+              <span className="dash-chart-model">SLO 目标</span>
+              <span className="dash-chart-num">
+                {d.serviceTargets?.successSloPct ?? 99.5}% /{" "}
+                {d.serviceTargets?.latencySloMs ?? 1500} ms
+              </span>
+            </li>
+            <li className="dash-chart-item">
+              <span className="dash-chart-model">24h 失败请求</span>
+              <span className="dash-chart-num">{d.kpis.failedRequests24h}</span>
+            </li>
+          </ul>
+        </section>
+
         <section className="dash-card">
           <h2 className="dash-card-title">近 7 天用量趋势</h2>
           <p className="dash-card-desc muted">按日汇总 Token 消耗</p>

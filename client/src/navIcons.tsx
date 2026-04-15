@@ -137,3 +137,14 @@ export function IcInvoiceDoc() {
     </svg>
   );
 }
+
+export function IcOps() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden>
+      <path
+        fill="currentColor"
+        d="M3 13h4v8H3v-8zm7-10h4v18h-4V3zm7 6h4v12h-4V9z"
+      />
+    </svg>
+  );
+}

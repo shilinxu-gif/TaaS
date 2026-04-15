@@ -36,8 +36,13 @@ export function ApiKeys() {
   const [formDesc, setFormDesc] = useState("");
   const [formQps, setFormQps] = useState("");
   const [formBudget, setFormBudget] = useState("");
+  const [formMonthlyBudget, setFormMonthlyBudget] = useState("");
   const [formModelsText, setFormModelsText] = useState("");
   const [formStatus, setFormStatus] = useState<"active" | "disabled">("active");
+  const [formEnvironment, setFormEnvironment] = useState<
+    "production" | "staging" | "development" | "sandbox"
+  >("production");
+  const [formScopes, setFormScopes] = useState<string[]>(["chat:complete"]);
 
   const [playKey, setPlayKey] = useState("");
   const [model, setModel] = useState("gpt-4o-mini");
@@ -78,8 +83,11 @@ export function ApiKeys() {
           description: formDesc.trim() || null,
           qpsLimit,
           dailyBudgetUsd: budgetRaw === "" ? null : budgetRaw,
+          monthlyBudgetUsd: formMonthlyBudget.trim() || null,
           allowedModels: parseModelsFromText(formModelsText),
           status: formStatus,
+          environment: formEnvironment,
+          scopes: formScopes,
         }),
       });
     },
@@ -91,8 +99,11 @@ export function ApiKeys() {
       setFormDesc("");
       setFormQps("");
       setFormBudget("");
+      setFormMonthlyBudget("");
       setFormModelsText("");
       setFormStatus("active");
+      setFormEnvironment("production");
+      setFormScopes(["chat:complete"]);
     },
   });
 
@@ -157,7 +168,7 @@ export function ApiKeys() {
           <p className="keys-subtitle muted">
             使用 AppKey 调用{" "}
             <code className="keys-inline-code">POST /v1/chat/completions</code>{" "}
-           （OpenAI 兼容，演示供应商）
+           （OpenAI 兼容，多供应商真实网关）
           </p>
         </div>
         <button type="button" className="btn btn-primary" onClick={openCreateModal}>
@@ -174,17 +185,21 @@ export function ApiKeys() {
                 <th>密钥前缀</th>
                 <th>租户</th>
                 <th>状态</th>
+                <th>环境</th>
                 <th>QPS 限制</th>
                 <th>日预算 (USD)</th>
+                <th>月预算 (USD)</th>
                 <th>允许模型</th>
+                <th>权限域</th>
                 <th>创建时间</th>
+                <th>最近来源</th>
                 <th>启用</th>
               </tr>
             </thead>
             <tbody>
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="keys-table-empty muted">
+                  <td colSpan={12} className="keys-table-empty muted">
                     暂无密钥，点击「创建密钥」新建
                   </td>
                 </tr>
@@ -197,11 +212,15 @@ export function ApiKeys() {
                     </td>
                     <td>{row.tenantName}</td>
                     <td>{statusBadge(row.status)}</td>
+                    <td>{row.environment}</td>
                     <td className="tabular-nums">
                       {row.qpsLimit != null ? row.qpsLimit : "—"}
                     </td>
                     <td className="tabular-nums">
                       {row.dailyBudgetUsd != null ? row.dailyBudgetUsd : "—"}
+                    </td>
+                    <td className="tabular-nums">
+                      {row.monthlyBudgetUsd != null ? row.monthlyBudgetUsd : "—"}
                     </td>
                     <td className="keys-td-models">
                       {row.allowedModels.length === 0 ? (
@@ -212,9 +231,11 @@ export function ApiKeys() {
                         </span>
                       )}
                     </td>
+                    <td>{row.scopes.join(", ")}</td>
                     <td className="keys-td-time">
                       {new Date(row.createdAt).toLocaleString("zh-CN")}
                     </td>
+                    <td>{row.lastUsedIp ?? "—"}</td>
                     <td>
                       {row.status === "revoked" ? (
                         <span className="muted">—</span>
@@ -264,8 +285,9 @@ export function ApiKeys() {
               onChange={(e) => setModel(e.target.value)}
             >
               <option value="gpt-4o-mini">gpt-4o-mini</option>
+              <option value="gpt-4.1-mini">gpt-4.1-mini</option>
               <option value="gemini-1.5-pro">gemini-1.5-pro</option>
-              <option value="claude-3-5-sonnet">claude-3-5-sonnet</option>
+              <option value="claude-3-5-sonnet-latest">claude-3-5-sonnet-latest</option>
               <option value="gpt-fallback-demo">gpt-fallback-demo</option>
             </select>
             <input
@@ -356,6 +378,39 @@ export function ApiKeys() {
                   />
                 </label>
               </div>
+              <div className="keys-field-row">
+                <label className="keys-field keys-field--half">
+                  <span className="keys-label">月预算 (USD)</span>
+                  <input
+                    className="input-plain"
+                    inputMode="decimal"
+                    value={formMonthlyBudget}
+                    onChange={(e) => setFormMonthlyBudget(e.target.value)}
+                    placeholder="留空表示不限制"
+                  />
+                </label>
+                <label className="keys-field keys-field--half">
+                  <span className="keys-label">环境</span>
+                  <select
+                    className="input-plain"
+                    value={formEnvironment}
+                    onChange={(e) =>
+                      setFormEnvironment(
+                        e.target.value as
+                          | "production"
+                          | "staging"
+                          | "development"
+                          | "sandbox"
+                      )
+                    }
+                  >
+                    <option value="production">production</option>
+                    <option value="staging">staging</option>
+                    <option value="development">development</option>
+                    <option value="sandbox">sandbox</option>
+                  </select>
+                </label>
+              </div>
               <label className="keys-field">
                 <span className="keys-label">允许模型</span>
                 <textarea
@@ -365,6 +420,29 @@ export function ApiKeys() {
                   placeholder="每行一个 model id，或用英文逗号分隔。留空表示不限制。"
                   rows={3}
                 />
+              </label>
+              <label className="keys-field">
+                <span className="keys-label">权限域</span>
+                <div className="keys-play-row">
+                  {["chat:complete", "usage:read", "billing:read", "admin:ops"].map(
+                    (scope) => (
+                      <label key={scope} className="muted">
+                        <input
+                          type="checkbox"
+                          checked={formScopes.includes(scope)}
+                          onChange={(e) =>
+                            setFormScopes((current) =>
+                              e.target.checked
+                                ? [...new Set([...current, scope])]
+                                : current.filter((item) => item !== scope)
+                            )
+                          }
+                        />{" "}
+                        {scope}
+                      </label>
+                    )
+                  )}
+                </div>
               </label>
               <label className="keys-field">
                 <span className="keys-label">状态</span>

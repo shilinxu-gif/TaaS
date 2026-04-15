@@ -98,11 +98,20 @@ export async function gatewayChat(
 export type User = { id: string; email: string; name: string };
 
 export type MeUser = User & {
+  role?: string;
+  emailVerifiedAt?: string | null;
   tenant?: {
     id: string;
     name: string;
     slug: string;
+    status: string;
     balanceTokens: string;
+    trialEndsAt?: string | null;
+    billingEmail?: string | null;
+    contactSalesEmail?: string | null;
+    monthlyBudgetUsd?: string | null;
+    spendCapEnforced?: boolean;
+    contractCode?: string | null;
     plan: { name: string; code: string } | null;
   } | null;
 };
@@ -111,7 +120,13 @@ export type DashboardSummary = {
   tenant: {
     name: string;
     slug: string;
+    status: string;
     balanceTokens: string;
+    trialEndsAt?: string | null;
+    trialDaysRemaining?: number | null;
+    billingEmail?: string | null;
+    contactSalesEmail?: string | null;
+    monthlyBudgetUsd?: string | null;
     plan: { name: string; code: string } | null;
   };
   kpis: {
@@ -119,6 +134,10 @@ export type DashboardSummary = {
     tokens24h: number;
     spendUsd24h: string;
     cacheHitRate: number;
+    averageLatencyMs: number;
+    customerSuccessRate: number;
+    providerSuccessRate: number;
+    failedRequests24h: number;
   };
   today: {
     spendUsd: string;
@@ -128,6 +147,7 @@ export type DashboardSummary = {
   tenantsOverview: { name: string; slug: string; requests24h: number }[];
   chartSeries7d: { date: string; tokens: number }[];
   modelMix7d: { model: string; tokens: number }[];
+  serviceTargets?: { latencySloMs: number; successSloPct: number };
   risks: { level: "info" | "warning" | "critical"; title: string; detail: string }[];
 };
 
@@ -139,11 +159,15 @@ export type AppKeyListRow = {
   keyPrefix: string;
   tenantName: string;
   status: string;
+  environment: string;
+  scopes: string[];
   qpsLimit: number | null;
   dailyBudgetUsd: string | null;
+  monthlyBudgetUsd: string | null;
   allowedModels: string[];
   createdAt: string;
   lastUsedAt: string | null;
+  lastUsedIp: string | null;
 };
 
 /** 创建成功后返回完整 token（仅此次展示） */
@@ -157,6 +181,8 @@ export type AppKeyRow = AppKeyListRow;
 /** 用量明细（按请求日志，含计费） */
 export type UsageRow = {
   id: string;
+  requestId: string | null;
+  traceId: string | null;
   createdAt: string;
   period: string;
   tenantName: string;
@@ -166,12 +192,20 @@ export type UsageRow = {
   completionTokens: number;
   totalTokens: number;
   costUsd: string;
+  subtotalUsd: string;
   currency: string;
   billingType: string | null;
   billingDescription: string | null;
+  inputUnitPriceUsd: string;
+  outputUnitPriceUsd: string;
+  reconciliationStatus: string | null;
+  invoiceStatus: string | null;
   cacheHit: boolean;
   provider: { name: string; slug: string };
   latencyMs: number;
+  providerErrorCode: string | null;
+  retryCount: number;
+  requestSourceIp: string | null;
   statusCode: number;
   routingPrimary: string | null;
   routingActual: string | null;
@@ -205,8 +239,15 @@ export type BillingRecordRow = {
   type: string;
   typeLabel: string;
   amountUsd: string;
+  subtotalUsd: string;
+  inputUnitPriceUsd: string;
+  outputUnitPriceUsd: string;
+  quantityPromptTokens: number;
+  quantityCompletionTokens: number;
   currency: string;
   status: string;
+  reconciliationStatus: string;
+  invoiceStatus: string;
   description: string;
   model: string;
 };
@@ -218,6 +259,12 @@ export type BillingOverview = {
     currentMonthUsageTokens: number;
     estimatedSavingUsd: string;
     currency: string;
+    trialEndsAt?: string | null;
+    trialDaysRemaining?: number | null;
+    tenantStatus?: string;
+    billingEmail?: string | null;
+    monthlyBudgetUsd?: string | null;
+    contractCode?: string | null;
   };
   currentPlan: BillingPlanDto | null;
   plans: BillingPlanDto[];
@@ -253,18 +300,29 @@ export type RoutingFallbackChain = {
 export type RoutingProviderRow = {
   providerSlug: string;
   providerName: string;
+  providerType: string;
   model: string;
   priority: number;
   costScore: number;
   latencyMs: number;
   successRate: number;
   status: "active" | "degraded" | "readonly";
+  enabled: boolean;
+  healthStatus: string;
+  configured: boolean;
 };
 
 export type RoutingSummary = {
   windowDays: number;
   strategyMode: RoutingStrategyMode;
   strategyNote: string;
+  config?: {
+    mode: RoutingStrategyMode;
+    primaryProviderType: string | null;
+    fallbackProviderTypes: string[];
+    maxRetries: number;
+    timeoutMs: number;
+  };
   fallbackChains: RoutingFallbackChain[];
   providerPriority: RoutingProviderRow[];
   routes: {
@@ -403,4 +461,33 @@ export type InvoiceRequestDetail = InvoiceRequestRow & {
   buyerAddressPhone: string | null;
   buyerBankAccount: string | null;
   updatedAt: string;
+};
+
+export type OpsOverview = {
+  requests24h: number;
+  failed24h: number;
+  customerSuccessRate: number;
+  spendUsdMonth: string;
+  auditEvents24h: number;
+  providers: {
+    slug: string;
+    type: string;
+    configured: boolean;
+    enabled: boolean;
+    healthStatus: string;
+    priority: number;
+  }[];
+};
+
+export type AuditLogRow = {
+  id: string;
+  tenantId: string | null;
+  userId: string | null;
+  actorType: string;
+  action: string;
+  entityType: string;
+  entityId: string | null;
+  ip: string | null;
+  metadata: unknown;
+  createdAt: string;
 };

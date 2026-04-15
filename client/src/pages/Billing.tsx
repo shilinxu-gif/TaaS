@@ -99,6 +99,19 @@ export function Billing() {
         </article>
       </section>
 
+      <section className="bill-section">
+        <h2 className="bill-section-title">商业账户</h2>
+        <p className="bill-section-desc muted">
+          状态：{summary.tenantStatus ?? "unknown"}
+          {summary.trialDaysRemaining != null ? ` · 试用剩余 ${summary.trialDaysRemaining} 天` : ""}
+          {summary.contractCode ? ` · 合同 ${summary.contractCode}` : ""}
+        </p>
+        <p className="bill-section-desc muted">
+          账单邮箱：{summary.billingEmail ?? "未设置"}
+          {summary.monthlyBudgetUsd ? ` · 月预算 $${formatUsd(summary.monthlyBudgetUsd)}` : ""}
+        </p>
+      </section>
+
       <BillingRechargeSection variant="billing" />
 
       <section className="bill-section">
@@ -181,6 +194,14 @@ export function Billing() {
             </tbody>
           </table>
         </div>
+        {d.records.length > 0 ? (
+          <p className="bill-section-desc muted">
+            首条记录快照：输入单价 ${formatUsd(d.records[0].inputUnitPriceUsd)} / 百万，
+            输出单价 ${formatUsd(d.records[0].outputUnitPriceUsd)} / 百万，
+            对账 {d.records[0].reconciliationStatus}，
+            开票 {d.records[0].invoiceStatus}
+          </p>
+        ) : null}
       </section>
     </div>
   );

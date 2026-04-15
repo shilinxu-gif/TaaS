@@ -2,8 +2,20 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { prisma } from "./db.js";
+import { authConfig, isProductionLike } from "./config.js";
 
-const JWT_SECRET = process.env.JWT_SECRET ?? "dev-only-change-me";
+const JWT_SECRET = authConfig.jwtSecret;
+
+export type TenantRole =
+  | "owner"
+  | "admin"
+  | "billing"
+  | "developer"
+  | "viewer";
+
+if (isProductionLike() && authConfig.isWeakJwtSecret) {
+  throw new Error("JWT_SECRET must be configured for staging/production");
+}
 
 export type JwtPayload = {
   sub: string;
@@ -30,7 +42,11 @@ export async function verifyPassword(password: string, hash: string): Promise<bo
   return bcrypt.compare(password, hash);
 }
 
-export type AuthedRequest = FastifyRequest & { userId: string; tenantId: string };
+export type AuthedRequest = FastifyRequest & {
+  userId: string;
+  tenantId: string;
+  role: TenantRole;
+};
 
 export async function authMiddleware(
   request: FastifyRequest,
@@ -59,7 +75,21 @@ export async function authMiddleware(
     }
     (request as AuthedRequest).userId = sub;
     (request as AuthedRequest).tenantId = tenantId;
+    (request as AuthedRequest).role = (member.role as TenantRole) ?? "viewer";
   } catch {
     reply.status(401).send({ error: "Unauthorized" });
   }
+}
+
+export function requireTenantRole(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  allowed: TenantRole[]
+): boolean {
+  const role = (request as AuthedRequest).role;
+  if (!allowed.includes(role)) {
+    reply.status(403).send({ error: "Forbidden" });
+    return false;
+  }
+  return true;
 }

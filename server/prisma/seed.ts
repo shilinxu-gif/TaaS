@@ -1,10 +1,19 @@
 import "dotenv/config";
 import bcrypt from "bcryptjs";
 import { Prisma, PrismaClient } from "@prisma/client";
+import { buildAppKeyPreview, hashAppKey } from "../src/appKeys.js";
+import { commercialConfig } from "../src/config.js";
+import { encryptSecret } from "../src/crypto.js";
+import { defaultCatalogForProvider } from "../src/providerCatalog.js";
 
 const prisma = new PrismaClient();
 
 const PASS = "123456";
+
+function envSecret(name: string): string | null {
+  const raw = process.env[name]?.trim();
+  return raw ? encryptSecret(raw) : null;
+}
 
 /** 与 Dashboard 7 日图对齐：按 UTC 日历天散布 */
 function utcDayOffset(dayAgo: number, hourUTC = 12, minUTC = 0): Date {
@@ -38,6 +47,7 @@ async function insertLogBundle(
 ): Promise<void> {
   const total = L.promptTokens + L.completionTokens;
   const amountUsd = new Prisma.Decimal(total).div(1_000_000).mul(pricePerM);
+  const subtotalUsd = amountUsd;
   const createdAt = L.createdAt;
 
   const logRow = await prisma.apiRequestLog.create({
@@ -78,6 +88,15 @@ async function insertLogBundle(
       logId: logRow.id,
       tenantId: L.tenantId,
       amountUsd: L.cacheHit ? new Prisma.Decimal(0) : amountUsd,
+      subtotalUsd: L.cacheHit ? new Prisma.Decimal(0) : subtotalUsd,
+      inputUnitPriceUsd: L.cacheHit ? new Prisma.Decimal(0) : pricePerM,
+      outputUnitPriceUsd: L.cacheHit ? new Prisma.Decimal(0) : pricePerM,
+      quantityPromptTokens: L.promptTokens,
+      quantityCompletionTokens: L.completionTokens,
+      taxRatePct: new Prisma.Decimal(0),
+      taxAmountUsd: new Prisma.Decimal(0),
+      reconciliationStatus: "reconciled",
+      invoiceStatus: "not_requested",
       description: desc,
       type: L.cacheHit ? "cache_hit" : "usage",
       createdAt,
@@ -86,12 +105,15 @@ async function insertLogBundle(
 }
 
 async function main() {
+  await prisma.auditLog.deleteMany();
   await prisma.invoiceRequest.deleteMany();
   await prisma.walletRechargeOrder.deleteMany();
   await prisma.billingRecord.deleteMany();
   await prisma.usageRecord.deleteMany();
   await prisma.apiRequestLog.deleteMany();
   await prisma.appKey.deleteMany();
+  await prisma.tenantCacheSettings.deleteMany();
+  await prisma.tenantRoutingStrategy.deleteMany();
   await prisma.subscription.deleteMany();
   await prisma.promptTemplate.deleteMany();
   await prisma.tenantMember.deleteMany();
@@ -126,24 +148,48 @@ async function main() {
       data: {
         name: "OpenAI",
         slug: "openai",
+        providerType: "openai",
         status: "active",
         baseUrl: "https://api.openai.com/v1",
+        enabled: true,
+        apiKeyCiphertext: envSecret("OPENAI_API_KEY"),
+        modelCatalog: defaultCatalogForProvider("openai"),
+        priority: 10,
+        timeoutMs: 25000,
+        healthStatus: "healthy",
+        supportsStreaming: true,
       },
     }),
     prisma.provider.create({
       data: {
         name: "Google Gemini",
         slug: "gemini",
+        providerType: "google",
         status: "active",
-        baseUrl: "https://generativelanguage.googleapis.com",
+        baseUrl: "https://generativelanguage.googleapis.com/v1beta",
+        enabled: true,
+        apiKeyCiphertext: envSecret("GOOGLE_API_KEY"),
+        modelCatalog: defaultCatalogForProvider("google"),
+        priority: 20,
+        timeoutMs: 25000,
+        healthStatus: "healthy",
+        supportsStreaming: true,
       },
     }),
     prisma.provider.create({
       data: {
         name: "Anthropic Claude",
         slug: "claude",
+        providerType: "anthropic",
         status: "active",
-        baseUrl: "https://api.anthropic.com",
+        baseUrl: "https://api.anthropic.com/v1",
+        enabled: true,
+        apiKeyCiphertext: envSecret("ANTHROPIC_API_KEY"),
+        modelCatalog: defaultCatalogForProvider("anthropic"),
+        priority: 15,
+        timeoutMs: 30000,
+        healthStatus: "healthy",
+        supportsStreaming: true,
       },
     }),
   ]);
@@ -155,6 +201,8 @@ async function main() {
       email: "wangqiang@crm.local",
       passwordHash: passHash,
       name: "王强",
+      emailVerifiedAt: new Date(),
+      platformRole: "support",
     },
   });
   const userLi = await prisma.user.create({
@@ -162,6 +210,8 @@ async function main() {
       email: "liwei@crm.local",
       passwordHash: passHash,
       name: "李蔚",
+      emailVerifiedAt: new Date(),
+      platformRole: "user",
     },
   });
 
@@ -169,23 +219,77 @@ async function main() {
     data: {
       name: "Acme 智能客服",
       slug: "acme-support",
+      status: "active",
       planId: planScale.id,
       balanceTokens: new Prisma.Decimal(428_391),
+      billingEmail: "finance@acme-demo.example",
+      contactSalesEmail: commercialConfig.salesEmail,
+      monthlyBudgetUsd: new Prisma.Decimal("1200.0000"),
+      spendCapEnforced: true,
+      contractCode: "ACME-2026-ENTERPRISE",
+      trialEndsAt: utcDayOffset(-30),
     },
   });
   const tenantBeta = await prisma.tenant.create({
     data: {
       name: "Beta 制造业数智化",
       slug: "beta-mfg",
+      status: "trial",
       planId: planStarter.id,
       balanceTokens: new Prisma.Decimal(51_200),
+      billingEmail: "ops@beta-demo.example",
+      contactSalesEmail: commercialConfig.salesEmail,
+      monthlyBudgetUsd: new Prisma.Decimal("200.0000"),
+      spendCapEnforced: true,
+      contractCode: "BETA-TRIAL-2026",
+      trialEndsAt: utcDayOffset(-14),
     },
   });
 
   await prisma.tenantMember.createMany({
     data: [
-      { userId: userWang.id, tenantId: tenantAcme.id, role: "admin" },
-      { userId: userLi.id, tenantId: tenantBeta.id, role: "admin" },
+      { userId: userWang.id, tenantId: tenantAcme.id, role: "owner" },
+      { userId: userLi.id, tenantId: tenantBeta.id, role: "owner" },
+    ],
+  });
+
+  await prisma.tenantRoutingStrategy.createMany({
+    data: [
+      {
+        tenantId: tenantAcme.id,
+        mode: "balance",
+        primaryProviderType: "openai",
+        fallbackProviderTypes: ["anthropic", "google"],
+        maxRetries: 2,
+        timeoutMs: 25000,
+      },
+      {
+        tenantId: tenantBeta.id,
+        mode: "cost",
+        primaryProviderType: "google",
+        fallbackProviderTypes: ["openai", "anthropic"],
+        maxRetries: 1,
+        timeoutMs: 20000,
+      },
+    ],
+  });
+
+  await prisma.tenantCacheSettings.createMany({
+    data: [
+      {
+        tenantId: tenantAcme.id,
+        enabled: true,
+        mode: "hybrid",
+        similarityThreshold: new Prisma.Decimal("0.920"),
+        ttlSeconds: 86400,
+      },
+      {
+        tenantId: tenantBeta.id,
+        enabled: true,
+        mode: "semantic",
+        similarityThreshold: new Prisma.Decimal("0.900"),
+        ttlSeconds: 43200,
+      },
     ],
   });
 
@@ -196,10 +300,15 @@ async function main() {
         tenantId: tenantAcme.id,
         name: "生产网关 · 在线客服",
         description: "官网与 APP 用户会话，走 OpenAI/Gemini 主线路",
-        token: "sk-demo-acme-prod-gateway",
+        token: null,
+        tokenHash: hashAppKey("sk-demo-acme-prod-gateway"),
+        tokenPreview: buildAppKeyPreview("sk-demo-acme-prod-gateway"),
         status: "active",
+        environment: "production",
+        scopes: ["chat:complete", "usage:read", "billing:read"],
         qpsLimit: 120,
         dailyBudgetUsd: new Prisma.Decimal("500.0000"),
+        monthlyBudgetUsd: new Prisma.Decimal("9000.0000"),
         allowedModels: [
           "gpt-4o-mini",
           "gpt-4o",
@@ -208,6 +317,7 @@ async function main() {
           "gpt-fallback-demo",
         ],
         lastUsedAt: utcDayOffset(0, 10, 5),
+        lastUsedIp: "203.0.113.8",
       },
     }),
     prisma.appKey.create({
@@ -215,12 +325,18 @@ async function main() {
         tenantId: tenantAcme.id,
         name: "内部运营台 · QA",
         description: "工单摘要、知识库抽检；含降级演练 traffic",
-        token: "sk-demo-acme-internal-qa",
+        token: null,
+        tokenHash: hashAppKey("sk-demo-acme-internal-qa"),
+        tokenPreview: buildAppKeyPreview("sk-demo-acme-internal-qa"),
         status: "active",
+        environment: "production",
+        scopes: ["chat:complete", "usage:read", "admin:ops"],
         qpsLimit: 45,
         dailyBudgetUsd: new Prisma.Decimal("120.0000"),
-        allowedModels: ["gpt-4o-mini", "claude-3-5-sonnet", "gpt-fallback-demo"],
+        monthlyBudgetUsd: new Prisma.Decimal("2000.0000"),
+        allowedModels: ["gpt-4o-mini", "claude-3-5-sonnet-latest", "gpt-fallback-demo"],
         lastUsedAt: utcDayOffset(2, 9, 30),
+        lastUsedIp: "203.0.113.19",
       },
     }),
     prisma.appKey.create({
@@ -228,12 +344,18 @@ async function main() {
         tenantId: tenantAcme.id,
         name: "移动端 SDK",
         description: "推送文案与短轮对话",
-        token: "sk-demo-acme-mobile-sdk",
+        token: null,
+        tokenHash: hashAppKey("sk-demo-acme-mobile-sdk"),
+        tokenPreview: buildAppKeyPreview("sk-demo-acme-mobile-sdk"),
         status: "active",
+        environment: "staging",
+        scopes: ["chat:complete"],
         qpsLimit: 60,
         dailyBudgetUsd: new Prisma.Decimal("90.0000"),
+        monthlyBudgetUsd: new Prisma.Decimal("1500.0000"),
         allowedModels: ["gpt-4o-mini", "claude-3-haiku"],
         lastUsedAt: utcDayOffset(4, 14, 0),
+        lastUsedIp: "198.51.100.20",
       },
     }),
   ]);
@@ -244,12 +366,18 @@ async function main() {
         tenantId: tenantBeta.id,
         name: "CRM 连接器",
         description: "销售助手与邮件润色，Starter 套餐",
-        token: "sk-demo-beta-crm-connector",
+        token: null,
+        tokenHash: hashAppKey("sk-demo-beta-crm-connector"),
+        tokenPreview: buildAppKeyPreview("sk-demo-beta-crm-connector"),
         status: "active",
+        environment: "production",
+        scopes: ["chat:complete", "usage:read"],
         qpsLimit: 20,
         dailyBudgetUsd: new Prisma.Decimal("35.0000"),
+        monthlyBudgetUsd: new Prisma.Decimal("500.0000"),
         allowedModels: ["gpt-4o-mini", "gemini-1.5-pro"],
         lastUsedAt: utcDayOffset(1, 11, 0),
+        lastUsedIp: "198.51.100.80",
       },
     }),
     prisma.appKey.create({
@@ -257,12 +385,18 @@ async function main() {
         tenantId: tenantBeta.id,
         name: "批处理 Worker",
         description: "夜间报表生成与标签批注",
-        token: "sk-demo-beta-batch-worker",
+        token: null,
+        tokenHash: hashAppKey("sk-demo-beta-batch-worker"),
+        tokenPreview: buildAppKeyPreview("sk-demo-beta-batch-worker"),
         status: "active",
+        environment: "production",
+        scopes: ["chat:complete", "usage:read"],
         qpsLimit: 15,
         dailyBudgetUsd: new Prisma.Decimal("25.0000"),
+        monthlyBudgetUsd: new Prisma.Decimal("350.0000"),
         allowedModels: [],
         lastUsedAt: utcDayOffset(3, 22, 0),
+        lastUsedIp: "198.51.100.81",
       },
     }),
     prisma.appKey.create({
@@ -270,12 +404,18 @@ async function main() {
         tenantId: tenantBeta.id,
         name: "预发环境",
         description: "与 Acme 同模型矩阵，用于对照测试",
-        token: "sk-demo-beta-staging",
+        token: null,
+        tokenHash: hashAppKey("sk-demo-beta-staging"),
+        tokenPreview: buildAppKeyPreview("sk-demo-beta-staging"),
         status: "active",
+        environment: "staging",
+        scopes: ["chat:complete"],
         qpsLimit: 10,
         dailyBudgetUsd: new Prisma.Decimal("12.0000"),
+        monthlyBudgetUsd: new Prisma.Decimal("120.0000"),
         allowedModels: ["gpt-4o-mini", "gpt-fallback-demo"],
         lastUsedAt: utcDayOffset(5, 8, 45),
+        lastUsedIp: "198.51.100.82",
       },
     }),
   ]);

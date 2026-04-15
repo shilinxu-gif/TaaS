@@ -8,36 +8,49 @@ datasource db {
 }
 
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  passwordHash String   @map("password_hash")
-  name         String
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  id              String    @id @default(cuid())
+  email           String    @unique
+  passwordHash    String    @map("password_hash")
+  name            String
+  emailVerifiedAt DateTime? @map("email_verified_at")
+  platformRole    String    @default("user") @map("platform_role")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
 
   memberships TenantMember[]
+  auditLogs    AuditLog[]
 
   @@map("users")
 }
 
 /// 企业租户
 model Tenant {
-  id            String   @id @default(cuid())
-  name          String
-  slug          String   @unique
-  planId        String?  @map("plan_id")
-  balanceTokens Decimal  @default(500000) @map("balance_tokens") @db.Decimal(18, 2)
-  createdAt     DateTime @default(now()) @map("created_at")
-  updatedAt     DateTime @updatedAt @map("updated_at")
+  id               String    @id @default(cuid())
+  name             String
+  slug             String    @unique
+  status           String    @default("trial")
+  planId           String?   @map("plan_id")
+  balanceTokens    Decimal   @default(500000) @map("balance_tokens") @db.Decimal(18, 2)
+  trialEndsAt      DateTime? @map("trial_ends_at")
+  billingEmail     String?   @map("billing_email")
+  contactSalesEmail String?  @map("contact_sales_email")
+  monthlyBudgetUsd Decimal?  @map("monthly_budget_usd") @db.Decimal(12, 4)
+  spendCapEnforced Boolean   @default(false) @map("spend_cap_enforced")
+  contractCode     String?   @map("contract_code")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
 
-  plan        Plan?        @relation(fields: [planId], references: [id], onDelete: SetNull)
-  members     TenantMember[]
-  appKeys     AppKey[]
-  requestLogs ApiRequestLog[]
-  usageRows   UsageRecord[]
-  billingRows BillingRecord[]
-  subscriptions Subscription[]
-  promptTemplates PromptTemplate[]
+  plan              Plan?                 @relation(fields: [planId], references: [id], onDelete: SetNull)
+  members           TenantMember[]
+  appKeys           AppKey[]
+  requestLogs       ApiRequestLog[]
+  usageRows         UsageRecord[]
+  billingRows       BillingRecord[]
+  subscriptions     Subscription[]
+  promptTemplates   PromptTemplate[]
+  routingStrategy   TenantRoutingStrategy?
+  cacheSettings     TenantCacheSettings?
+  auditLogs         AuditLog[]
   walletRecharges WalletRechargeOrder[]
   invoiceRequests InvoiceRequest[]
 
@@ -112,12 +125,22 @@ model PromptTemplate {
 
 /// 供应商（mock）
 model Provider {
-  id        String   @id @default(cuid())
-  name      String
-  slug      String   @unique
-  status    String   @default("active")
-  baseUrl   String   @map("base_url")
-  createdAt DateTime @default(now()) @map("created_at")
+  id               String   @id @default(cuid())
+  name             String
+  slug             String   @unique
+  providerType     String   @default("openai") @map("provider_type")
+  status           String   @default("active")
+  enabled          Boolean  @default(true)
+  baseUrl          String   @map("base_url")
+  apiKeyCiphertext String?  @map("api_key_ciphertext") @db.Text
+  modelCatalog     Json     @default("[]") @map("model_catalog")
+  priority         Int      @default(100)
+  rateLimitQps     Int?     @map("rate_limit_qps")
+  timeoutMs        Int      @default(30000) @map("timeout_ms")
+  healthStatus     String   @default("unknown") @map("health_status")
+  lastCheckedAt    DateTime? @map("last_checked_at")
+  supportsStreaming Boolean @default(false) @map("supports_streaming")
+  createdAt        DateTime @default(now()) @map("created_at")
 
   requestLogs ApiRequestLog[]
 
@@ -125,17 +148,23 @@ model Provider {
 }
 
 model AppKey {
-  id              String    @id @default(cuid())
-  tenantId        String    @map("tenant_id")
-  name            String
-  description     String?   @db.Text
-  token           String    @unique
-  status          String    @default("active")
-  qpsLimit        Int?      @map("qps_limit")
-  dailyBudgetUsd  Decimal?  @map("daily_budget_usd") @db.Decimal(12, 4)
-  allowedModels   Json      @default("[]") @map("allowed_models")
-  lastUsedAt      DateTime? @map("last_used_at")
-  createdAt       DateTime  @default(now()) @map("created_at")
+  id               String    @id @default(cuid())
+  tenantId         String    @map("tenant_id")
+  name             String
+  description      String?   @db.Text
+  token            String?   @unique
+  tokenHash        String    @unique @map("token_hash")
+  tokenPreview     String    @map("token_preview")
+  status           String    @default("active")
+  environment      String    @default("production")
+  scopes           Json      @default("[\"chat:complete\"]")
+  qpsLimit         Int?      @map("qps_limit")
+  dailyBudgetUsd   Decimal?  @map("daily_budget_usd") @db.Decimal(12, 4)
+  monthlyBudgetUsd Decimal?  @map("monthly_budget_usd") @db.Decimal(12, 4)
+  allowedModels    Json      @default("[]") @map("allowed_models")
+  lastUsedAt       DateTime? @map("last_used_at")
+  lastUsedIp       String?   @map("last_used_ip")
+  createdAt        DateTime  @default(now()) @map("created_at")
 
   tenant       Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   requestLogs  ApiRequestLog[]
@@ -145,22 +174,27 @@ model AppKey {
 }
 
 model ApiRequestLog {
-  id                 String   @id @default(cuid())
-  tenantId           String   @map("tenant_id")
-  appKeyId           String   @map("app_key_id")
-  providerId         String   @map("provider_id")
-  model              String   
-  promptTokens       Int      @map("prompt_tokens")
-  completionTokens   Int      @map("completion_tokens")
-  totalTokens        Int      @map("total_tokens")
-  latencyMs          Int      @map("latency_ms")
-  cacheHit           Boolean  @default(false) @map("cache_hit")
-  routingPrimary     String?  @map("routing_primary")
-  routingActual      String?  @map("routing_actual")
-  routingReason      String?  @map("routing_reason")
-  statusCode         Int      @map("status_code")
-  idempotencyKey     String?  @map("idempotency_key")
-  createdAt          DateTime @default(now()) @map("created_at")
+  id                String   @id @default(cuid())
+  tenantId          String   @map("tenant_id")
+  appKeyId          String   @map("app_key_id")
+  providerId        String   @map("provider_id")
+  requestId         String?  @map("request_id")
+  traceId           String?  @map("trace_id")
+  model             String
+  promptTokens      Int      @map("prompt_tokens")
+  completionTokens  Int      @map("completion_tokens")
+  totalTokens       Int      @map("total_tokens")
+  latencyMs         Int      @map("latency_ms")
+  cacheHit          Boolean  @default(false) @map("cache_hit")
+  routingPrimary    String?  @map("routing_primary")
+  routingActual     String?  @map("routing_actual")
+  routingReason     String?  @map("routing_reason")
+  providerErrorCode String?  @map("provider_error_code")
+  retryCount        Int      @default(0) @map("retry_count")
+  requestSourceIp   String?  @map("request_source_ip")
+  statusCode        Int      @map("status_code")
+  idempotencyKey    String?  @map("idempotency_key")
+  createdAt         DateTime @default(now()) @map("created_at")
 
   tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   appKey    AppKey    @relation(fields: [appKeyId], references: [id], onDelete: Cascade)
@@ -188,14 +222,23 @@ model UsageRecord {
 }
 
 model BillingRecord {
-  id          String   @id @default(cuid())
-  logId       String   @unique @map("log_id")
-  tenantId    String   @map("tenant_id")
-  amountUsd   Decimal  @map("amount_usd") @db.Decimal(12, 6)
-  currency    String   @default("USD")
-  type        String   @default("usage")
-  description String   @db.Text
-  createdAt   DateTime @default(now()) @map("created_at")
+  id                     String   @id @default(cuid())
+  logId                  String   @unique @map("log_id")
+  tenantId               String   @map("tenant_id")
+  amountUsd              Decimal  @map("amount_usd") @db.Decimal(12, 6)
+  subtotalUsd            Decimal  @default(0) @map("subtotal_usd") @db.Decimal(12, 6)
+  inputUnitPriceUsd      Decimal  @default(0) @map("input_unit_price_usd") @db.Decimal(12, 6)
+  outputUnitPriceUsd     Decimal  @default(0) @map("output_unit_price_usd") @db.Decimal(12, 6)
+  quantityPromptTokens   Int      @default(0) @map("quantity_prompt_tokens")
+  quantityCompletionTokens Int    @default(0) @map("quantity_completion_tokens")
+  taxRatePct             Decimal  @default(0) @map("tax_rate_pct") @db.Decimal(5, 2)
+  taxAmountUsd           Decimal  @default(0) @map("tax_amount_usd") @db.Decimal(12, 6)
+  reconciliationStatus   String   @default("pending") @map("reconciliation_status")
+  invoiceStatus          String   @default("not_requested") @map("invoice_status")
+  currency               String   @default("USD")
+  type                   String   @default("usage")
+  description            String   @db.Text
+  createdAt              DateTime @default(now()) @map("created_at")
 
   tenant Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   log    ApiRequestLog @relation(fields: [logId], references: [id], onDelete: Cascade)
@@ -255,4 +298,55 @@ model InvoiceRequest {
 
   @@index([tenantId, createdAt])
   @@map("invoice_requests")
+}
+
+model TenantRoutingStrategy {
+  id                    String   @id @default(cuid())
+  tenantId              String   @unique @map("tenant_id")
+  mode                  String   @default("balance")
+  primaryProviderType   String?  @map("primary_provider_type")
+  fallbackProviderTypes Json     @default("[]") @map("fallback_provider_types")
+  maxRetries            Int      @default(1) @map("max_retries")
+  timeoutMs             Int      @default(30000) @map("timeout_ms")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("tenant_routing_strategies")
+}
+
+model TenantCacheSettings {
+  id                  String   @id @default(cuid())
+  tenantId            String   @unique @map("tenant_id")
+  enabled             Boolean  @default(true)
+  mode                String   @default("semantic")
+  similarityThreshold Decimal  @default(0.92) @map("similarity_threshold") @db.Decimal(4, 3)
+  ttlSeconds          Int      @default(86400) @map("ttl_seconds")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("tenant_cache_settings")
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  tenantId   String?  @map("tenant_id")
+  userId     String?  @map("user_id")
+  actorType  String   @map("actor_type")
+  action     String
+  entityType String   @map("entity_type")
+  entityId   String?  @map("entity_id")
+  ip         String?
+  metadata   Json?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, createdAt])
+  @@index([userId, createdAt])
+  @@map("audit_logs")
 }

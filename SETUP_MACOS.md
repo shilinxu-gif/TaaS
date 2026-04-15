@@ -17,7 +17,7 @@ cd /Users/redtea/Desktop/CURSOR-TaaS
 npm run dev:stack
 ```
 
-3. 浏览器打开 **http://localhost:5173**  
+3. 浏览器打开 **http://localhost:5174**  
    登录名 **wangqiang**，密码 **123456**（首次启动容器内会自动 `migrate` + `seed`）。
 
 ---
@@ -70,4 +70,4 @@ npm run dev:client
 |------|------|
 | 需要 Node.js 20 | 按方案 A 用 Docker 跑全套，或按 B/C 安装 Node 20 |
 | `docker: command not found` | 安装并打开 Docker Desktop，再执行 `npm run dev:stack` |
-| 页面能开但接口失败 | 确认 API 已监听 **3001**，且前端通过 **http://localhost:5173** 访问（不要直接打开 `index.html` 文件） |
+| 页面能开但接口失败 | 确认 API 已监听 **3001**，且前端通过 **http://localhost:5174** 访问（不要直接打开 `index.html` 文件） |
