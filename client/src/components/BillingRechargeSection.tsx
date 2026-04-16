@@ -109,6 +109,13 @@ function rechargeStatusBadgeClass(status: string): string {
   return "rc-badge rc-badge--muted";
 }
 
+function formatMoneyRow(row: RechargeOrderRow): string {
+  if (row.amountDisplay?.trim()) {
+    return row.amountDisplay;
+  }
+  return row.currency === "USD" ? `$${row.amount}` : `¥${row.amount}`;
+}
+
 type FollowUp =
   | {
       kind: "bank";

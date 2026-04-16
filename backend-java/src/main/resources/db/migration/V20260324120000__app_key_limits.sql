@@ -1,0 +1,4 @@
+ALTER TABLE "app_keys" ADD COLUMN IF NOT EXISTS "description" TEXT;
+ALTER TABLE "app_keys" ADD COLUMN IF NOT EXISTS "qps_limit" INTEGER;
+ALTER TABLE "app_keys" ADD COLUMN IF NOT EXISTS "daily_budget_usd" DECIMAL(12,4);
+ALTER TABLE "app_keys" ADD COLUMN IF NOT EXISTS "allowed_models" JSONB NOT NULL DEFAULT '[]';

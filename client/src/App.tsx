@@ -2,6 +2,9 @@ import type { ReactNode } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { useAuth } from "./auth";
 import { Layout } from "./Layout";
+import { AdminProviders } from "./pages/AdminProviders";
+import { AdminUsage } from "./pages/AdminUsage";
+import { AdminUsers } from "./pages/AdminUsers";
 import { ApiKeys } from "./pages/ApiKeys";
 import { Billing } from "./pages/Billing";
 import { Dashboard } from "./pages/Dashboard";
@@ -29,6 +32,14 @@ function Protected({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
+function AdminOnly({ children }: { children: ReactNode }) {
+  const { user } = useAuth();
+  if (user?.platformRole !== "platform_admin") {
+    return <Navigate to="/dashboard" replace />;
+  }
+  return <>{children}</>;
+}
+
 export function App() {
   return (
     <Routes>
@@ -52,6 +63,30 @@ export function App() {
         <Route path="billing" element={<Billing />} />
         <Route path="recharge" element={<Recharge />} />
         <Route path="invoices" element={<Invoices />} />
+        <Route
+          path="admin/usage"
+          element={
+            <AdminOnly>
+              <AdminUsage />
+            </AdminOnly>
+          }
+        />
+        <Route
+          path="admin/providers"
+          element={
+            <AdminOnly>
+              <AdminProviders />
+            </AdminOnly>
+          }
+        />
+        <Route
+          path="admin/users"
+          element={
+            <AdminOnly>
+              <AdminUsers />
+            </AdminOnly>
+          }
+        />
       </Route>
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>

@@ -1,0 +1,61 @@
+server:
+  port: ${PORT:3001}
+
+spring:
+  application:
+    name: taas-backend-java
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
+  datasource:
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5433}/${POSTGRES_DB:crm}
+    username: ${POSTGRES_USER:crm}
+    password: ${POSTGRES_PASSWORD:crm}
+    driver-class-name: org.postgresql.Driver
+  jackson:
+    default-property-inclusion: non_null
+    serialization:
+      write-dates-as-timestamps: false
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      timeout: 2s
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    baseline-version: 20260415090000
+    locations: classpath:db/migration
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+mybatis:
+  configuration:
+    map-underscore-to-camel-case: true
+    jdbc-type-for-null: 'NULL'
+
+taas:
+  auth:
+    jwt-secret: ${JWT_SECRET:dev-only-change-me}
+    issuer: taas-java
+    expire-seconds: ${JWT_EXPIRE_SECONDS:604800}
+  security:
+    provider-config-secret: ${PROVIDER_CONFIG_SECRET:${JWT_SECRET:dev-provider-config-secret}}
+    app-key-pepper: ${APP_KEY_PEPPER:${JWT_SECRET:dev-app-key-pepper}}
+  commercial:
+    sales-email: ${SALES_EMAIL:sales@taas.example}
+    support-email: ${SUPPORT_EMAIL:support@taas.example}
+    trial-days: ${TRIAL_DAYS:14}
+    allow-mock-provider: ${ALLOW_MOCK_PROVIDER:true}
+  providers:
+    openai-api-key: ${OPENAI_API_KEY:}
+    anthropic-api-key: ${ANTHROPIC_API_KEY:}
+    google-api-key: ${GOOGLE_API_KEY:}

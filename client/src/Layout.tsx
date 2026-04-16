@@ -9,6 +9,7 @@ import {
   IcInvoiceDoc,
   IcKey,
   IcOps,
+  IcPeople,
   IcReceipt,
   IcRoute,
   IcWallet,
@@ -17,7 +18,7 @@ import { BrandLogo } from "./BrandLogo";
 
 const NAV_COLLAPSED_KEY = "taas-nav-collapsed";
 
-const links: {
+const tenantLinks: {
   to: string;
   label: string;
   end?: boolean;
@@ -34,11 +35,26 @@ const links: {
   { to: "/invoices", label: "自动化开票", Icon: IcInvoiceDoc },
 ];
 
+const adminLinks: {
+  to: string;
+  label: string;
+  end?: boolean;
+  Icon: ComponentType;
+}[] = [
+  { to: "/dashboard", label: "平台概览", end: true, Icon: IcDashboard },
+  { to: "/admin/usage", label: "调用与充值", Icon: IcChart },
+  { to: "/admin/providers", label: "供应商与模型", Icon: IcRoute },
+  { to: "/admin/users", label: "用户管理", Icon: IcPeople },
+  { to: "/ops", label: "运营与审计", Icon: IcOps },
+];
+
 export function Layout() {
   const { user, logout } = useAuth();
   const initial = user?.name?.charAt(0) ?? "?";
   const tenantLabel = user?.tenant?.name ?? "—";
   const tenantStatus = user?.tenant?.status ?? "";
+  const platformRole = user?.platformRole ?? "user";
+  const links = platformRole === "platform_admin" ? adminLinks : tenantLinks;
   const [navCollapsed, setNavCollapsed] = useState(() => {
     try {
       return localStorage.getItem(NAV_COLLAPSED_KEY) === "1";
@@ -81,7 +97,10 @@ export function Layout() {
           </span>
           <div className="desk-user">
             <span className="desk-user-avatar">{initial}</span>
-            <span>{user?.name}</span>
+            <span>
+              {user?.name}
+              {platformRole === "platform_admin" ? " · 平台管理员" : ""}
+            </span>
           </div>
           <button
             type="button"

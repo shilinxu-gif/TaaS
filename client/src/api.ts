@@ -17,7 +17,7 @@ export async function api<T>(
     res = await fetch(`${BASE}${path}`, { ...options, headers });
   } catch {
     throw new Error(
-      "无法连接后端（请确认已在本机启动 API：server 目录执行 npm run dev，端口 3001）"
+      "无法连接后端（请确认已启动 Java API：根目录执行 npm run dev:server，默认端口 3001）"
     );
   }
   if (res.status === 401) {
@@ -49,7 +49,7 @@ export async function api<T>(
       !fromJson &&
       (res.status === 500 || res.status === 502 || res.status === 504)
     ) {
-      msg = `${msg} · 请确认已启动 server（端口 3001）、PostgreSQL 可用，并已执行 prisma migrate deploy 与 prisma db seed。`;
+      msg = `${msg} · 请确认 Java API 已启动（端口 3001），且 PostgreSQL / Redis 可用。`;
     }
     throw new Error(msg);
   }
@@ -95,10 +95,16 @@ export async function gatewayChat(
   return data;
 }
 
-export type User = { id: string; email: string; name: string };
+export type User = {
+  id: string;
+  email: string;
+  name: string;
+  platformRole?: string;
+};
 
 export type MeUser = User & {
   role?: string;
+  platformRole?: string;
   emailVerifiedAt?: string | null;
   tenant?: {
     id: string;
@@ -114,6 +120,61 @@ export type MeUser = User & {
     contractCode?: string | null;
     plan: { name: string; code: string } | null;
   } | null;
+};
+
+export type Account = {
+  id: string;
+  name: string;
+  updatedAt: string;
+};
+
+export type Contact = {
+  id: string;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  account: {
+    id?: string;
+    name: string;
+  };
+};
+
+export type Customer = {
+  id: string;
+  name: string;
+  phone: string | null;
+  qq: string | null;
+  age: number | null;
+};
+
+export type Lead = {
+  id: string;
+  name: string;
+  company: string | null;
+  email: string | null;
+  phone: string | null;
+  source: string | null;
+  status: string;
+};
+
+export type Opportunity = {
+  id: string;
+  name: string;
+  stage: string;
+  amount: number | null;
+  lossReason?: string | null;
+  account: {
+    id: string;
+    name: string;
+  } | null;
+};
+
+export type Activity = {
+  id: string;
+  type: string;
+  body: string;
+  occurredAt: string;
+  nextFollowUpAt: string | null;
 };
 
 export type DashboardSummary = {
@@ -312,6 +373,23 @@ export type RoutingProviderRow = {
   configured: boolean;
 };
 
+export type ProviderConfigRow = {
+  id: string;
+  name: string;
+  slug: string;
+  providerType: string;
+  status: string;
+  enabled: boolean;
+  priority: number;
+  timeoutMs: number;
+  baseUrl: string | null;
+  healthStatus: string;
+  configured: boolean;
+  supportsStreaming: boolean;
+  modelCatalog: Array<Record<string, unknown>>;
+  lastCheckedAt: string | null;
+};
+
 export type RoutingSummary = {
   windowDays: number;
   strategyMode: RoutingStrategyMode;
@@ -490,4 +568,121 @@ export type AuditLogRow = {
   ip: string | null;
   metadata: unknown;
   createdAt: string;
+};
+
+export type AdminUserRow = {
+  id: string;
+  email: string;
+  name: string;
+  platformRole: string;
+  emailVerifiedAt: string | null;
+  createdAt: string;
+  tenantCount: number;
+  requestCount: number;
+  totalTokens: number;
+  rechargeCount: number;
+  rechargeSuccessCny: string;
+  rechargeTokens: string;
+  lastRequestAt: string | null;
+  lastRechargeAt: string | null;
+  memberships: {
+    tenantId: string;
+    tenantName: string;
+    tenantSlug: string;
+    tenantStatus: string;
+    role: string;
+  }[];
+};
+
+export type AdminAppKeyUsageRow = {
+  id: string;
+  name: string;
+  tenantName: string;
+  environment: string;
+  requestCount: number;
+  totalTokens: number;
+  successCount: number;
+  spendUsd: string;
+  lastCalledAt: string | null;
+};
+
+export type AdminModelUsageRow = {
+  model: string;
+  providerSlug: string;
+  requestCount: number;
+  totalTokens: number;
+  spendUsd: string;
+  avgLatencyMs: number;
+  successRate: number;
+};
+
+export type AdminRechargeOverviewRow = {
+  tenantId: string;
+  tenantName: string;
+  rechargeCount: number;
+  successAmountCny: string;
+  successTokens: string;
+  lastRechargeAt: string | null;
+};
+
+export type AdminUsageDimension = "user" | "tenant";
+
+export type AdminUsageSummaryRow = {
+  id: string;
+  name: string;
+  email?: string | null;
+  platformRole?: string | null;
+  tenantCount?: number | null;
+  tenantSlug?: string | null;
+  tenantStatus?: string | null;
+  memberCount?: number | null;
+  requestCount: number;
+  totalTokens: number;
+  rechargeCount: number;
+  rechargeSuccessCny: string;
+  rechargeTokens: string;
+  lastRequestAt: string | null;
+  lastRechargeAt: string | null;
+};
+
+export type AdminTrendPoint = {
+  date: string;
+  requestCount: number;
+};
+
+export type AdminTrendSeries = {
+  key: string;
+  label: string;
+  requestCount: number;
+  points: AdminTrendPoint[];
+};
+
+export type AdminRechargeOrderRow = {
+  id: string;
+  orderNo: string;
+  tenantId: string;
+  tenantName: string;
+  amount: string;
+  currency: string;
+  payChannel: string;
+  status: string;
+  creditedTokens: string;
+  payerName: string | null;
+  needInvoice: boolean;
+  remark: string | null;
+  paidAt: string | null;
+  createdAt: string;
+};
+
+export type AdminUsageOverview = {
+  from: string;
+  to: string;
+  dimension: AdminUsageDimension;
+  summaries: AdminUsageSummaryRow[];
+  appKeys: AdminAppKeyUsageRow[];
+  models: AdminModelUsageRow[];
+  appKeyTrends: AdminTrendSeries[];
+  modelTrends: AdminTrendSeries[];
+  recharges: AdminRechargeOverviewRow[];
+  rechargeOrders: AdminRechargeOrderRow[];
 };

@@ -2,6 +2,8 @@
 
 企业级 AI Gateway / Token Billing SaaS。
 
+当前默认后端为 `backend-java/`（Spring Boot）。
+
 ## 当前能力
 
 - 多租户控制台：注册即创建试用租户、默认预算、路由与缓存策略
@@ -16,8 +18,10 @@
 
 前置要求：
 
-- Node.js 20+
+- Java 17+（生产建议 Java 21）
+- Maven 3.9+
 - Docker Desktop
+- Node.js 20+（仅前端开发需要）
 
 根目录执行：
 
@@ -30,7 +34,7 @@ npm run dev:client
 默认地址：
 
 - 前端：`http://localhost:5174`
-- 后端：`http://localhost:3001`
+- Java 后端：`http://localhost:3001`
 
 演示账号：
 
@@ -48,7 +52,15 @@ npm run dev:client
 - `PROVIDER_CONFIG_SECRET`
 - `APP_KEY_PEPPER`
 
-如果未配置真实上游密钥，开发环境下网关会返回一条明确的演示回复，用于本地联调控制台。
+如果未配置真实上游密钥，Java 网关会返回一条明确的演示回复，用于本地联调控制台。
+
+## Java 后端说明
+
+- 主工程：`backend-java/`
+- 默认本地数据库端口：`5433`
+- 默认开发命令：`npm run dev:server`
+- Docker Compose 中 `api` 服务已切换为 Java 后端
+- Java 启动时会自动补齐基础 seed（演示账号、套餐、provider、模板）
 
 ## 商业化改造重点
 

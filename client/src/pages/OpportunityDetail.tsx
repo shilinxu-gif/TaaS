@@ -117,7 +117,7 @@ export function OpportunityDetail() {
             type="number"
             min={0}
             step="0.01"
-            placeholder={opp.amount ?? ""}
+            placeholder={opp.amount == null ? "" : String(opp.amount)}
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
           />
