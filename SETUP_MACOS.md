@@ -15,11 +15,14 @@
 
 ```bash
 cd /Users/asher/Projects/TaaS
+cp .env.example .env
+# 编辑 .env，至少填写 JWT_SECRET / PROVIDER_CONFIG_SECRET / APP_KEY_PEPPER
+# 如需初始化平台管理员，再填写 BOOTSTRAP_ADMIN_LOGIN / BOOTSTRAP_ADMIN_PASSWORD
 npm run dev:stack
 ```
 
 3. 浏览器打开 **http://localhost:5174**  
-   登录名 **wangqiang**，密码 **123456**（Java 后端启动时会自动补齐基础 seed）。
+   若已配置 `BOOTSTRAP_ADMIN_LOGIN` / `BOOTSTRAP_ADMIN_PASSWORD`，使用对应管理员账号登录。
 
 ---
 
@@ -33,6 +36,9 @@ npm run dev:stack
 
    ```bash
    cd /Users/asher/Projects/TaaS
+   cp .env.example .env
+   # 编辑 .env，至少填写 JWT_SECRET / PROVIDER_CONFIG_SECRET / APP_KEY_PEPPER
+   # 如需初始化平台管理员，再填写 BOOTSTRAP_ADMIN_LOGIN / BOOTSTRAP_ADMIN_PASSWORD
    npm run setup
    npm run dev:server   # 终端 1，Java 后端
    npm run dev:client   # 终端 2，Vite 前端
@@ -48,6 +54,9 @@ npm run dev:stack
 
 ```bash
 cd /Users/asher/Projects/TaaS
+cp .env.example .env
+# 编辑 .env，至少填写 JWT_SECRET / PROVIDER_CONFIG_SECRET / APP_KEY_PEPPER
+# 如需初始化平台管理员，再填写 BOOTSTRAP_ADMIN_LOGIN / BOOTSTRAP_ADMIN_PASSWORD
 npm run setup:local
 npm run dev:server
 npm run dev:client

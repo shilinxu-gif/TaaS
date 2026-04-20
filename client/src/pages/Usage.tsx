@@ -106,7 +106,7 @@ export function Usage() {
         <div>
           <h1 className="usage-title">用量</h1>
           <p className="usage-subtitle muted">
-            按网关请求聚合 · 支持本地筛选 · 演示数据来自种子与实时调用
+            按网关请求聚合 · 支持本地筛选 · 数据来自真实请求日志
           </p>
         </div>
       </header>

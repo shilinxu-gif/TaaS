@@ -122,7 +122,7 @@ export function Optimization() {
           <div className="opt-card-hd">
             <h2 className="opt-card-title">高频重复 Prompt</h2>
             <p className="opt-card-desc muted">
-              来自幂等键聚类与平台演示数据；真实环境可对接向量指纹
+              基于幂等键聚类统计；后续可扩展为向量指纹与语义聚类
             </p>
           </div>
           <div className="opt-table-wrap">
@@ -140,11 +140,7 @@ export function Optimization() {
                   <tr key={row.id}>
                     <td className="opt-td-preview">{row.preview}</td>
                     <td>
-                      {row.source === "idempotency" ? (
-                        <span className="opt-pill opt-pill--db">幂等键</span>
-                      ) : (
-                        <span className="opt-pill opt-pill--demo">示例</span>
-                      )}
+                      <span className="opt-pill opt-pill--db">幂等键</span>
                     </td>
                     <td className="tabular-nums">{row.hits.toLocaleString("zh-CN")}</td>
                     <td className="tabular-nums opt-td-em">
@@ -176,7 +172,7 @@ export function Optimization() {
                 <p className="opt-template-desc muted">{t.description}</p>
                 <pre className="opt-template-snippet">{t.snippet}</pre>
                 <div className="opt-template-foot muted">
-                  建议使用 {t.uses.toLocaleString("zh-CN")} 次（演示）
+                  建议使用 {t.uses.toLocaleString("zh-CN")} 次
                 </div>
               </li>
             ))}
@@ -188,7 +184,7 @@ export function Optimization() {
         <div className="opt-card-hd">
           <h2 className="opt-card-title">缓存策略</h2>
           <p className="opt-card-desc muted">
-            演示配置保存在服务端内存，重启后恢复默认；生产可落库并与网关联动
+            缓存配置保存在服务端；可继续与网关、向量库和审计流程联动
           </p>
         </div>
         {settingsQuery.isLoading || !form ? (

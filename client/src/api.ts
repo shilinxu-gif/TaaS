@@ -236,6 +236,17 @@ export type AppKeyCreateResponse = Omit<AppKeyListRow, "keyPrefix"> & {
   token: string;
 };
 
+export type AppKeyAvailableModel = {
+  id: string;
+  model: string;
+  label: string;
+  providerName: string;
+  providerSlug: string;
+  providerType: string;
+  priority: number;
+  supportsStreaming: boolean;
+};
+
 /** @deprecated 使用 AppKeyListRow */
 export type AppKeyRow = AppKeyListRow;
 
@@ -423,7 +434,7 @@ export type OptimizationRepeatedPrompt = {
   preview: string;
   hits: number;
   savedTokens: number;
-  source: "idempotency" | "demo";
+  source: "idempotency";
 };
 
 export type OptimizationPromptTemplate = {
@@ -456,7 +467,7 @@ export type CacheStrategySettings = {
   ttlSeconds: number;
 };
 
-/* —— 在线充值 / 自动化开票（演示） —— */
+/* —— 在线充值 / 自动化开票 —— */
 
 export type RechargeBankAccount = {
   companyName: string;

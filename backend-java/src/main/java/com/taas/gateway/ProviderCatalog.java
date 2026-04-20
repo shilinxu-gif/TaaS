@@ -32,7 +32,7 @@ public final class ProviderCatalog {
   }
 
   private static String normalizeModel(String model) {
-    return "gpt-fallback-demo".equalsIgnoreCase(model) ? "gpt-4o-mini" : model;
+    return model;
   }
 
   public record Entry(

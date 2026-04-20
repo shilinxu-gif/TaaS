@@ -53,7 +53,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         return;
       }
       String token = authorization.substring(7).trim();
-      if (token.startsWith("sk-demo-") || token.startsWith("sk-")) {
+      if (token.startsWith("sk-")) {
         response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
         response.setContentType("application/json;charset=UTF-8");
         response

@@ -24,8 +24,7 @@ public class FinanceService {
           "alipay", "支付宝支付",
           "apple_pay", "苹果支付",
           "google_pay", "谷歌支付",
-          "corporate_online", "企业网银",
-          "aggregate_demo", "聚合支付演示");
+          "corporate_online", "企业网银");
   private static final Map<String, String> RECHARGE_STATUS_LABEL =
       Map.of(
           "pending_payment", "待支付",
@@ -86,10 +85,10 @@ public class FinanceService {
         "balanceTokens", MoneyUtils.money(balance),
         "pendingCount", pending == null ? 0 : pending,
         "monthRechargeCny", MoneyUtils.money(monthRecharge),
-        "monthRechargeNote", "本月成功充值金额已按 USD×7.2 折合为人民币展示（演示汇率）。",
-        "note", "演示环境：CNY 按 1 元≈1,200 tokens、USD 按 1≈8,500 tokens 折算到账；不产生真实支付。",
+        "monthRechargeNote", "本月成功充值金额已按统一折算口径汇总，便于财务对账。",
+        "note", "生产占位模式：可提交充值申请并保留订单记录，到账与加款需通过真实支付或财务线下确认完成。",
         "bankAccount", BANK_INFO,
-        "recommendedChannels", List.of("bank_transfer", "alipay"));
+        "recommendedChannels", List.of("bank_transfer"));
   }
 
   public List<Map<String, Object>> recharges(JwtPrincipal principal) {
@@ -112,7 +111,7 @@ public class FinanceService {
     String channel = String.valueOf(body.get("payChannel"));
     BigDecimal amount = decimalValue(body.get("amount"), "amount");
     String currency = String.valueOf(body.get("currency"));
-    String status = "bank_transfer".equals(channel) ? "pending_review" : ("wechat".equals(channel) || "alipay".equals(channel)) ? "pending_payment" : "success";
+    String status = "bank_transfer".equals(channel) ? "pending_review" : "pending_payment";
     BigDecimal credited = "USD".equals(currency) ? BigDecimal.valueOf(Math.floor(amount.doubleValue() * 8500)) : BigDecimal.valueOf(Math.floor(amount.doubleValue() * 1200));
     Instant now = Instant.now();
     String payerName = String.valueOf(body.get("payerName")).trim();
@@ -143,11 +142,8 @@ public class FinanceService {
             .addValue("payerName", payerName)
             .addValue("needInvoice", needInvoice)
             .addValue("remark", remark)
-            .addValue("paidAt", "success".equals(status) ? now : null)
+            .addValue("paidAt", null)
             .addValue("now", ts(now)));
-    if ("success".equals(status)) {
-      jdbcTemplate.update("update tenants set balance_tokens = balance_tokens + :credited where id = :tenantId", Map.of("credited", credited, "tenantId", principal.tenantId()));
-    }
     Map<String, Object> row = getRecharge(principal.tenantId(), id);
     return orderedMap(
         "id", row.get("id"),
@@ -168,51 +164,14 @@ public class FinanceService {
         "createdAt", row.get("createdAt"),
         "hint",
             "bank_transfer".equals(channel)
-                ? "请使用对公账户打款，到账后可点击「模拟审核通过」。"
-                : ("success".equals(status) ? "国际支付演示单已自动入账，可直接查看余额变化。" : "演示环境可点击「模拟支付成功」体验到账。"),
-        "flow", "bank_transfer".equals(channel) ? "bank" : ("success".equals(status) ? "intl_success" : "qr"),
+                ? "请使用对公账户打款，并在汇款附言中填写订单号；到账后由财务人工确认。"
+                : "支付通道正在接入中，系统已记录充值申请，请联系商务或财务线下处理。",
+        "flow", "bank_transfer".equals(channel) ? "bank" : null,
         "bankAccount", "bank_transfer".equals(channel) ? BANK_INFO : null);
   }
 
   public Map<String, Object> rechargeAction(JwtPrincipal principal, String id, String action) {
-    Map<String, Object> row = getRecharge(principal.tenantId(), id);
-    String status = String.valueOf(row.get("status"));
-    if ("mock-bank-approve".equals(action)) {
-      if (!"pending_review".equals(status)) {
-        throw new ApiException(400, "仅「待审核」对公单可模拟审核通过");
-      }
-      return finalizeRechargeSuccess(
-          principal.tenantId(), id, "财务审核通过（演示）");
-    }
-    if ("mock-pay-success".equals(action)) {
-      if (!List.of("pending_payment", "pending", "processing").contains(status)) {
-        throw new ApiException(400, "仅待支付订单可模拟支付成功");
-      }
-      return finalizeRechargeSuccess(principal.tenantId(), id, "扫码支付成功（演示）");
-    }
-    if ("mock-pay-cancel".equals(action)) {
-      if (!List.of("pending_payment", "pending", "processing").contains(status)) {
-        throw new ApiException(400, "仅待支付订单可取消");
-      }
-      jdbcTemplate.update(
-          """
-          update wallet_recharge_orders
-          set status = 'cancelled', remark = coalesce(remark, '用户取消（演示）'), updated_at = :now
-          where id = :id and tenant_id = :tenantId
-          """,
-          Map.of("id", id, "tenantId", principal.tenantId(), "now", ts(Instant.now())));
-      return getRecharge(principal.tenantId(), id);
-    }
-    if ("mock-complete".equals(action)) {
-      if ("pending_review".equals(status)) {
-        return finalizeRechargeSuccess(principal.tenantId(), id, "财务审核通过（演示）");
-      }
-      if (List.of("pending_payment", "pending", "processing").contains(status)) {
-        return finalizeRechargeSuccess(principal.tenantId(), id, "模拟入账");
-      }
-      throw new ApiException(400, "当前状态不可完成");
-    }
-    throw new ApiException(400, "Unsupported action");
+    throw new ApiException(410, "生产模式下已禁用模拟充值动作，请通过真实支付回调或财务流程更新订单状态");
   }
 
   public Map<String, Object> invoiceSummary(JwtPrincipal principal) {
@@ -236,7 +195,7 @@ public class FinanceService {
         "pendingCount", pending == null ? 0 : pending,
         "issuedThisMonth", issued == null ? 0 : issued,
         "issuedAmountMonthCny", MoneyUtils.money(issuedAmount),
-        "note", "演示环境：发票号码与 PDF 为模拟数据；可点击「模拟开票完成」体验状态流转。");
+        "note", "生产占位模式：可提交开票申请并跟踪状态，发票号码与电子票文件需由真实税控/开票系统回填。");
   }
 
   public List<Map<String, Object>> invoices(JwtPrincipal principal) {
@@ -292,36 +251,7 @@ public class FinanceService {
   }
 
   public Map<String, Object> invoiceAction(JwtPrincipal principal, String id, String action) {
-    Map<String, Object> detail = invoiceDetail(principal, id);
-    String status = String.valueOf(detail.get("status"));
-    if ("mock-accept".equals(action)) {
-      if (!"submitted".equals(status)) {
-        throw new ApiException(400, "仅「已提交」状态可模拟税局受理");
-      }
-      jdbcTemplate.update("update invoice_requests set status = 'processing', updated_at = :now where id = :id and tenant_id = :tenantId", Map.of("id", id, "tenantId", principal.tenantId(), "now", ts(Instant.now())));
-      return invoiceDetail(principal, id);
-    }
-    if ("mock-issue".equals(action)) {
-      if (!"submitted".equals(status) && !"processing".equals(status)) {
-        throw new ApiException(400, "仅待开票/开票中的申请可模拟开票完成");
-      }
-      jdbcTemplate.update(
-          """
-          update invoice_requests
-          set status = 'issued', invoice_no = :invoiceNo, invoice_code = :invoiceCode,
-              pdf_url = :pdfUrl, issued_at = :now, updated_at = :now
-          where id = :id and tenant_id = :tenantId
-          """,
-          Map.of(
-              "id", id,
-              "tenantId", principal.tenantId(),
-              "invoiceNo", "31" + System.currentTimeMillis(),
-              "invoiceCode", String.valueOf(3200000000L + (System.currentTimeMillis() % 100000)),
-              "pdfUrl", "#mock-invoice-" + id.substring(Math.max(0, id.length() - 6)),
-              "now", ts(Instant.now())));
-      return invoiceDetail(principal, id);
-    }
-    throw new ApiException(400, "Unsupported action");
+    throw new ApiException(410, "生产模式下已禁用模拟开票动作，请通过真实开票系统或后台流程推进状态");
   }
 
   private Map<String, Object> getRecharge(String tenantId, String id) {

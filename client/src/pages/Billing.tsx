@@ -128,7 +128,7 @@ export function Billing() {
       <section className="bill-section">
         <h2 className="bill-section-title">可选套餐</h2>
         <p className="bill-section-desc muted">
-          以下为平台标准报价（演示数据）。升级可联系销售或在控制台提交工单。
+          以下为平台标准报价。升级可联系销售或在控制台提交工单。
         </p>
         <div className="bill-plans-grid">
           {d.plans.map((p) => (

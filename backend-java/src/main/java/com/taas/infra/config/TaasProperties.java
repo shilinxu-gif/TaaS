@@ -8,6 +8,7 @@ public class TaasProperties {
   private final Security security = new Security();
   private final Commercial commercial = new Commercial();
   private final Providers providers = new Providers();
+  private final Bootstrap bootstrap = new Bootstrap();
 
   public Auth getAuth() {
     return auth;
@@ -25,8 +26,12 @@ public class TaasProperties {
     return providers;
   }
 
+  public Bootstrap getBootstrap() {
+    return bootstrap;
+  }
+
   public static class Auth {
-    private String jwtSecret = "dev-only-change-me";
+    private String jwtSecret = "";
     private String issuer = "taas-java";
     private long expireSeconds = 604800;
 
@@ -56,8 +61,8 @@ public class TaasProperties {
   }
 
   public static class Security {
-    private String providerConfigSecret = "dev-provider-config-secret";
-    private String appKeyPepper = "dev-app-key-pepper";
+    private String providerConfigSecret = "";
+    private String appKeyPepper = "";
 
     public String getProviderConfigSecret() {
       return providerConfigSecret;
@@ -142,6 +147,27 @@ public class TaasProperties {
 
     public void setGoogleApiKey(String googleApiKey) {
       this.googleApiKey = googleApiKey;
+    }
+  }
+
+  public static class Bootstrap {
+    private String adminLogin = "";
+    private String adminPassword = "";
+
+    public String getAdminLogin() {
+      return adminLogin;
+    }
+
+    public void setAdminLogin(String adminLogin) {
+      this.adminLogin = adminLogin;
+    }
+
+    public String getAdminPassword() {
+      return adminPassword;
+    }
+
+    public void setAdminPassword(String adminPassword) {
+      this.adminPassword = adminPassword;
     }
   }
 }

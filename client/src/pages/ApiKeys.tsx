@@ -3,16 +3,10 @@ import { useEffect, useState } from "react";
 import {
   api,
   gatewayChat,
+  type AppKeyAvailableModel,
   type AppKeyCreateResponse,
   type AppKeyListRow,
 } from "../api";
-
-function parseModelsFromText(text: string): string[] {
-  return text
-    .split(/[\n,]+/)
-    .map((s) => s.trim())
-    .filter(Boolean);
-}
 
 function statusBadge(status: string) {
   if (status === "active") {
@@ -37,7 +31,7 @@ export function ApiKeys() {
   const [formQps, setFormQps] = useState("");
   const [formBudget, setFormBudget] = useState("");
   const [formMonthlyBudget, setFormMonthlyBudget] = useState("");
-  const [formModelsText, setFormModelsText] = useState("");
+  const [formAllowedModels, setFormAllowedModels] = useState<string[]>([]);
   const [formStatus, setFormStatus] = useState<"active" | "disabled">("active");
   const [formEnvironment, setFormEnvironment] = useState<
     "production" | "staging" | "development" | "sandbox"
@@ -64,6 +58,21 @@ export function ApiKeys() {
     queryFn: () => api<AppKeyListRow[]>("/app-keys"),
   });
 
+  const availableModelsQuery = useQuery({
+    queryKey: ["app-keys", "available-models"],
+    queryFn: () => api<AppKeyAvailableModel[]>("/app-keys/available-models"),
+  });
+  const availableModels = availableModelsQuery.data ?? [];
+
+  useEffect(() => {
+    if (availableModels.length === 0) return;
+    setModel((current) =>
+      availableModels.some((item) => item.model === current)
+        ? current
+        : availableModels[0].model
+    );
+  }, [availableModels]);
+
   const createMut = useMutation({
     mutationFn: () => {
       const qpsRaw = formQps.trim();
@@ -84,7 +93,7 @@ export function ApiKeys() {
           qpsLimit,
           dailyBudgetUsd: budgetRaw === "" ? null : budgetRaw,
           monthlyBudgetUsd: formMonthlyBudget.trim() || null,
-          allowedModels: parseModelsFromText(formModelsText),
+          allowedModels: formAllowedModels,
           status: formStatus,
           environment: formEnvironment,
           scopes: formScopes,
@@ -100,7 +109,7 @@ export function ApiKeys() {
       setFormQps("");
       setFormBudget("");
       setFormMonthlyBudget("");
-      setFormModelsText("");
+      setFormAllowedModels([]);
       setFormStatus("active");
       setFormEnvironment("production");
       setFormScopes(["chat:complete"]);
@@ -124,7 +133,7 @@ export function ApiKeys() {
         playKey.trim(),
         {
           model,
-          messages: [{ role: "user", content: "你好，这是一次演示调用。" }],
+          messages: [{ role: "user", content: "你好，请返回一条连通性测试结果。" }],
         },
         idem.trim() || undefined
       );
@@ -265,9 +274,9 @@ export function ApiKeys() {
       </div>
 
       <details className="keys-details">
-        <summary>网关试用（演示）</summary>
+        <summary>网关试用</summary>
         <p className="muted keys-details-hint">
-          粘贴完整 <code className="keys-inline-code">sk-demo-…</code>{" "}
+          粘贴完整 <code className="keys-inline-code">sk-…</code>{" "}
           密钥。若密钥配置了模型白名单，请选用允许的 model。
         </p>
         <div className="keys-play-grid">
@@ -284,11 +293,15 @@ export function ApiKeys() {
               value={model}
               onChange={(e) => setModel(e.target.value)}
             >
-              <option value="gpt-4o-mini">gpt-4o-mini</option>
-              <option value="gpt-4.1-mini">gpt-4.1-mini</option>
-              <option value="gemini-1.5-pro">gemini-1.5-pro</option>
-              <option value="claude-3-5-sonnet-latest">claude-3-5-sonnet-latest</option>
-              <option value="gpt-fallback-demo">gpt-fallback-demo</option>
+              {availableModels.length === 0 ? (
+                <option value="">暂无已配置模型</option>
+              ) : (
+                availableModels.map((item) => (
+                  <option key={item.id} value={item.model}>
+                    {item.model}
+                  </option>
+                ))
+              )}
             </select>
             <input
               className="input-plain"
@@ -299,6 +312,7 @@ export function ApiKeys() {
             <button
               type="button"
               className="btn btn-ghost"
+              disabled={availableModels.length === 0}
               onClick={() => void runPlayground()}
             >
               发送请求
@@ -413,13 +427,36 @@ export function ApiKeys() {
               </div>
               <label className="keys-field">
                 <span className="keys-label">允许模型</span>
-                <textarea
-                  className="input-plain keys-textarea"
-                  value={formModelsText}
-                  onChange={(e) => setFormModelsText(e.target.value)}
-                  placeholder="每行一个 model id，或用英文逗号分隔。留空表示不限制。"
-                  rows={3}
-                />
+                {availableModels.length === 0 ? (
+                  <div className="keys-models-empty muted">
+                    当前没有已配置 URL 和 API Key 的模型可选，请先联系管理员完成供应商配置。
+                  </div>
+                ) : (
+                  <div className="keys-models-list">
+                    {availableModels.map((item) => (
+                      <label key={item.id} className="keys-model-option">
+                        <input
+                          type="checkbox"
+                          checked={formAllowedModels.includes(item.model)}
+                          onChange={(e) =>
+                            setFormAllowedModels((current) =>
+                              e.target.checked
+                                ? [...new Set([...current, item.model])]
+                                : current.filter((modelId) => modelId !== item.model)
+                            )
+                          }
+                        />
+                        <span className="keys-model-option-text">
+                          <strong>{item.providerName}</strong>
+                          <code className="keys-inline-code">{item.model}</code>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+                <span className="muted">
+                  仅展示已启用且已配置 URL、API Key 的模型；如果全部不勾选，表示该 AppKey 不限制模型。
+                </span>
               </label>
               <label className="keys-field">
                 <span className="keys-label">权限域</span>
@@ -473,7 +510,7 @@ export function ApiKeys() {
                 <button
                   type="submit"
                   className="btn btn-primary"
-                  disabled={createMut.isPending}
+                  disabled={createMut.isPending || availableModelsQuery.isLoading}
                 >
                   {createMut.isPending ? "创建中…" : "创建"}
                 </button>

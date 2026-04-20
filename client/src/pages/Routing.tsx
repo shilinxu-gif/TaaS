@@ -60,8 +60,7 @@ export function Routing() {
         <div>
           <h1 className="rt-title">路由调度</h1>
           <p className="rt-lead muted">
-            向项目组演示：策略模式、降级链路、供应商优先级与真实请求分布（近{" "}
-            {d.windowDays} 天）
+            查看策略模式、降级链路、供应商优先级与真实请求分布（近 {d.windowDays} 天）
           </p>
         </div>
       </header>
@@ -95,7 +94,7 @@ export function Routing() {
           ))}
         </div>
         <p className="rt-strategy-hint muted">
-          切换后下方「供应商优先级」表格将按对应规则重新排序（演示用，策略保存在服务端内存）。
+          切换后下方「供应商优先级」表格会按对应规则重新排序。
         </p>
         {strategyMut.error ? (
           <p className="error rt-strategy-err">
@@ -138,7 +137,7 @@ export function Routing() {
           <h2 className="rt-card-title">供应商优先级</h2>
           <p className="rt-card-desc muted">
             基于当前「{modes.find((x) => x.id === d.strategyMode)?.label}
-            」策略排序；延迟与成功率为租户近 {d.windowDays} 天日志聚合（无流量时为演示基线）
+            」策略排序；延迟与成功率基于租户近 {d.windowDays} 天日志聚合
           </p>
         </div>
         <div className="rt-table-wrap">
@@ -218,7 +217,7 @@ export function Routing() {
       <section className="rt-card">
         <div className="rt-card-hd">
           <h2 className="rt-card-title">近期降级记录</h2>
-          <p className="rt-card-desc muted">含 gpt-fallback-demo 等触发原因的样本</p>
+          <p className="rt-card-desc muted">展示最近发生的真实降级与切换原因</p>
         </div>
         <div className="rt-table-wrap">
           <table className="rt-table rt-table--compact">

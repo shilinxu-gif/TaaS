@@ -106,20 +106,6 @@ public class GatewayService {
       execution = callProviders(selection.candidates(), model, requestBody);
       payload = normalizePayload(model, execution.payload(), execution.promptTokens(), execution.completionTokens(), execution.totalTokens());
     } catch (Exception exception) {
-      String errorCode = exception instanceof ApiException apiException ? apiException.getCode() : null;
-      if (properties.getCommercial().isAllowMockProvider()
-          && ("provider_not_configured".equals(errorCode)
-              || "all_providers_failed".equals(errorCode))) {
-        Map<String, Object> mock =
-            Map.of(
-                "id", "chatcmpl-demo-" + Ids.shortHex(8),
-                "object", "chat.completion",
-                "created", Instant.now().getEpochSecond(),
-                "model", model,
-                "choices", List.of(Map.of("index", 0, "message", Map.of("role", "assistant", "content", "当前未配置真实上游模型密钥，已返回本地演示回复。请配置 OPENAI_API_KEY / ANTHROPIC_API_KEY / GOOGLE_API_KEY。"), "finish_reason", "stop")),
-                "usage", Map.of("prompt_tokens", 0, "completion_tokens", 0, "total_tokens", 0));
-        return new GatewayResponse(HttpStatus.OK, mock, Map.of());
-      }
       if (exception instanceof ApiException apiException) {
         throw apiException;
       }
@@ -285,9 +271,6 @@ public class GatewayService {
   }
 
   private boolean supportsModel(ProviderRow row, String model) {
-    if ("gpt-fallback-demo".equalsIgnoreCase(model)) {
-      return "openai".equals(row.providerType()) || "anthropic".equals(row.providerType());
-    }
     List<Map<String, Object>> catalog = jsons.readObjectList(row.modelCatalogJson());
     if (catalog.isEmpty()) {
       String inferred = ProviderCatalog.inferProviderType(model);
@@ -581,11 +564,7 @@ public class GatewayService {
     String routingReason =
         execution.attempts() > 1
             ? "fallback_from_" + routingPrimary
-            : ("gpt-fallback-demo".equalsIgnoreCase(model)
-                    && "anthropic".equals(execution.provider().providerType())
-                    && "openai".equals(routingPrimary))
-                ? "fallback_primary_unavailable"
-                : null;
+            : null;
     jdbcTemplate.update(
         """
         insert into api_request_logs (

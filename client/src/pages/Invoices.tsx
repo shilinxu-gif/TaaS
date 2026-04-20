@@ -78,30 +78,6 @@ export function Invoices() {
     },
   });
 
-  const acceptM = useMutation({
-    mutationFn: (id: string) =>
-      api<{ id: string }>(`/finance/invoices/${id}/mock-accept`, {
-        method: "POST",
-      }),
-    onSuccess: (_, id) => {
-      qc.invalidateQueries({ queryKey: ["finance", "invoices"] });
-      qc.invalidateQueries({ queryKey: ["finance", "invoices", "summary"] });
-      qc.invalidateQueries({ queryKey: ["finance", "invoices", id] });
-    },
-  });
-
-  const issueM = useMutation({
-    mutationFn: (id: string) =>
-      api<InvoiceRequestRow>(`/finance/invoices/${id}/mock-issue`, {
-        method: "POST",
-      }),
-    onSuccess: (_, id) => {
-      qc.invalidateQueries({ queryKey: ["finance", "invoices"] });
-      qc.invalidateQueries({ queryKey: ["finance", "invoices", "summary"] });
-      qc.invalidateQueries({ queryKey: ["finance", "invoices", id] });
-    },
-  });
-
   if (summaryQ.isLoading || listQ.isLoading) {
     return <p className="muted fin-page-pad">加载中…</p>;
   }
@@ -124,7 +100,7 @@ export function Invoices() {
         <div>
           <h1 className="fin-title">自动化开票</h1>
           <p className="fin-subtitle muted">
-            开票申请、税号与抬头管理、状态跟踪；符合国内企业财务对账与合规演示场景（无真实税控对接）
+            开票申请、税号与抬头管理、状态跟踪；当前按生产占位流程保留申请与回填能力
           </p>
         </div>
         <button
@@ -154,14 +130,14 @@ export function Invoices() {
           <div className="fin-kpi-value tabular-nums">
             ¥{formatCny(s.issuedAmountMonthCny)}
           </div>
-          <div className="fin-kpi-hint muted">已开票蓝字金额合计（演示）</div>
+          <div className="fin-kpi-hint muted">已开票蓝字金额合计</div>
         </article>
       </section>
 
       <section className="fin-section">
         <h2 className="fin-section-title">开票申请列表</h2>
         <p className="fin-section-desc muted">
-          共 {rows.length} 条。点击行查看详情；演示可推进「税局受理」与「开票完成」。
+          共 {rows.length} 条。点击行查看详情；状态将由真实开票系统或后台流程推进。
         </p>
         <div className="fin-table-wrap">
           <table className="fin-table">
@@ -174,7 +150,7 @@ export function Invoices() {
                 <th>金额（CNY）</th>
                 <th className="fin-col-status">状态</th>
                 <th>发票号码</th>
-                <th className="fin-col-actions">演示操作</th>
+                <th className="fin-col-actions">说明</th>
               </tr>
             </thead>
             <tbody>
@@ -215,32 +191,11 @@ export function Invoices() {
                       {r.invoiceNo ?? "—"}
                     </td>
                     <td className="fin-col-actions" onClick={(e) => e.stopPropagation()}>
-                      <div className="fin-action-stack">
-                        {r.status === "submitted" ? (
-                          <button
-                            type="button"
-                            className="btn fin-row-btn"
-                            disabled={acceptM.isPending}
-                            onClick={() => acceptM.mutate(r.id)}
-                          >
-                            模拟受理
-                          </button>
-                        ) : null}
-                        {r.status === "submitted" || r.status === "processing" ? (
-                          <button
-                            type="button"
-                            className="btn btn-primary fin-row-btn"
-                            disabled={issueM.isPending}
-                            onClick={() => issueM.mutate(r.id)}
-                          >
-                            模拟开票完成
-                          </button>
-                        ) : null}
-                        {r.status !== "submitted" &&
-                        r.status !== "processing" ? (
-                          <span className="muted fin-dash">—</span>
-                        ) : null}
-                      </div>
+                      {r.status === "submitted" || r.status === "processing" ? (
+                        <span className="muted">等待开票系统处理</span>
+                      ) : (
+                        <span className="muted fin-dash">—</span>
+                      )}
                     </td>
                   </tr>
                 ))
@@ -315,40 +270,15 @@ export function Invoices() {
                     </dd>
                     <dt>驳回/作废原因</dt>
                     <dd>{detail.rejectReason ?? "—"}</dd>
-                    <dt>PDF（演示）</dt>
+                    <dt>PDF</dt>
                     <dd>
-                      {detail.pdfUrl && detail.pdfUrl.startsWith("#") ? (
-                        <span className="muted">演示链接 {detail.pdfUrl}</span>
-                      ) : detail.pdfUrl ? (
+                      {detail.pdfUrl ? (
                         <a href={detail.pdfUrl}>下载</a>
                       ) : (
                         "—"
                       )}
                     </dd>
                   </dl>
-                  <div className="fin-drawer-actions">
-                    {detail.status === "submitted" ? (
-                      <button
-                        type="button"
-                        className="btn"
-                        disabled={acceptM.isPending}
-                        onClick={() => acceptM.mutate(detail.id)}
-                      >
-                        模拟税局受理
-                      </button>
-                    ) : null}
-                    {detail.status === "submitted" ||
-                    detail.status === "processing" ? (
-                      <button
-                        type="button"
-                        className="btn btn-primary"
-                        disabled={issueM.isPending}
-                        onClick={() => issueM.mutate(detail.id)}
-                      >
-                        模拟开票完成
-                      </button>
-                    ) : null}
-                  </div>
                 </>
               ) : null}
             </div>

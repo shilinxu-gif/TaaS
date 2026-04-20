@@ -1,4 +1,4 @@
--- AI Gateway demo schema (replaces CRM)
+-- AI Gateway schema (replaces CRM)
 DROP TABLE IF EXISTS "activities" CASCADE;
 DROP TABLE IF EXISTS "opportunities" CASCADE;
 DROP TABLE IF EXISTS "leads" CASCADE;

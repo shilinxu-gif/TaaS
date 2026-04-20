@@ -53,9 +53,6 @@ public class JwtService {
 
   private Key signingKey() {
     String secret = properties.getAuth().getJwtSecret();
-    if (secret == null || secret.isBlank()) {
-      secret = "dev-only-change-me-please-use-a-real-jwt-secret";
-    }
     while (secret.length() < 32) {
       secret = secret + secret;
     }

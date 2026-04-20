@@ -174,7 +174,7 @@ export function Dashboard() {
 
       <section className="dash-card dash-card--risks">
         <h2 className="dash-card-title">风险提醒</h2>
-        <p className="dash-card-desc muted">基于余额、用量与错误率的演示规则</p>
+        <p className="dash-card-desc muted">基于余额、用量与错误率的实时规则</p>
         <ul className="dash-risk-list">
           {risks.map((r, i) => (
             <li

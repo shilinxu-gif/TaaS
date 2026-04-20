@@ -9,8 +9,12 @@ type ProviderForm = {
   baseUrl: string;
   healthStatus: string;
   apiKey: string;
+  apiKeyConfigured: boolean;
+  apiKeyDirty: boolean;
   modelCatalogText: string;
 };
+
+const API_KEY_MASK = "••••••••••••••••";
 
 function buildForm(row: ProviderConfigRow): ProviderForm {
   return {
@@ -20,6 +24,8 @@ function buildForm(row: ProviderConfigRow): ProviderForm {
     baseUrl: row.baseUrl ?? "",
     healthStatus: row.healthStatus,
     apiKey: "",
+    apiKeyConfigured: row.configured,
+    apiKeyDirty: false,
     modelCatalogText: JSON.stringify(row.modelCatalog, null, 2),
   };
 }
@@ -33,6 +39,8 @@ export function AdminProviders() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [form, setForm] = useState<ProviderForm | null>(null);
   const [jsonError, setJsonError] = useState("");
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteCountdown, setDeleteCountdown] = useState(10);
   const rows = providersQuery.data ?? [];
   const selected =
     rows.find((row) => row.id === selectedId) ?? rows[0] ?? null;
@@ -41,6 +49,7 @@ export function AdminProviders() {
     if (!selected) {
       setSelectedId(null);
       setForm(null);
+      setDeleteOpen(false);
       return;
     }
     if (selectedId == null) {
@@ -52,6 +61,18 @@ export function AdminProviders() {
       setForm(buildForm(selected));
     }
   }, [selected, selectedId]);
+
+  useEffect(() => {
+    if (!deleteOpen) {
+      setDeleteCountdown(10);
+      return;
+    }
+    setDeleteCountdown(10);
+    const timer = window.setInterval(() => {
+      setDeleteCountdown((prev) => (prev <= 1 ? 0 : prev - 1));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [deleteOpen, selected?.id]);
 
   const saveMut = useMutation({
     mutationFn: async () => {
@@ -72,7 +93,7 @@ export function AdminProviders() {
           timeoutMs: Number(form.timeoutMs),
           baseUrl: form.baseUrl.trim() || undefined,
           healthStatus: form.healthStatus,
-          apiKey: form.apiKey.trim() || undefined,
+          apiKey: form.apiKeyDirty ? form.apiKey.trim() || undefined : undefined,
           modelCatalog,
         }),
       });
@@ -86,6 +107,28 @@ export function AdminProviders() {
       void qc.invalidateQueries({ queryKey: ["admin", "providers"] });
       void qc.invalidateQueries({ queryKey: ["routing"] });
       void qc.invalidateQueries({ queryKey: ["ops", "overview"] });
+    },
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: async () => {
+      if (!selected) return;
+      return api<{ id: string; name: string; deleted: boolean }>(
+        `/providers/${selected.id}`,
+        {
+          method: "DELETE",
+        },
+      );
+    },
+    onSuccess: () => {
+      setDeleteOpen(false);
+      setSelectedId(null);
+      setForm(null);
+      setJsonError("");
+      void qc.invalidateQueries({ queryKey: ["admin", "providers"] });
+      void qc.invalidateQueries({ queryKey: ["routing"] });
+      void qc.invalidateQueries({ queryKey: ["ops", "overview"] });
+      void qc.invalidateQueries({ queryKey: ["app-keys", "available-models"] });
     },
   });
 
@@ -237,11 +280,33 @@ export function AdminProviders() {
               <label>API Key（留空表示不修改）</label>
               <input
                 type="password"
-                placeholder="输入新的上游 API Key"
-                value={form.apiKey}
+                placeholder={form.apiKeyConfigured ? API_KEY_MASK : "输入新的上游 API Key"}
+                value={
+                  form.apiKeyDirty
+                    ? form.apiKey
+                    : form.apiKeyConfigured
+                      ? API_KEY_MASK
+                      : ""
+                }
+                onFocus={() =>
+                  setForm((prev) =>
+                    prev && prev.apiKeyConfigured && !prev.apiKeyDirty
+                      ? { ...prev, apiKeyDirty: true, apiKey: "" }
+                      : prev,
+                  )
+                }
+                onBlur={() =>
+                  setForm((prev) =>
+                    prev && prev.apiKeyDirty && !prev.apiKey.trim()
+                      ? { ...prev, apiKeyDirty: false, apiKey: "" }
+                      : prev,
+                  )
+                }
                 onChange={(e) =>
                   setForm((prev) =>
-                    prev ? { ...prev, apiKey: e.target.value } : prev,
+                    prev
+                      ? { ...prev, apiKeyDirty: true, apiKey: e.target.value }
+                      : prev,
                   )
                 }
               />
@@ -265,6 +330,9 @@ export function AdminProviders() {
           {saveMut.error ? (
             <p className="error">{(saveMut.error as Error).message}</p>
           ) : null}
+          {deleteMut.error ? (
+            <p className="error">{(deleteMut.error as Error).message}</p>
+          ) : null}
           <div style={{ marginTop: "1rem", display: "flex", gap: "0.75rem" }}>
             <button
               type="button"
@@ -281,8 +349,78 @@ export function AdminProviders() {
             >
               重置
             </button>
+            <button
+              type="button"
+              className="btn btn-danger"
+              style={{ marginLeft: "auto" }}
+              disabled={saveMut.isPending || deleteMut.isPending}
+              onClick={() => setDeleteOpen(true)}
+            >
+              删除供应商
+            </button>
           </div>
         </section>
+      ) : null}
+
+      {deleteOpen && selected ? (
+        <div
+          className="keys-modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="provider-delete-title"
+        >
+          <div className="keys-modal keys-modal--narrow">
+            <div className="keys-modal-hd">
+              <h2 id="provider-delete-title">确认删除供应商</h2>
+              <button
+                type="button"
+                className="btn btn-header-ghost"
+                onClick={() => setDeleteOpen(false)}
+                disabled={deleteMut.isPending}
+              >
+                关闭
+              </button>
+            </div>
+            <div className="keys-form">
+              <div className="provider-delete-warning">
+                <p className="provider-delete-title">
+                  你将删除供应商「{selected.name}」
+                </p>
+                <p className="muted provider-delete-text">
+                  删除后将移除该上游配置与模型目录；如果该供应商已有历史调用记录，系统会拒绝删除。
+                </p>
+                <p className="muted provider-delete-text">
+                  为避免误操作，确认按钮将在 <strong>{deleteCountdown}</strong> 秒后可点击。
+                </p>
+              </div>
+              {deleteMut.error ? (
+                <p className="error">{(deleteMut.error as Error).message}</p>
+              ) : null}
+              <div className="keys-modal-actions">
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => setDeleteOpen(false)}
+                  disabled={deleteMut.isPending}
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-danger"
+                  disabled={deleteMut.isPending || deleteCountdown > 0}
+                  onClick={() => deleteMut.mutate()}
+                >
+                  {deleteMut.isPending
+                    ? "删除中..."
+                    : deleteCountdown > 0
+                      ? `确认删除（${deleteCountdown}s）`
+                      : "确认删除"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       ) : null}
     </div>
   );

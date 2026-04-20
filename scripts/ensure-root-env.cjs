@@ -12,6 +12,6 @@ var exPath = path.join(root, ".env.example");
 if (!fs.existsSync(envPath) && fs.existsSync(exPath)) {
   fs.copyFileSync(exPath, envPath);
   console.log(
-    "[docker] 已从 .env.example 创建根目录 .env。请编辑 .env 设置 POSTGRES_PASSWORD（及可选 JWT_SECRET / 上游密钥）。"
+    "[docker] 已从 .env.example 创建根目录 .env。请编辑 .env 设置 POSTGRES_PASSWORD，并填写 JWT_SECRET / PROVIDER_CONFIG_SECRET / APP_KEY_PEPPER；如需初始化管理员，再填写 BOOTSTRAP_ADMIN_LOGIN / BOOTSTRAP_ADMIN_PASSWORD。"
   );
 }

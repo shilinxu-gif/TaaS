@@ -44,17 +44,20 @@ mybatis:
 
 taas:
   auth:
-    jwt-secret: ${JWT_SECRET:dev-only-change-me}
+    jwt-secret: ${JWT_SECRET:}
     issuer: taas-java
     expire-seconds: ${JWT_EXPIRE_SECONDS:604800}
   security:
-    provider-config-secret: ${PROVIDER_CONFIG_SECRET:${JWT_SECRET:dev-provider-config-secret}}
-    app-key-pepper: ${APP_KEY_PEPPER:${JWT_SECRET:dev-app-key-pepper}}
+    provider-config-secret: ${PROVIDER_CONFIG_SECRET:}
+    app-key-pepper: ${APP_KEY_PEPPER:}
+  bootstrap:
+    admin-login: ${BOOTSTRAP_ADMIN_LOGIN:}
+    admin-password: ${BOOTSTRAP_ADMIN_PASSWORD:}
   commercial:
     sales-email: ${SALES_EMAIL:sales@taas.example}
     support-email: ${SUPPORT_EMAIL:support@taas.example}
     trial-days: ${TRIAL_DAYS:14}
-    allow-mock-provider: ${ALLOW_MOCK_PROVIDER:true}
+    allow-mock-provider: ${ALLOW_MOCK_PROVIDER:false}
   providers:
     openai-api-key: ${OPENAI_API_KEY:}
     anthropic-api-key: ${ANTHROPIC_API_KEY:}

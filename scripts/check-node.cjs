@@ -16,7 +16,7 @@ if (major < 20) {
     "   安装后打开 Docker 等待启动完成，在项目根目录执行：npm run dev:stack"
   );
   console.error(
-    "   浏览器访问 http://localhost:5174 ，登录名 wangqiang ，密码 123456"
+    "   浏览器访问 http://localhost:5174 。管理员账号需通过 .env 中的 BOOTSTRAP_ADMIN_LOGIN / BOOTSTRAP_ADMIN_PASSWORD 初始化"
   );
   console.error("");
   console.error("2) 在本机开发（需要 Node 20）：");

@@ -31,85 +31,28 @@ public class ConsoleService {
   private static final Set<String> WRITE_ROLES = Set.of("owner", "admin", "developer");
   private static final Set<String> ADMIN_ROLES = Set.of("owner", "admin");
   private static final Set<String> OPS_ROLES = Set.of("owner", "admin", "billing");
-  private static final List<Map<String, Object>> PROMPT_TEMPLATE_MOCK =
-      List.of(
-          Map.of(
-              "id", "tpl-1",
-              "name", "客服首轮应答",
-              "description", "与 Acme 在线客服生产密钥配套，统一问候与澄清话术",
-              "snippet", "你是 Acme 官方客服。用户问题：{user_msg}\n请先复述诉求类别，再给不超过 3 步的解决方案。",
-              "uses", 842,
-              "savedUsd", "126.40"),
-          Map.of(
-              "id", "tpl-2",
-              "name", "工单摘要（内部 QA）",
-              "description", "与 internal-qa 密钥联动，结构化抽取字段供 CRM 回填",
-              "snippet", "将工单正文压缩为 JSON：{category, urgency, owner_hint, next_action}。\n正文：{ticket_body}",
-              "uses", 531,
-              "savedUsd", "58.20"),
-          Map.of(
-              "id", "tpl-3",
-              "name", "合规审查清单",
-              "description", "法务抽检用固定模板，利于语义缓存命中",
-              "snippet", "按 ISO27001 与内部数据分级制度，对以下段落给出「合规风险提示」列表：\n{excerpt}",
-              "uses", 297,
-              "savedUsd", "41.05"));
-  private static final List<Map<String, Object>> REPEATED_PROMPT_PAD =
-      List.of(
-          Map.of(
-              "preview", "请用三句话总结以下产品说明，突出差异化卖点。",
-              "hits", 842,
-              "savedTokens", 384200),
-          Map.of(
-              "preview", "将下列会议纪要保持原意压缩为 150 字以内。",
-              "hits", 651,
-              "savedTokens", 219800),
-          Map.of(
-              "preview", "根据接口文档生成 curl 示例，并标注必填 header。",
-              "hits", 523,
-              "savedTokens", 176400),
-          Map.of(
-              "preview", "把用户口语 query 改写为检索友好的关键词列表。",
-              "hits", 498,
-              "savedTokens", 99300),
-          Map.of(
-              "preview", "输出 JSON：{ title, severity, action }，仅基于给定日志片段。",
-              "hits", 377,
-              "savedTokens", 128600),
-          Map.of(
-              "preview", "用非技术人员能懂的话解释这段错误堆栈的可能原因。",
-              "hits", 289,
-              "savedTokens", 87200),
-          Map.of(
-              "preview", "将表格数据转为 Markdown 表，并校验列数一致。",
-              "hits", 241,
-              "savedTokens", 55800),
-          Map.of(
-              "preview", "中英互译：保持敬语级别与术语表一致。",
-              "hits", 198,
-              "savedTokens", 42100));
   private static final List<Map<String, Object>> ROUTING_FALLBACK_CHAINS =
       List.of(
           Map.of(
               "id", "chain-primary",
-              "title", "旗舰通用链",
-              "description", "高能力模型优先，逐级降级，保障长尾请求仍可响应。",
-              "models", List.of("GPT-4o", "GPT-3.5 Turbo", "Gemini 1.5 Pro")),
+              "title", "通用主链",
+              "description", "优先选择已配置且健康的主模型，失败时按供应商链路依次回退。",
+              "models", List.of("主模型", "同类备选模型", "跨供应商兜底模型")),
           Map.of(
               "id", "chain-eco",
-              "title", "经济型链",
-              "description", "低价模型优先，适合测试、批处理与内部工具场景。",
-              "models", List.of("Gemini 1.5 Flash", "GPT-4o Mini", "Claude 3 Haiku")),
+              "title", "成本控制链",
+              "description", "在满足可用性的前提下优先使用低成本模型，适合批处理与内部工具。",
+              "models", List.of("经济型主模型", "成本备选模型", "跨厂商低成本模型")),
           Map.of(
               "id", "chain-failover",
-              "title", "故障转移（与网关规则一致）",
-              "description", "示例模型 gpt-fallback-demo：控制台显示主路由 OpenAI，实际由 Claude 承载（演示调度）。",
-              "models", List.of("主路由：OpenAI（GPT 家族）", "实发：Anthropic Claude", "标记：fallback_primary_unavailable")));
+              "title", "故障转移链",
+              "description", "当主供应商超时、限流或不可用时，自动切换到下一候选供应商。",
+              "models", List.of("主供应商", "备用供应商", "最终兜底供应商")));
   private static final Map<String, String> ROUTING_NOTES =
       Map.of(
           "cost", "优先经济性评分（越高越省），在可接受延迟内将流量引向低价模型组合；适合批量与成本敏感业务。",
           "quality", "优先成功率与延迟稳定性，必要时接受较高单价；适合对结果一致性要求高的生产链路。",
-          "balance", "综合成功率、成本评分与延迟加权排序，适合大多数默认生产流量（演示默认）。");
+          "balance", "综合成功率、成本评分与延迟加权排序，适合作为大多数生产流量的默认策略。");
 
   private final NamedParameterJdbcTemplate jdbcTemplate;
   private final Jsons jsons;
@@ -236,7 +179,7 @@ public class ConsoleService {
               "detail",
               "当前余额约 "
                   + MoneyUtils.money(tenant.balanceTokens())
-                  + " tokens，建议关注充值或配额，避免影响生产调用（演示）。"));
+                  + " tokens，建议关注充值或配额，避免影响生产调用。"));
     }
     if (monthlyQuota > 0 && tokensToday > monthlyQuota * 0.08) {
       risks.add(
@@ -246,7 +189,7 @@ public class ConsoleService {
               "title",
               "今日 Token 用量较高",
               "detail",
-              "今日已用 " + String.format("%,d", tokensToday) + " tokens，接近当月套餐日均可用的参考阈值（演示告警）。"));
+              "今日已用 " + String.format("%,d", tokensToday) + " tokens，接近当月套餐日均可用的参考阈值。"));
     }
     if (agg.failed24h() > 0) {
       risks.add(
@@ -258,10 +201,10 @@ public class ConsoleService {
               "detail",
               "近 24 小时内有 "
                   + agg.failed24h()
-                  + " 条 HTTP≥400 的请求日志，建议在「用量」中排查（演示）。"));
+                  + " 条 HTTP≥400 的请求日志，建议在「用量」中排查。"));
     }
     if (risks.isEmpty()) {
-      risks.add(Map.of("level", "info", "title", "暂无异常", "detail", "路由与计费链路运行正常，可持续观察用量与余额（演示）。"));
+      risks.add(Map.of("level", "info", "title", "暂无异常", "detail", "路由与计费链路运行正常，可持续观察用量与余额。"));
     }
 
     return Map.of(
@@ -315,10 +258,55 @@ public class ConsoleService {
         (rs, rowNum) -> mapAppKeyRow(rs, tenant.name(), false, null));
   }
 
+  public List<Map<String, Object>> availableAppKeyModels(JwtPrincipal principal) {
+    requireTenant(principal.tenantId());
+    Map<String, Map<String, Object>> byModel = new LinkedHashMap<>();
+    jdbcTemplate.query(
+        """
+        select
+          name, slug, provider_type, priority, supports_streaming, model_catalog::text as model_catalog
+        from providers
+        where enabled = true
+          and status = 'active'
+          and base_url is not null
+          and nullif(trim(base_url), '') is not null
+          and api_key_ciphertext is not null
+          and nullif(trim(api_key_ciphertext), '') is not null
+        order by priority asc, name asc
+        """,
+        (rs, rowNum) -> {
+          String providerName = rs.getString("name");
+          String providerSlug = rs.getString("slug");
+          String providerType = rs.getString("provider_type");
+          boolean supportsStreaming = rs.getBoolean("supports_streaming");
+          int priority = rs.getInt("priority");
+          for (Map<String, Object> item : jsons.readObjectList(rs.getString("model_catalog"))) {
+            String model = nullableTrim(item.get("model"));
+            if (model == null || byModel.containsKey(model)) {
+              continue;
+            }
+            byModel.put(
+                model,
+                orderedMap(
+                    "id", model,
+                    "model", model,
+                    "label", providerName + " · " + model,
+                    "providerName", providerName,
+                    "providerSlug", providerSlug,
+                    "providerType", providerType,
+                    "priority", priority,
+                    "supportsStreaming", booleanValue(item.get("supportsStreaming"), supportsStreaming)));
+          }
+          return null;
+        });
+    return new ArrayList<>(byModel.values());
+  }
+
   public Map<String, Object> createAppKey(
       JwtPrincipal principal, Map<String, Object> body, String ip) {
     requireRole(principal.role(), WRITE_ROLES);
     validateAppKeyBody(body, false);
+    validateAllowedModelsConfigured(principal, body);
     String token = cryptoUtils.generateAppKeyToken();
     Instant now = Instant.now();
     String id = Ids.cuidLike("ak");
@@ -384,6 +372,7 @@ public class ConsoleService {
       JwtPrincipal principal, String appKeyId, Map<String, Object> body, String ip) {
     requireRole(principal.role(), WRITE_ROLES);
     validateAppKeyBody(body, true);
+    validateAllowedModelsConfigured(principal, body);
     Map<String, Object> existing = getAppKey(principal.tenantId(), appKeyId);
     if (body.containsKey("status")
         && "revoked".equals(String.valueOf(existing.get("status")))
@@ -815,20 +804,6 @@ public class ConsoleService {
                   "savedTokens", rs.getLong("saved_tokens"),
                   "source", "idempotency");
             });
-    List<Map<String, Object>> padded = new ArrayList<>(topRepeatedPrompts);
-    int padIdx = 0;
-    while (padded.size() < 8 && padIdx < REPEATED_PROMPT_PAD.size()) {
-      Map<String, Object> item = REPEATED_PROMPT_PAD.get(padIdx);
-      padded.add(
-          Map.of(
-              "id", "demo-" + padIdx,
-              "preview", item.get("preview"),
-              "hits", item.get("hits"),
-              "savedTokens", item.get("savedTokens"),
-              "source", "demo"));
-      padIdx += 1;
-    }
-    topRepeatedPrompts = padded.size() > 12 ? padded.subList(0, 12) : padded;
     List<Map<String, Object>> promptTemplates;
     try {
       promptTemplates =
@@ -848,11 +823,8 @@ public class ConsoleService {
                       "snippet", rs.getString("snippet"),
                       "uses", rs.getInt("uses_hint"),
                       "savedUsd", rs.getString("saved_usd_hint")));
-      if (promptTemplates.isEmpty() || isLegacyDemoPromptTemplates(promptTemplates)) {
-        promptTemplates = PROMPT_TEMPLATE_MOCK;
-      }
     } catch (Exception exception) {
-      promptTemplates = PROMPT_TEMPLATE_MOCK;
+      promptTemplates = List.of();
     }
     long total = (hits == null ? 0 : hits) + (misses == null ? 0 : misses);
     BigDecimal hitRate = total == 0 ? BigDecimal.ZERO : BigDecimal.valueOf((hits == null ? 0 : hits) * 1000.0 / total).setScale(1, RoundingMode.HALF_UP);
@@ -975,6 +947,37 @@ public class ConsoleService {
     }
     auditService.write(principal.tenantId(), principal.userId(), "user", "provider.update", "provider", id, ip, Map.of("fields", body.keySet()));
     return providers(principal).stream().filter(row -> id.equals(row.get("id"))).findFirst().orElseThrow(() -> new ApiException(404, "Provider not found"));
+  }
+
+  public Map<String, Object> deleteProvider(JwtPrincipal principal, String id, String ip) {
+    requireRole(principal.role(), ADMIN_ROLES);
+    Map<String, Object> existing =
+        providers(principal).stream()
+            .filter(row -> id.equals(row.get("id")))
+            .findFirst()
+            .orElseThrow(() -> new ApiException(404, "Provider not found"));
+    Integer usageCount =
+        jdbcTemplate.queryForObject(
+            "select count(*) from api_request_logs where provider_id = :id",
+            Map.of("id", id),
+            Integer.class);
+    if (usageCount != null && usageCount > 0) {
+      throw new ApiException(409, "该供应商已有历史调用记录，不能删除；如需停用请改为禁用");
+    }
+    int deleted = jdbcTemplate.update("delete from providers where id = :id", Map.of("id", id));
+    if (deleted == 0) {
+      throw new ApiException(404, "Provider not found");
+    }
+    auditService.write(
+        principal.tenantId(),
+        principal.userId(),
+        "user",
+        "provider.delete",
+        "provider",
+        id,
+        ip,
+        Map.of("name", existing.get("name"), "slug", existing.get("slug")));
+    return orderedMap("id", id, "name", existing.get("name"), "deleted", true);
   }
 
   public List<Map<String, Object>> adminUsers(JwtPrincipal principal) {
@@ -1866,7 +1869,6 @@ public class ConsoleService {
       case "gemini-1.5-flash" -> 94;
       case "claude-3-5-sonnet", "claude-3-5-sonnet-latest" -> 80;
       case "claude-3-haiku" -> 91;
-      case "gpt-fallback-demo" -> 86;
       default -> 76;
     };
   }
@@ -1878,14 +1880,6 @@ public class ConsoleService {
       case "claude" -> "Anthropic Claude";
       default -> fallback;
     };
-  }
-
-  private static boolean isLegacyDemoPromptTemplates(List<Map<String, Object>> promptTemplates) {
-    if (promptTemplates.size() != 2) {
-      return false;
-    }
-    List<String> names = promptTemplates.stream().map(item -> String.valueOf(item.get("name"))).toList();
-    return names.contains("客服总结") && names.contains("需求拆解");
   }
 
   private static void patchSet(List<String> sets, MapSqlParameterSource params, String column, Object value) {
@@ -1934,6 +1928,25 @@ public class ConsoleService {
       return list.stream().map(String::valueOf).filter(item -> !item.isBlank()).toList();
     }
     return fallback;
+  }
+
+  private void validateAllowedModelsConfigured(JwtPrincipal principal, Map<String, Object> body) {
+    if (!body.containsKey("allowedModels")) {
+      return;
+    }
+    List<String> requested = defaultStringList(body.get("allowedModels"), List.of());
+    if (requested.isEmpty()) {
+      return;
+    }
+    Set<String> available =
+        availableAppKeyModels(principal).stream()
+            .map(row -> String.valueOf(row.get("model")))
+            .collect(java.util.stream.Collectors.toSet());
+    for (String model : requested) {
+      if (!available.contains(model)) {
+        throw new ApiException(400, "allowedModels contains unavailable model: " + model);
+      }
+    }
   }
 
   private void validateAppKeyBody(Map<String, Object> body, boolean partial) {

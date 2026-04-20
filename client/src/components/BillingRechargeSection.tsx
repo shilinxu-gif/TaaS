@@ -122,12 +122,6 @@ type FollowUp =
       row: RechargeOrderRow;
       bank: RechargeBankAccount;
     }
-  | {
-      kind: "qr";
-      row: RechargeOrderRow;
-      payChannel: RechargePayChannel;
-      uiStatus: "pending_payment" | "success" | "cancelled";
-    }
   | null;
 
 export function BillingRechargeSection({
@@ -187,59 +181,11 @@ export function BillingRechargeSection({
       setDrawerOpen(false);
       if (res.flow === "bank" && res.bankAccount) {
         setFollowUp({ kind: "bank", row: res, bank: res.bankAccount });
-        showToast(res.hint ?? "对公订单已创建，请完成打款。");
-      } else if (res.flow === "qr") {
-        setFollowUp({
-          kind: "qr",
-          row: res,
-          payChannel: res.payChannel as RechargePayChannel,
-          uiStatus: "pending_payment",
-        });
-        showToast(res.hint ?? "请使用扫码完成支付（演示）。");
+        showToast(res.hint ?? "对公充值申请已创建，请按指引打款。");
       } else {
         setFollowUp(null);
-        showToast(res.hint ?? "充值已入账（演示）。");
+        showToast(res.hint ?? "充值申请已提交。");
       }
-    },
-  });
-
-  const bankApproveM = useMutation({
-    mutationFn: (id: string) =>
-      api<RechargeOrderRow>(`/finance/recharges/${id}/mock-bank-approve`, {
-        method: "POST",
-      }),
-    onSuccess: (_row) => {
-      invalidateAll();
-      setFollowUp(null);
-      showToast("已模拟审核通过并入账。");
-    },
-  });
-
-  const paySuccessM = useMutation({
-    mutationFn: (id: string) =>
-      api<RechargeOrderRow>(`/finance/recharges/${id}/mock-pay-success`, {
-        method: "POST",
-      }),
-    onSuccess: () => {
-      invalidateAll();
-      setFollowUp((fu) =>
-        fu?.kind === "qr" ? { ...fu, uiStatus: "success" } : fu,
-      );
-      showToast("支付成功（演示），余额已更新。");
-    },
-  });
-
-  const payCancelM = useMutation({
-    mutationFn: (id: string) =>
-      api<RechargeOrderRow>(`/finance/recharges/${id}/mock-pay-cancel`, {
-        method: "POST",
-      }),
-    onSuccess: () => {
-      invalidateAll();
-      setFollowUp((fu) =>
-        fu?.kind === "qr" ? { ...fu, uiStatus: "cancelled" } : fu,
-      );
-      showToast("订单已取消（演示）。");
     },
   });
 
@@ -295,7 +241,7 @@ export function BillingRechargeSection({
                 在线充值
               </h2>
               <p className="rc-sub muted">
-                购买余额与套餐的入口；演示环境不产生真实扣款。
+                购买余额与套餐的入口；当前页面按生产占位流程记录申请与到账状态。
               </p>
             </div>
           </div>
@@ -327,7 +273,7 @@ export function BillingRechargeSection({
         <article className="rc-card rc-card--entry">
           <div className="rc-card-label">充值入口</div>
           <p className="rc-entry-desc muted">
-            推荐：对公打款、支付宝。国际支付为 Demo 流程。
+            推荐优先使用对公打款；其他支付方式保留为接入占位，提交后生成待处理申请。
           </p>
           <div className="rc-pay-grid" role="list">
             {PAY_CHANNELS.map((ch) => {
@@ -411,83 +357,11 @@ export function BillingRechargeSection({
             </button>
             <button
               type="button"
-              className="btn btn-primary"
-              disabled={bankApproveM.isPending}
-              onClick={() => bankApproveM.mutate(followUp.row.id)}
-            >
-              模拟财务审核通过（演示）
-            </button>
-            <button
-              type="button"
               className="btn btn-header-ghost"
               onClick={() => setFollowUp(null)}
             >
               收起
             </button>
-          </div>
-        </div>
-      ) : null}
-
-      {followUp?.kind === "qr" ? (
-        <div className="rc-follow rc-follow--qr">
-          <div className="rc-follow-hd">
-            <strong>
-              {followUp.payChannel === "wechat" ? "微信支付" : "支付宝支付"}
-            </strong>
-            <span className="muted">单号 {followUp.row.orderNo}</span>
-          </div>
-          <div className="rc-qr-layout">
-            <div
-              className="rc-qr-placeholder"
-              aria-label={followUp.payChannel === "wechat" ? "微信收款码占位" : "支付宝收款码占位"}
-            >
-              <span className="rc-qr-placeholder-inner">
-                {followUp.payChannel === "wechat" ? "微信扫码区" : "支付宝扫码区"}
-                <small className="muted">演示占位 · 非真实码</small>
-              </span>
-            </div>
-            <div className="rc-qr-side">
-              <p className="tabular-nums">
-                应付金额 <strong>{followUp.row.amountDisplay}</strong>
-              </p>
-              <p className="muted">
-                状态：
-                <span className={rechargeStatusBadgeClass(followUp.uiStatus)}>
-                  {followUp.uiStatus === "pending_payment"
-                    ? "待支付"
-                    : followUp.uiStatus === "success"
-                      ? "支付成功"
-                      : "已取消"}
-                </span>
-              </p>
-              {followUp.uiStatus === "pending_payment" ? (
-                <div className="rc-qr-actions">
-                  <button
-                    type="button"
-                    className="btn btn-primary"
-                    disabled={paySuccessM.isPending}
-                    onClick={() => paySuccessM.mutate(followUp.row.id)}
-                  >
-                    模拟支付成功
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-header-ghost"
-                    disabled={payCancelM.isPending}
-                    onClick={() => payCancelM.mutate(followUp.row.id)}
-                  >
-                    取消支付
-                  </button>
-                </div>
-              ) : null}
-              <button
-                type="button"
-                className="btn btn-header-ghost rc-qr-dismiss"
-                onClick={() => setFollowUp(null)}
-              >
-                关闭
-              </button>
-            </div>
           </div>
         </div>
       ) : null}
@@ -507,7 +381,7 @@ export function BillingRechargeSection({
                 <th>状态</th>
                 <th>创建时间</th>
                 <th>到账时间</th>
-                <th className="rc-col-actions">操作</th>
+                <th className="rc-col-actions">说明</th>
               </tr>
             </thead>
             <tbody>
@@ -540,35 +414,11 @@ export function BillingRechargeSection({
                     </td>
                     <td className="rc-col-actions">
                       {r.status === "pending_review" ? (
-                        <button
-                          type="button"
-                          className="btn fin-row-btn"
-                          disabled={bankApproveM.isPending}
-                          onClick={() => bankApproveM.mutate(r.id)}
-                        >
-                          模拟审核通过
-                        </button>
+                        <span className="muted">等待财务确认到账</span>
                       ) : r.status === "pending_payment" ||
                         r.status === "pending" ||
                         r.status === "processing" ? (
-                        <span className="rc-action-group">
-                          <button
-                            type="button"
-                            className="btn fin-row-btn"
-                            disabled={paySuccessM.isPending}
-                            onClick={() => paySuccessM.mutate(r.id)}
-                          >
-                            模拟支付成功
-                          </button>
-                          <button
-                            type="button"
-                            className="btn btn-header-ghost"
-                            disabled={payCancelM.isPending}
-                            onClick={() => payCancelM.mutate(r.id)}
-                          >
-                            取消
-                          </button>
-                        </span>
+                        <span className="muted">等待真实支付通道回调或人工处理</span>
                       ) : (
                         <span className="muted">—</span>
                       )}
@@ -590,11 +440,11 @@ export function BillingRechargeSection({
           </li>
           <li>
             <strong className="rc-instructions-strong">微信支付 / 支付宝</strong>
-            ：扫码或跳转拉起 App（演示为二维码占位）；到账为自动核销或人工复核。
+            ：支付通道保留接入位，当前提交后会生成待支付申请，由后续真实支付回调或人工复核完成到账。
           </li>
           <li>
             <strong className="rc-instructions-strong">Apple Pay / Google Pay</strong>
-            ：国际卡与公司海外主体；当前为 Demo，点击提交将模拟成功并入账，真实通道即将接入。
+            ：适用于国际卡与海外主体；当前仅保留订单受理能力，待后续接入真实支付通道。
           </li>
           <li>发票：勾选「需要发票」后，可在「自动化开票」模块补充抬头与邮寄信息。</li>
         </ul>
@@ -712,8 +562,7 @@ export function BillingRechargeSection({
               </div>
               {(payChannel === "apple_pay" || payChannel === "google_pay") ? (
                 <p className="muted-sm">
-                  当前为 Demo：提交后将生成一条「已到账」的模拟成功记录并增加余额；真实 Apple / Google Pay
-                  即将支持。
+                  当前渠道仍在接入中。提交后会先登记充值申请，不会自动加款。
                 </p>
               ) : null}
               {createM.error ? (

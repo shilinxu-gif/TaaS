@@ -27,7 +27,7 @@ class FinanceServiceTest {
   private final FinanceService financeService = new FinanceService(jdbcTemplate);
 
   @Test
-  void rechargeActionShouldRejectCancelForNonPendingPaymentStatus() throws Exception {
+  void rechargeActionShouldRejectMockActionsInProductionMode() throws Exception {
     stubRechargeLookup("pending_review");
 
     ApiException exception =
@@ -39,14 +39,14 @@ class FinanceServiceTest {
                     "rch_1",
                     "mock-pay-cancel"));
 
-    assertEquals(400, exception.getStatusCode());
-    assertEquals("仅待支付订单可取消", exception.getMessage());
+    assertEquals(410, exception.getStatusCode());
+    assertEquals("生产模式下已禁用模拟充值动作，请通过真实支付回调或财务流程更新订单状态", exception.getMessage());
     verify(jdbcTemplate, never())
         .update(contains("update wallet_recharge_orders set status = 'cancelled'"), any(Map.class));
   }
 
   @Test
-  void invoiceActionShouldRejectAcceptForNonSubmittedStatus() throws Exception {
+  void invoiceActionShouldRejectMockActionsInProductionMode() throws Exception {
     stubInvoiceLookup("issued");
 
     ApiException exception =
@@ -58,8 +58,8 @@ class FinanceServiceTest {
                     "inv_1",
                     "mock-accept"));
 
-    assertEquals(400, exception.getStatusCode());
-    assertEquals("仅「已提交」状态可模拟税局受理", exception.getMessage());
+    assertEquals(410, exception.getStatusCode());
+    assertEquals("生产模式下已禁用模拟开票动作，请通过真实开票系统或后台流程推进状态", exception.getMessage());
     verify(jdbcTemplate, never())
         .update(contains("update invoice_requests set status = 'processing'"), any(Map.class));
   }

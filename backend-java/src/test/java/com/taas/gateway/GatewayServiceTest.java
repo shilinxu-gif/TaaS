@@ -31,12 +31,12 @@ class GatewayServiceTest {
           WebClient.builder());
 
   @Test
-  void supportsModelShouldAllowAnthropicForFallbackDemo() throws Exception {
+  void supportsModelShouldRejectLegacyFallbackDemoModel() throws Exception {
     Object providerRow = newProviderRow("anthropic", "[]");
 
     boolean supported = (boolean) invoke("supportsModel", providerRow, "gpt-fallback-demo");
 
-    assertEquals(true, supported);
+    assertEquals(false, supported);
   }
 
   @Test

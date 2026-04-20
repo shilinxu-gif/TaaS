@@ -5,6 +5,7 @@ import com.taas.auth.RequestContext;
 import java.util.List;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -33,6 +34,11 @@ public class ConsoleController {
   @GetMapping("/app-keys")
   public List<Map<String, Object>> appKeys() {
     return consoleService.listAppKeys(principal());
+  }
+
+  @GetMapping("/app-keys/available-models")
+  public List<Map<String, Object>> availableAppKeyModels() {
+    return consoleService.availableAppKeyModels(principal());
   }
 
   @PostMapping("/app-keys")
@@ -94,26 +100,6 @@ public class ConsoleController {
     return financeService.createRecharge(principal(), body);
   }
 
-  @PostMapping("/finance/recharges/{id}/mock-bank-approve")
-  public Map<String, Object> mockBankApprove(@PathVariable String id) {
-    return financeService.rechargeAction(principal(), id, "mock-bank-approve");
-  }
-
-  @PostMapping("/finance/recharges/{id}/mock-pay-success")
-  public Map<String, Object> mockPaySuccess(@PathVariable String id) {
-    return financeService.rechargeAction(principal(), id, "mock-pay-success");
-  }
-
-  @PostMapping("/finance/recharges/{id}/mock-pay-cancel")
-  public Map<String, Object> mockPayCancel(@PathVariable String id) {
-    return financeService.rechargeAction(principal(), id, "mock-pay-cancel");
-  }
-
-  @PostMapping("/finance/recharges/{id}/mock-complete")
-  public Map<String, Object> mockComplete(@PathVariable String id) {
-    return financeService.rechargeAction(principal(), id, "mock-complete");
-  }
-
   @GetMapping("/finance/invoices/summary")
   public Map<String, Object> invoiceSummary() {
     return financeService.invoiceSummary(principal());
@@ -133,16 +119,6 @@ public class ConsoleController {
   @ResponseStatus(HttpStatus.CREATED)
   public Map<String, Object> createInvoice(@RequestBody Map<String, Object> body) {
     return financeService.createInvoice(principal(), body);
-  }
-
-  @PostMapping("/finance/invoices/{id}/mock-accept")
-  public Map<String, Object> invoiceAccept(@PathVariable String id) {
-    return financeService.invoiceAction(principal(), id, "mock-accept");
-  }
-
-  @PostMapping("/finance/invoices/{id}/mock-issue")
-  public Map<String, Object> invoiceIssue(@PathVariable String id) {
-    return financeService.invoiceAction(principal(), id, "mock-issue");
   }
 
   @GetMapping("/routing/summary")
@@ -198,6 +174,13 @@ public class ConsoleController {
       @RequestBody Map<String, Object> body,
       @RequestHeader(value = "X-Forwarded-For", required = false) String forwardedFor) {
     return consoleService.updateProvider(principal(), id, body, clientIp(forwardedFor));
+  }
+
+  @DeleteMapping("/providers/{id}")
+  public Map<String, Object> deleteProvider(
+      @PathVariable String id,
+      @RequestHeader(value = "X-Forwarded-For", required = false) String forwardedFor) {
+    return consoleService.deleteProvider(principal(), id, clientIp(forwardedFor));
   }
 
   @GetMapping("/ops/overview")
