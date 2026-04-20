@@ -1,3 +1,5 @@
+import { i18n } from "./i18n";
+
 const BASE = "/api";
 
 function getToken(): string | null {
@@ -10,15 +12,14 @@ export async function api<T>(
 ): Promise<T> {
   const headers = new Headers(options.headers);
   headers.set("Content-Type", "application/json");
+  headers.set("Accept-Language", i18n.resolvedLanguage ?? "zh-CN");
   const token = getToken();
   if (token) headers.set("Authorization", `Bearer ${token}`);
   let res: Response;
   try {
     res = await fetch(`${BASE}${path}`, { ...options, headers });
   } catch {
-    throw new Error(
-      "无法连接后端（请确认已启动 Java API：根目录执行 npm run dev:server，默认端口 3001）"
-    );
+    throw new Error(i18n.t("api.backendUnavailable"));
   }
   if (res.status === 401) {
     localStorage.removeItem("crm_token");
@@ -49,7 +50,7 @@ export async function api<T>(
       !fromJson &&
       (res.status === 500 || res.status === 502 || res.status === 504)
     ) {
-      msg = `${msg} · 请确认 Java API 已启动（端口 3001），且 PostgreSQL / Redis 可用。`;
+      msg = `${msg} · ${i18n.t("api.serverHint")}`;
     }
     throw new Error(msg);
   }
@@ -64,6 +65,7 @@ export async function gatewayChat(
 ): Promise<unknown> {
   const headers = new Headers();
   headers.set("Content-Type", "application/json");
+  headers.set("Accept-Language", i18n.resolvedLanguage ?? "zh-CN");
   headers.set("Authorization", `Bearer ${appKey}`);
   if (idempotencyKey?.trim()) {
     headers.set("Idempotency-Key", idempotencyKey.trim());

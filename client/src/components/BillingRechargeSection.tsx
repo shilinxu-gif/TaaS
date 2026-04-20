@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   api,
   type RechargeBankAccount,
@@ -8,6 +9,8 @@ import {
   type RechargePayChannel,
   type RechargeSummary,
 } from "../api";
+import { formatCurrencyAmount, formatDateTime, formatNumber } from "../i18n/format";
+import { pickText } from "../i18n/inline";
 
 const PAY_CHANNELS: {
   id: RechargePayChannel;
@@ -129,6 +132,8 @@ export function BillingRechargeSection({
 }: {
   variant?: "billing" | "page";
 }) {
+  const { i18n } = useTranslation();
+  const text = (zhCN: string, enUS: string) => pickText(i18n.resolvedLanguage, zhCN, enUS);
   const qc = useQueryClient();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [amount, setAmount] = useState("5000");
@@ -181,10 +186,10 @@ export function BillingRechargeSection({
       setDrawerOpen(false);
       if (res.flow === "bank" && res.bankAccount) {
         setFollowUp({ kind: "bank", row: res, bank: res.bankAccount });
-        showToast(res.hint ?? "对公充值申请已创建，请按指引打款。");
+        showToast(res.hint ?? text("对公充值申请已创建，请按指引打款。", "The bank-transfer recharge request has been created. Please complete the transfer as instructed."));
       } else {
         setFollowUp(null);
-        showToast(res.hint ?? "充值申请已提交。");
+        showToast(res.hint ?? text("充值申请已提交。", "Recharge request submitted."));
       }
     },
   });
@@ -200,7 +205,7 @@ export function BillingRechargeSection({
   if (summaryQ.isLoading || listQ.isLoading) {
     return (
       <section className={variant === "page" ? "rc-wrap rc-wrap--page" : "rc-wrap"}>
-        <p className="muted">在线充值加载中…</p>
+        <p className="muted">{text("在线充值加载中…", "Loading recharge…")}</p>
       </section>
     );
   }
@@ -253,16 +258,16 @@ export function BillingRechargeSection({
 
       <div className="rc-cards-grid">
         <article className="rc-card rc-card--balance">
-          <div className="rc-card-label">当前余额（tokens）</div>
+          <div className="rc-card-label">{text("当前余额（tokens）", "Current Balance (tokens)")}</div>
           <div className="rc-card-value tabular-nums">
-            {Number(s.balanceTokens).toLocaleString("zh-CN")}
+            {formatNumber(Number(s.balanceTokens), i18n.resolvedLanguage)}
           </div>
           <div className="rc-card-meta muted">
-            与计费中心同一口径 · 待处理订单 {s.pendingCount} 笔
+            {text(`与计费中心同一口径 · 待处理订单 ${s.pendingCount} 笔`, `Same metric as billing · ${s.pendingCount} orders pending`)}
           </div>
           <div className="rc-card-meta muted">
-            本月成功充值（折合 CNY）¥
-            {Number(s.monthRechargeCny).toLocaleString("zh-CN", {
+            {text("本月成功充值（折合 CNY）¥", "Successful recharge this month (CNY equiv.) ¥")}
+            {formatCurrencyAmount(s.monthRechargeCny, i18n.resolvedLanguage, {
               minimumFractionDigits: 2,
               maximumFractionDigits: 2,
             })}
@@ -405,11 +410,11 @@ export function BillingRechargeSection({
                       </span>
                     </td>
                     <td className="rc-td-time">
-                      {new Date(r.createdAt).toLocaleString("zh-CN")}
+                      {formatDateTime(r.createdAt, i18n.resolvedLanguage)}
                     </td>
                     <td className="rc-td-time">
                       {r.paidAt
-                        ? new Date(r.paidAt).toLocaleString("zh-CN")
+                        ? formatDateTime(r.paidAt, i18n.resolvedLanguage)
                         : "—"}
                     </td>
                     <td className="rc-col-actions">

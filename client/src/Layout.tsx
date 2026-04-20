@@ -1,7 +1,9 @@
 import type { ComponentType } from "react";
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { NavLink, Outlet } from "react-router-dom";
 import { useAuth } from "./auth";
+import { LanguageSwitcher } from "./components/LanguageSwitcher";
 import {
   IcBolt,
   IcChart,
@@ -20,38 +22,39 @@ const NAV_COLLAPSED_KEY = "taas-nav-collapsed";
 
 const tenantLinks: {
   to: string;
-  label: string;
+  labelKey: string;
   end?: boolean;
   Icon: ComponentType;
 }[] = [
-  { to: "/dashboard", label: "工作台", end: true, Icon: IcDashboard },
-  { to: "/api-keys", label: "API 密钥", Icon: IcKey },
-  { to: "/usage", label: "用量", Icon: IcChart },
-  { to: "/optimization", label: "成本优化", Icon: IcBolt },
-  { to: "/routing", label: "路由调度", Icon: IcRoute },
-  { to: "/ops", label: "运营与审计", Icon: IcOps },
-  { to: "/billing", label: "计费中心", Icon: IcReceipt },
-  { to: "/recharge", label: "在线充值", Icon: IcWallet },
-  { to: "/invoices", label: "自动化开票", Icon: IcInvoiceDoc },
+  { to: "/dashboard", labelKey: "layout.tenantLinks.dashboard", end: true, Icon: IcDashboard },
+  { to: "/api-keys", labelKey: "layout.tenantLinks.apiKeys", Icon: IcKey },
+  { to: "/usage", labelKey: "layout.tenantLinks.usage", Icon: IcChart },
+  { to: "/optimization", labelKey: "layout.tenantLinks.optimization", Icon: IcBolt },
+  { to: "/routing", labelKey: "layout.tenantLinks.routing", Icon: IcRoute },
+  { to: "/ops", labelKey: "layout.tenantLinks.ops", Icon: IcOps },
+  { to: "/billing", labelKey: "layout.tenantLinks.billing", Icon: IcReceipt },
+  { to: "/recharge", labelKey: "layout.tenantLinks.recharge", Icon: IcWallet },
+  { to: "/invoices", labelKey: "layout.tenantLinks.invoices", Icon: IcInvoiceDoc },
 ];
 
 const adminLinks: {
   to: string;
-  label: string;
+  labelKey: string;
   end?: boolean;
   Icon: ComponentType;
 }[] = [
-  { to: "/dashboard", label: "平台概览", end: true, Icon: IcDashboard },
-  { to: "/admin/usage", label: "调用与充值", Icon: IcChart },
-  { to: "/admin/providers", label: "供应商与模型", Icon: IcRoute },
-  { to: "/admin/users", label: "用户管理", Icon: IcPeople },
-  { to: "/ops", label: "运营与审计", Icon: IcOps },
+  { to: "/dashboard", labelKey: "layout.adminLinks.dashboard", end: true, Icon: IcDashboard },
+  { to: "/admin/usage", labelKey: "layout.adminLinks.usage", Icon: IcChart },
+  { to: "/admin/providers", labelKey: "layout.adminLinks.providers", Icon: IcRoute },
+  { to: "/admin/users", labelKey: "layout.adminLinks.users", Icon: IcPeople },
+  { to: "/ops", labelKey: "layout.adminLinks.ops", Icon: IcOps },
 ];
 
 export function Layout() {
+  const { t } = useTranslation();
   const { user, logout } = useAuth();
   const initial = user?.name?.charAt(0) ?? "?";
-  const tenantLabel = user?.tenant?.name ?? "—";
+  const tenantLabel = user?.tenant?.name ?? t("layout.tenantFallback");
   const tenantStatus = user?.tenant?.status ?? "";
   const platformRole = user?.platformRole ?? "user";
   const links = platformRole === "platform_admin" ? adminLinks : tenantLinks;
@@ -91,6 +94,7 @@ export function Layout() {
           <BrandLogo variant="header" />
         </div>
         <div className="desk-header-right">
+          <LanguageSwitcher compact />
           <span className="muted saas-tenant-pill">
             {tenantLabel}
             {tenantStatus ? ` · ${tenantStatus}` : ""}
@@ -99,7 +103,7 @@ export function Layout() {
             <span className="desk-user-avatar">{initial}</span>
             <span>
               {user?.name}
-              {platformRole === "platform_admin" ? " · 平台管理员" : ""}
+              {platformRole === "platform_admin" ? ` · ${t("layout.platformAdmin")}` : ""}
             </span>
           </div>
           <button
@@ -107,7 +111,7 @@ export function Layout() {
             className="btn btn-header-ghost"
             onClick={logout}
           >
-            退出
+            {t("layout.logout")}
           </button>
         </div>
       </header>
@@ -118,13 +122,13 @@ export function Layout() {
           <div
             className={`app-sidebar-head${sidebarCollapsed ? " app-sidebar-head--collapsed" : ""}`}
           >
-            {!sidebarCollapsed ? <div className="app-brand">导航</div> : null}
+            {!sidebarCollapsed ? <div className="app-brand">{t("layout.nav")}</div> : null}
             <button
               type="button"
               className="app-sidebar-toggle"
               onClick={() => setNavCollapsed((v) => !v)}
               aria-expanded={!sidebarCollapsed}
-              aria-label={navCollapsed ? "展开导航" : "收起导航"}
+              aria-label={navCollapsed ? t("layout.expandNav") : t("layout.collapseNav")}
             >
               {sidebarCollapsed ? (
                 <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden>
@@ -144,20 +148,23 @@ export function Layout() {
             </button>
           </div>
           <nav className="nav-links">
-            {links.map((l) => (
+            {links.map((l) => {
+              const label = t(l.labelKey);
+              return (
               <NavLink
                 key={l.to}
                 to={l.to}
                 end={l.end}
-                title={l.label}
+                title={label}
                 className={({ isActive }) =>
                   `nav-link${isActive ? " active" : ""}`
                 }
               >
                 <l.Icon />
-                <span className="nav-link-label">{l.label}</span>
+                <span className="nav-link-label">{label}</span>
               </NavLink>
-            ))}
+              );
+            })}
           </nav>
         </aside>
         <main className="app-main saas-main">

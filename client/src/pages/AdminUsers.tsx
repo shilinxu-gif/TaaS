@@ -1,8 +1,13 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { api, type AdminUserRow } from "../api";
+import { formatDateTime, formatNumber } from "../i18n/format";
+import { pickText } from "../i18n/inline";
 
 export function AdminUsers() {
+  const { i18n } = useTranslation();
+  const text = (zhCN: string, enUS: string) => pickText(i18n.resolvedLanguage, zhCN, enUS);
   const [search, setSearch] = useState("");
   const usersQuery = useQuery({
     queryKey: ["admin", "users"],
@@ -26,7 +31,7 @@ export function AdminUsers() {
   }, [search, usersQuery.data]);
 
   if (usersQuery.isLoading) {
-    return <p className="muted usage-page-pad">加载中…</p>;
+    return <p className="muted usage-page-pad">{text("加载中…", "Loading…")}</p>;
   }
   if (usersQuery.error) {
     return (
@@ -40,9 +45,9 @@ export function AdminUsers() {
     <div className="usage-page">
       <header className="usage-header">
         <div>
-          <h1 className="usage-title">用户管理</h1>
+          <h1 className="usage-title">{text("用户管理", "User Management")}</h1>
           <p className="usage-subtitle muted">
-            查看全平台账号、平台角色和租户归属关系
+            {text("查看全平台账号、平台角色和租户归属关系", "Review platform accounts, platform roles, and tenant membership")}
           </p>
         </div>
       </header>
@@ -56,7 +61,7 @@ export function AdminUsers() {
             />
           </svg>
           <input
-            placeholder="搜索姓名 / 邮箱 / 租户"
+            placeholder={text("搜索姓名 / 邮箱 / 租户", "Search by name / email / tenant")}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -64,28 +69,28 @@ export function AdminUsers() {
       </section>
 
       <section className="bill-section bill-section--table">
-        <h2 className="bill-section-title">账号列表</h2>
+        <h2 className="bill-section-title">{text("账号列表", "Account List")}</h2>
         <div className="bill-table-wrap">
           <table className="bill-table">
             <thead>
               <tr>
-                <th>姓名</th>
-                <th>邮箱</th>
-                <th>平台角色</th>
-                <th>租户</th>
-                <th>请求数</th>
-                <th>总 Token</th>
-                <th>充值次数</th>
-                <th>成功充值(CNY)</th>
-                <th>邮箱验证</th>
-                <th>创建时间</th>
+                <th>{text("姓名", "Name")}</th>
+                <th>{text("邮箱", "Email")}</th>
+                <th>{text("平台角色", "Platform Role")}</th>
+                <th>{text("租户", "Tenants")}</th>
+                <th>{text("请求数", "Requests")}</th>
+                <th>{text("总 Token", "Total Tokens")}</th>
+                <th>{text("充值次数", "Recharge Count")}</th>
+                <th>{text("成功充值(CNY)", "Successful Recharge (CNY)")}</th>
+                <th>{text("邮箱验证", "Email Verification")}</th>
+                <th>{text("创建时间", "Created At")}</th>
               </tr>
             </thead>
             <tbody>
               {list.length === 0 ? (
                 <tr>
                   <td colSpan={10} className="bill-table-empty muted">
-                    暂无符合条件的用户
+                    {text("暂无符合条件的用户", "No users match the current filters")}
                   </td>
                 </tr>
               ) : (
@@ -96,7 +101,7 @@ export function AdminUsers() {
                     <td>{row.platformRole}</td>
                     <td>
                       {row.memberships.length === 0
-                        ? "—"
+                        ? text("—", "—")
                         : row.memberships
                             .map(
                               (item) =>
@@ -105,11 +110,11 @@ export function AdminUsers() {
                             .join("；")}
                     </td>
                     <td>{row.requestCount}</td>
-                    <td>{row.totalTokens.toLocaleString("zh-CN")}</td>
+                    <td>{formatNumber(row.totalTokens, i18n.resolvedLanguage)}</td>
                     <td>{row.rechargeCount}</td>
                     <td>{row.rechargeSuccessCny}</td>
-                    <td>{row.emailVerifiedAt ? "已验证" : "未验证"}</td>
-                    <td>{new Date(row.createdAt).toLocaleString("zh-CN")}</td>
+                    <td>{row.emailVerifiedAt ? text("已验证", "Verified") : text("未验证", "Unverified")}</td>
+                    <td>{formatDateTime(row.createdAt, i18n.resolvedLanguage)}</td>
                   </tr>
                 ))
               )}

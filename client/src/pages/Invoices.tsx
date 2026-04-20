@@ -1,20 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   api,
   type InvoiceRequestDetail,
   type InvoiceRequestRow,
   type InvoiceSummary,
 } from "../api";
-
-function formatCny(s: string): string {
-  const n = Number(s);
-  if (Number.isNaN(n)) return s;
-  return n.toLocaleString("zh-CN", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-}
+import { formatCurrencyAmount, formatDateTime } from "../i18n/format";
+import { pickText } from "../i18n/inline";
 
 function invoiceStatusBadgeClass(status: string): string {
   if (status === "issued") return "fin-badge fin-badge--ok";
@@ -26,6 +20,8 @@ function invoiceStatusBadgeClass(status: string): string {
 }
 
 export function Invoices() {
+  const { i18n } = useTranslation();
+  const text = (zhCN: string, enUS: string) => pickText(i18n.resolvedLanguage, zhCN, enUS);
   const qc = useQueryClient();
   const [drawerId, setDrawerId] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -79,7 +75,7 @@ export function Invoices() {
   });
 
   if (summaryQ.isLoading || listQ.isLoading) {
-    return <p className="muted fin-page-pad">加载中…</p>;
+    return <p className="muted fin-page-pad">{text("加载中…", "Loading…")}</p>;
   }
   if (summaryQ.error) {
     return (
@@ -98,7 +94,7 @@ export function Invoices() {
     <div className="fin-page">
       <header className="fin-hero">
         <div>
-          <h1 className="fin-title">自动化开票</h1>
+          <h1 className="fin-title">{text("自动化开票", "Invoicing")}</h1>
           <p className="fin-subtitle muted">
             开票申请、税号与抬头管理、状态跟踪；当前按生产占位流程保留申请与回填能力
           </p>
@@ -108,13 +104,13 @@ export function Invoices() {
           className="btn btn-primary"
           onClick={() => setModalOpen(true)}
         >
-          新建开票申请
+          {text("新建开票申请", "New invoice request")}
         </button>
       </header>
 
       <p className="fin-note muted">{s.note}</p>
 
-      <section className="fin-kpi-row" aria-label="开票概览">
+      <section className="fin-kpi-row" aria-label={text("开票概览", "Invoice Overview")}>
         <article className="fin-kpi">
           <div className="fin-kpi-label">待办结申请</div>
           <div className="fin-kpi-value tabular-nums">{s.pendingCount}</div>
@@ -128,7 +124,10 @@ export function Invoices() {
         <article className="fin-kpi">
           <div className="fin-kpi-label">本月开票金额（CNY）</div>
           <div className="fin-kpi-value tabular-nums">
-            ¥{formatCny(s.issuedAmountMonthCny)}
+            ¥{formatCurrencyAmount(s.issuedAmountMonthCny, i18n.resolvedLanguage, {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            })}
           </div>
           <div className="fin-kpi-hint muted">已开票蓝字金额合计</div>
         </article>
@@ -177,11 +176,14 @@ export function Invoices() {
                   >
                     <td className="fin-mono">{r.requestNo}</td>
                     <td className="fin-td-time">
-                      {new Date(r.createdAt).toLocaleString("zh-CN")}
+                      {formatDateTime(r.createdAt, i18n.resolvedLanguage)}
                     </td>
                     <td>{r.invoiceTypeLabel}</td>
                     <td className="fin-td-ellip">{r.buyerName}</td>
-                    <td className="tabular-nums">¥{formatCny(r.amountCny)}</td>
+                    <td className="tabular-nums">¥{formatCurrencyAmount(r.amountCny, i18n.resolvedLanguage, {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}</td>
                     <td className="fin-col-status">
                       <span className={invoiceStatusBadgeClass(r.status)}>
                         {r.statusLabel}
@@ -254,7 +256,10 @@ export function Invoices() {
                     <dd>{detail.buyerBankAccount ?? "—"}</dd>
                     <dt>价税合计（CNY）</dt>
                     <dd className="tabular-nums">
-                      ¥{formatCny(detail.amountCny)}
+                      ¥{formatCurrencyAmount(detail.amountCny, i18n.resolvedLanguage, {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
                     </dd>
                     <dt>电子票接收邮箱</dt>
                     <dd>{detail.email}</dd>
@@ -265,7 +270,7 @@ export function Invoices() {
                     <dt>开票时间</dt>
                     <dd>
                       {detail.issuedAt
-                        ? new Date(detail.issuedAt).toLocaleString("zh-CN")
+                        ? formatDateTime(detail.issuedAt, i18n.resolvedLanguage)
                         : "—"}
                     </dd>
                     <dt>驳回/作废原因</dt>

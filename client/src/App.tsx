@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { useAuth } from "./auth";
 import { Layout } from "./Layout";
@@ -19,10 +20,11 @@ import { Usage } from "./pages/Usage";
 
 function Protected({ children }: { children: ReactNode }) {
   const { token, user, loading } = useAuth();
+  const { t } = useTranslation();
   if (loading) {
     return (
       <div className="app-loading">
-        <p className="muted">Loading…</p>
+        <p className="muted">{t("app.protectedLoading")}</p>
       </div>
     );
   }

@@ -1,5 +1,6 @@
 import { Fragment, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import {
   api,
   type AdminRechargeOrderRow,
@@ -7,6 +8,12 @@ import {
   type AdminUsageDimension,
   type AdminUsageOverview,
 } from "../api";
+import {
+  formatCurrencyAmount,
+  formatDateTime as formatDateTimeValue,
+  formatNumber,
+} from "../i18n/format";
+import { pickText } from "../i18n/inline";
 
 const DEFAULT_TO = new Date().toISOString().slice(0, 10);
 const DEFAULT_FROM = shiftDate(DEFAULT_TO, -13);
@@ -42,6 +49,8 @@ const emptyOverview: AdminUsageOverview = {
 };
 
 export function AdminUsage() {
+  const { i18n } = useTranslation();
+  const text = (zhCN: string, enUS: string) => pickText(i18n.resolvedLanguage, zhCN, enUS);
   const [search, setSearch] = useState("");
   const [dimension, setDimension] = useState<AdminUsageDimension>("tenant");
   const [from, setFrom] = useState(DEFAULT_FROM);
@@ -115,7 +124,7 @@ export function AdminUsage() {
   }, [filtered]);
 
   if (overviewQuery.isLoading) {
-    return <p className="muted usage-page-pad">加载中…</p>;
+    return <p className="muted usage-page-pad">{text("加载中…", "Loading…")}</p>;
   }
   if (overviewQuery.error) {
     return (
@@ -231,10 +240,10 @@ export function AdminUsage() {
         <article className="bill-kpi bill-kpi--spend">
           <div className="bill-kpi-label">请求总数</div>
           <div className="bill-kpi-value">
-            {summaryStats.totalRequests.toLocaleString("zh-CN")}
+            {formatNumber(summaryStats.totalRequests, i18n.resolvedLanguage)}
           </div>
           <div className="bill-kpi-hint muted">
-            Token 总量 {summaryStats.totalTokens.toLocaleString("zh-CN")}
+            Token {text("总量", "total")} {formatNumber(summaryStats.totalTokens, i18n.resolvedLanguage)}
           </div>
         </article>
         <article className="bill-kpi bill-kpi--bal">
@@ -298,8 +307,8 @@ export function AdminUsage() {
                       )}
                     </td>
                     <td>{dimension === "tenant" ? row.memberCount ?? 0 : row.tenantCount ?? 0}</td>
-                    <td>{row.requestCount.toLocaleString("zh-CN")}</td>
-                    <td>{row.totalTokens.toLocaleString("zh-CN")}</td>
+                    <td>{formatNumber(row.requestCount, i18n.resolvedLanguage)}</td>
+                    <td>{formatNumber(row.totalTokens, i18n.resolvedLanguage)}</td>
                     <td>{row.rechargeCount}</td>
                     <td>{row.rechargeSuccessCny}</td>
                     <td>{formatIntegerString(row.rechargeTokens)}</td>
@@ -356,7 +365,7 @@ export function AdminUsage() {
                     <td>{row.environment}</td>
                     <td>{row.requestCount}</td>
                     <td>{row.successCount}</td>
-                    <td>{row.totalTokens.toLocaleString("zh-CN")}</td>
+                    <td>{formatNumber(row.totalTokens, i18n.resolvedLanguage)}</td>
                     <td>{row.spendUsd}</td>
                     <td>{formatDateTime(row.lastCalledAt)}</td>
                   </tr>
@@ -395,7 +404,7 @@ export function AdminUsage() {
                     <td>{row.model}</td>
                     <td>{row.providerSlug}</td>
                     <td>{row.requestCount}</td>
-                    <td>{row.totalTokens.toLocaleString("zh-CN")}</td>
+                    <td>{formatNumber(row.totalTokens, i18n.resolvedLanguage)}</td>
                     <td>{row.spendUsd}</td>
                     <td>{row.avgLatencyMs} ms</td>
                     <td>{row.successRate.toFixed(1)}%</td>
@@ -529,6 +538,8 @@ function TrendChart({
   description: string;
   series: AdminTrendSeries[];
 }) {
+  const { i18n } = useTranslation();
+  const text = (zhCN: string, enUS: string) => pickText(i18n.resolvedLanguage, zhCN, enUS);
   const maxCount = Math.max(
     1,
     ...series.flatMap((item) => item.points.map((point) => point.requestCount)),
@@ -546,7 +557,7 @@ function TrendChart({
               <div className="admin-usage-trend-head">
                 <div className="admin-usage-trend-name">{item.label}</div>
                 <div className="admin-usage-trend-total">
-                  {item.requestCount.toLocaleString("zh-CN")} 请求
+                  {text(`${formatNumber(item.requestCount, i18n.resolvedLanguage)} 请求`, `${formatNumber(item.requestCount, i18n.resolvedLanguage)} requests`)}
                 </div>
               </div>
               <div className="admin-usage-trend-bars">
@@ -586,11 +597,11 @@ function shiftDate(date: string, days: number) {
 }
 
 function formatDateTime(value: string | null) {
-  return value ? new Date(value).toLocaleString("zh-CN") : "—";
+  return value ? formatDateTimeValue(value) : "—";
 }
 
 function formatMoney(value: number) {
-  return value.toLocaleString("zh-CN", {
+  return formatCurrencyAmount(value, undefined, {
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   });
@@ -601,7 +612,7 @@ function formatIntegerString(value: string) {
   if (!Number.isFinite(numeric)) {
     return value;
   }
-  return numeric.toLocaleString("zh-CN", {
+  return formatNumber(numeric, undefined, {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   });

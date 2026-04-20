@@ -1,13 +1,19 @@
 import { useQuery } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { api, type AuditLogRow, type OpsOverview } from "../api";
+import { formatCurrencyAmount, formatDateTime } from "../i18n/format";
+import { pickText } from "../i18n/inline";
 
-function statusText(configured: boolean, enabled: boolean, healthStatus: string): string {
-  if (!configured) return "未配置";
-  if (!enabled) return "已停用";
+function statusText(configured: boolean, enabled: boolean, healthStatus: string, language: string | undefined): string {
+  if (!configured) return pickText(language, "未配置", "Not configured");
+  if (!enabled) return pickText(language, "已停用", "Disabled");
   return healthStatus;
 }
 
 export function Ops() {
+  const { i18n } = useTranslation();
+  const text = (zhCN: string, enUS: string) =>
+    pickText(i18n.resolvedLanguage, zhCN, enUS);
   const overviewQuery = useQuery({
     queryKey: ["ops", "overview"],
     queryFn: () => api<OpsOverview>("/ops/overview"),
@@ -17,7 +23,7 @@ export function Ops() {
     queryFn: () => api<AuditLogRow[]>("/ops/audit-logs"),
   });
 
-  if (overviewQuery.isLoading) return <p className="muted usage-page-pad">加载中…</p>;
+  if (overviewQuery.isLoading) return <p className="muted usage-page-pad">{text("加载中…", "Loading…")}</p>;
   if (overviewQuery.error) {
     return <p className="error usage-page-pad">{(overviewQuery.error as Error).message}</p>;
   }
@@ -29,32 +35,32 @@ export function Ops() {
     <div className="usage-page">
       <header className="usage-header">
         <div>
-          <h1 className="usage-title">运营与审计</h1>
+          <h1 className="usage-title">{text("运营与审计", "Operations & Audit")}</h1>
           <p className="usage-subtitle muted">
-            面向企业管理员的健康态势、预算运行和关键操作审计
+            {text("面向企业管理员的健康态势、预算运行和关键操作审计", "Health posture, budget status, and key operation audit for enterprise admins")}
           </p>
         </div>
       </header>
 
-      <section className="bill-summary" aria-label="运营概览">
+      <section className="bill-summary" aria-label={text("运营概览", "Operations Overview")}>
         <article className="bill-kpi bill-kpi--usage">
-          <div className="bill-kpi-label">24h 请求数</div>
+          <div className="bill-kpi-label">{text("24h 请求数", "24h Requests")}</div>
           <div className="bill-kpi-value">{overview.requests24h}</div>
         </article>
         <article className="bill-kpi bill-kpi--save">
-          <div className="bill-kpi-label">客户成功率</div>
+          <div className="bill-kpi-label">{text("客户成功率", "Customer Success Rate")}</div>
           <div className="bill-kpi-value bill-kpi-value--save">
             {overview.customerSuccessRate.toFixed(1)}%
           </div>
         </article>
         <article className="bill-kpi bill-kpi--spend">
-          <div className="bill-kpi-label">24h 失败数</div>
+          <div className="bill-kpi-label">{text("24h 失败数", "24h Failures")}</div>
           <div className="bill-kpi-value">{overview.failed24h}</div>
         </article>
         <article className="bill-kpi bill-kpi--bal">
-          <div className="bill-kpi-label">本月费用</div>
+          <div className="bill-kpi-label">{text("本月费用", "Spend This Month")}</div>
           <div className="bill-kpi-value bill-kpi-value--bal">
-            ${Number(overview.spendUsdMonth).toLocaleString("zh-CN", {
+            ${formatCurrencyAmount(overview.spendUsdMonth, i18n.resolvedLanguage, {
               minimumFractionDigits: 2,
               maximumFractionDigits: 6,
             })}
@@ -63,15 +69,15 @@ export function Ops() {
       </section>
 
       <section className="bill-section bill-section--table">
-        <h2 className="bill-section-title">供应商健康</h2>
+        <h2 className="bill-section-title">{text("供应商健康", "Provider Health")}</h2>
         <div className="bill-table-wrap">
           <table className="bill-table">
             <thead>
               <tr>
-                <th>供应商</th>
-                <th>类型</th>
-                <th>优先级</th>
-                <th>状态</th>
+                <th>{text("供应商", "Provider")}</th>
+                <th>{text("类型", "Type")}</th>
+                <th>{text("优先级", "Priority")}</th>
+                <th>{text("状态", "Status")}</th>
               </tr>
             </thead>
             <tbody>
@@ -80,7 +86,7 @@ export function Ops() {
                   <td>{provider.slug}</td>
                   <td>{provider.type}</td>
                   <td>{provider.priority}</td>
-                  <td>{statusText(provider.configured, provider.enabled, provider.healthStatus)}</td>
+                  <td>{statusText(provider.configured, provider.enabled, provider.healthStatus, i18n.resolvedLanguage)}</td>
                 </tr>
               ))}
             </tbody>
@@ -89,15 +95,15 @@ export function Ops() {
       </section>
 
       <section className="bill-section bill-section--table">
-        <h2 className="bill-section-title">最近审计日志</h2>
-        <p className="bill-section-desc muted">近 100 条关键变更与登录行为</p>
+        <h2 className="bill-section-title">{text("最近审计日志", "Recent Audit Logs")}</h2>
+        <p className="bill-section-desc muted">{text("近 100 条关键变更与登录行为", "Latest 100 key changes and sign-in activities")}</p>
         <div className="bill-table-wrap">
           <table className="bill-table">
             <thead>
               <tr>
-                <th>时间</th>
-                <th>动作</th>
-                <th>对象</th>
+                <th>{text("时间", "Time")}</th>
+                <th>{text("动作", "Action")}</th>
+                <th>{text("对象", "Target")}</th>
                 <th>IP</th>
               </tr>
             </thead>
@@ -105,19 +111,19 @@ export function Ops() {
               {audits.length === 0 ? (
                 <tr>
                   <td colSpan={4} className="bill-table-empty muted">
-                    暂无审计记录
+                    {text("暂无审计记录", "No audit logs")}
                   </td>
                 </tr>
               ) : (
                 audits.map((row) => (
                   <tr key={row.id}>
-                    <td>{new Date(row.createdAt).toLocaleString("zh-CN")}</td>
+                    <td>{formatDateTime(row.createdAt, i18n.resolvedLanguage)}</td>
                     <td>{row.action}</td>
                     <td>
                       {row.entityType}
                       {row.entityId ? ` · ${row.entityId}` : ""}
                     </td>
-                    <td>{row.ip ?? "—"}</td>
+                    <td>{row.ip ?? text("—", "—")}</td>
                   </tr>
                 ))
               )}

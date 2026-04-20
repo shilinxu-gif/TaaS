@@ -1,9 +1,11 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Link, useNavigate } from "react-router-dom";
 import { api, type User } from "../api";
 import { useAuth } from "../auth";
 import { IconLock, IconUser } from "../icons";
 import { BrandLogo } from "../BrandLogo";
+import { LanguageSwitcher } from "../components/LanguageSwitcher";
 
 type LoginRes = {
   token: string;
@@ -11,11 +13,13 @@ type LoginRes = {
 };
 
 export function Login() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const { login, refreshMe } = useAuth();
   const [loginName, setLoginName] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [forgotOpen, setForgotOpen] = useState(false);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -29,7 +33,7 @@ export function Login() {
       await refreshMe();
       navigate("/dashboard", { replace: true });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Sign-in failed");
+      setError(err instanceof Error ? err.message : t("auth.loginFailed"));
     }
   }
 
@@ -38,6 +42,9 @@ export function Login() {
       <div className="login-split">
         <div className="login-col login-col--left">
           <div className="login-intro">
+            <div className="auth-language-row">
+              <LanguageSwitcher compact />
+            </div>
             <div className="login-logo-row">
               <BrandLogo variant="auth" />
             </div>
@@ -46,14 +53,14 @@ export function Login() {
               aria-hidden="true"
             />
             <p className="login-tagline-en">
-              AI is changing the world…
+              {t("auth.login.heroLead")}
             </p>
-            <p className="login-title-sub">多模型路由 · 企业计费 · 可审计 AI 网关</p>
+            <p className="login-title-sub">{t("auth.login.heroSub")}</p>
           </div>
         </div>
         <div className="login-col login-col--right">
           <div className="auth-card-white login-auth-card">
-            <h2 className="auth-card-heading">登录</h2>
+            <h2 className="auth-card-heading">{t("auth.login.title")}</h2>
             <form onSubmit={onSubmit}>
               <div className="input-row">
                 <span className="input-icon">
@@ -62,7 +69,7 @@ export function Login() {
                 <input
                   type="text"
                   autoComplete="username"
-                  placeholder="Username or email"
+                  placeholder={t("auth.login.loginPlaceholder")}
                   value={loginName}
                   onChange={(e) => setLoginName(e.target.value)}
                   required
@@ -75,25 +82,70 @@ export function Login() {
                 <input
                   type="password"
                   autoComplete="current-password"
-                  placeholder="Password"
+                  placeholder={t("auth.login.passwordPlaceholder")}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
                 />
               </div>
-              <p className="muted">企业试用默认 14 天，注册后自动创建租户、预算与路由策略。</p>
+              <p className="muted">{t("auth.login.trialHint")}</p>
               {error ? <p className="error">{error}</p> : null}
               <button type="submit" className="btn-login-main">
-                登录
+                {t("auth.login.title")}
               </button>
             </form>
             <div className="auth-footer login-auth-footer">
-              <Link to="/register">Create account</Link>
-              <span className="muted-link">Forgot password?</span>
+              <Link to="/register">{t("auth.login.createAccount")}</Link>
+              <button
+                type="button"
+                className="link-button muted-link"
+                onClick={() => setForgotOpen(true)}
+              >
+                {t("auth.login.forgotPassword")}
+              </button>
             </div>
           </div>
         </div>
       </div>
+
+      {forgotOpen ? (
+        <div
+          className="keys-modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="forgot-password-title"
+        >
+          <div className="keys-modal keys-modal--narrow">
+            <div className="keys-modal-hd">
+              <h2 id="forgot-password-title">{t("auth.login.forgotTitle")}</h2>
+              <button
+                type="button"
+                className="btn btn-header-ghost"
+                onClick={() => setForgotOpen(false)}
+              >
+                {t("common.close")}
+              </button>
+            </div>
+            <div className="keys-form">
+              <p className="muted">
+                {t("auth.login.forgotBody1")}
+              </p>
+              <p className="muted">
+                {t("auth.login.forgotBody2")}
+              </p>
+              <div className="keys-modal-actions">
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => setForgotOpen(false)}
+                >
+                  {t("auth.login.forgotAcknowledge")}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

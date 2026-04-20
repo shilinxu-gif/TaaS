@@ -108,6 +108,16 @@ textarea {
   width: 100%;
 }
 
+.auth-language-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 1rem;
+}
+
+.auth-language-row--center {
+  justify-content: center;
+}
+
 .login-intro .brand-logo-img--auth {
   max-height: 144px;
   max-width: min(800px, 100%);
@@ -355,6 +365,14 @@ textarea {
   color: var(--crm-blue);
 }
 
+.link-button {
+  background: transparent;
+  border: none;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
 .error {
   color: var(--crm-danger);
   font-size: 0.9375rem;
@@ -394,6 +412,40 @@ textarea {
   display: flex;
   align-items: center;
   gap: 1rem;
+}
+
+.language-switcher {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.2rem;
+  border: 1px solid var(--crm-border);
+  border-radius: 999px;
+  background: #fafafa;
+}
+
+.language-switcher__button {
+  border: none;
+  background: transparent;
+  color: var(--crm-muted);
+  padding: 0.3rem 0.65rem;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.language-switcher__button:hover {
+  color: var(--crm-text);
+}
+
+.language-switcher__button--active {
+  background: #fff;
+  color: var(--crm-text);
+  box-shadow: var(--shadow-xs);
+}
+
+.language-switcher--compact .language-switcher__button {
+  font-size: 0.8125rem;
+  padding: 0.2rem 0.55rem;
 }
 
 .desk-header-icon {

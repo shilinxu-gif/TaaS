@@ -1,5 +1,7 @@
 package com.taas.auth;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.taas.infra.i18n.ApiMessageResolver;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -27,11 +29,18 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
   private final JwtService jwtService;
   private final NamedParameterJdbcTemplate jdbcTemplate;
+  private final ApiMessageResolver messages;
+  private final ObjectMapper objectMapper;
 
   public JwtAuthenticationFilter(
-      JwtService jwtService, NamedParameterJdbcTemplate jdbcTemplate) {
+      JwtService jwtService,
+      NamedParameterJdbcTemplate jdbcTemplate,
+      ApiMessageResolver messages,
+      ObjectMapper objectMapper) {
     this.jwtService = jwtService;
     this.jdbcTemplate = jdbcTemplate;
+    this.messages = messages;
+    this.objectMapper = objectMapper;
   }
 
   @Override
@@ -47,19 +56,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     try {
       String authorization = request.getHeader("Authorization");
       if (authorization == null || !authorization.startsWith("Bearer ")) {
-        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-        response.setContentType("application/json;charset=UTF-8");
-        response.getWriter().write("{\"error\":\"Unauthorized\"}");
+        writeError(response, HttpServletResponse.SC_UNAUTHORIZED, "error.unauthorized");
         return;
       }
       String token = authorization.substring(7).trim();
       if (token.startsWith("sk-")) {
-        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-        response.setContentType("application/json;charset=UTF-8");
-        response
-            .getWriter()
-            .write(
-                "{\"error\":\"Use JWT for console API; AppKey is only for POST /v1/chat/completions\"}");
+        writeError(response, HttpServletResponse.SC_UNAUTHORIZED, "error.consoleJwtRequired");
         return;
       }
       JwtPrincipal verified = jwtService.verify(token);
@@ -88,9 +90,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
               .findFirst()
               .orElse(null);
       if (role == null || role.isBlank()) {
-        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-        response.setContentType("application/json;charset=UTF-8");
-        response.getWriter().write("{\"error\":\"Unauthorized\"}");
+        writeError(response, HttpServletResponse.SC_UNAUTHORIZED, "error.unauthorized");
         return;
       }
       JwtPrincipal principal = new JwtPrincipal(verified.userId(), verified.tenantId(), role, platformRole);
@@ -106,5 +106,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
       RequestContext.clear();
       SecurityContextHolder.clearContext();
     }
+  }
+
+  private void writeError(HttpServletResponse response, int status, String key)
+      throws IOException {
+    response.setStatus(status);
+    response.setContentType("application/json;charset=UTF-8");
+    objectMapper.writeValue(response.getWriter(), Map.of("error", messages.get(key)));
   }
 }

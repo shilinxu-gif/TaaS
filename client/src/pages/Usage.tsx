@@ -1,6 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { api, type UsageRow } from "../api";
+import { formatCurrencyAmount, formatDateTime, formatNumber } from "../i18n/format";
+import { pickText } from "../i18n/inline";
 
 function statusBadge(code: number) {
   if (code >= 200 && code < 300) {
@@ -9,11 +12,11 @@ function statusBadge(code: number) {
   return <span className="usage-badge usage-badge--err">{code}</span>;
 }
 
-function cacheBadge(hit: boolean) {
+function cacheBadge(hit: boolean, language: string | undefined) {
   if (hit) {
-    return <span className="usage-badge usage-badge--hit">命中</span>;
+    return <span className="usage-badge usage-badge--hit">{pickText(language, "命中", "Hit")}</span>;
   }
-  return <span className="usage-badge usage-badge--miss">未命中</span>;
+  return <span className="usage-badge usage-badge--miss">{pickText(language, "未命中", "Miss")}</span>;
 }
 
 function inDateRange(iso: string, from: string, to: string): boolean {
@@ -30,6 +33,9 @@ function inDateRange(iso: string, from: string, to: string): boolean {
 }
 
 export function Usage() {
+  const { i18n } = useTranslation();
+  const text = (zhCN: string, enUS: string) =>
+    pickText(i18n.resolvedLanguage, zhCN, enUS);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [modelFilter, setModelFilter] = useState("");
@@ -97,61 +103,61 @@ export function Usage() {
     setDateTo("");
   }
 
-  if (isLoading) return <p className="muted usage-page-pad">加载中…</p>;
+  if (isLoading) return <p className="muted usage-page-pad">{text("加载中…", "Loading…")}</p>;
   if (error) return <p className="error usage-page-pad">{(error as Error).message}</p>;
 
   return (
     <div className="usage-page">
       <header className="usage-header">
         <div>
-          <h1 className="usage-title">用量</h1>
+          <h1 className="usage-title">{text("用量", "Usage")}</h1>
           <p className="usage-subtitle muted">
-            按网关请求聚合 · 支持本地筛选 · 数据来自真实请求日志
+            {text("按网关请求聚合 · 支持本地筛选 · 数据来自真实请求日志", "Aggregated by gateway request · Supports local filters · Data comes from real request logs")}
           </p>
         </div>
       </header>
 
-      <section className="usage-filters" aria-label="筛选条件">
+      <section className="usage-filters" aria-label={text("筛选条件", "Filters")}>
         <div className="usage-filter-grid">
           <div className="usage-filter-block">
-            <span className="usage-filter-label">时间范围</span>
+            <span className="usage-filter-label">{text("时间范围", "Date Range")}</span>
             <div className="usage-date-row">
               <input
                 type="date"
                 className="input-plain usage-input"
                 value={dateFrom}
                 onChange={(e) => setDateFrom(e.target.value)}
-                aria-label="开始日期"
+                aria-label={text("开始日期", "Start date")}
               />
-              <span className="usage-date-sep">至</span>
+              <span className="usage-date-sep">{text("至", "to")}</span>
               <input
                 type="date"
                 className="input-plain usage-input"
                 value={dateTo}
                 onChange={(e) => setDateTo(e.target.value)}
-                aria-label="结束日期"
+                aria-label={text("结束日期", "End date")}
               />
             </div>
             <div className="usage-preset-row">
               <button type="button" className="btn btn-ghost usage-chip" onClick={() => setPresetRange(7)}>
-                近 7 天
+                {text("近 7 天", "Last 7 days")}
               </button>
               <button type="button" className="btn btn-ghost usage-chip" onClick={() => setPresetRange(30)}>
-                近 30 天
+                {text("近 30 天", "Last 30 days")}
               </button>
               <button type="button" className="btn btn-ghost usage-chip" onClick={clearRange}>
-                清除
+                {text("清除", "Clear")}
               </button>
             </div>
           </div>
           <label className="usage-filter-field">
-            <span className="usage-filter-label">模型</span>
+            <span className="usage-filter-label">{text("模型", "Model")}</span>
             <select
               className="input-plain"
               value={modelFilter}
               onChange={(e) => setModelFilter(e.target.value)}
             >
-              <option value="">全部模型</option>
+              <option value="">{text("全部模型", "All models")}</option>
               {modelOptions.map((m) => (
                 <option key={m} value={m}>
                   {m}
@@ -166,7 +172,7 @@ export function Usage() {
               value={appKeyFilter}
               onChange={(e) => setAppKeyFilter(e.target.value)}
             >
-              <option value="">全部密钥</option>
+              <option value="">{text("全部密钥", "All keys")}</option>
               {appKeyOptions.map(([id, name]) => (
                 <option key={id} value={id}>
                   {name}
@@ -175,7 +181,7 @@ export function Usage() {
             </select>
           </label>
           <label className="usage-filter-field">
-            <span className="usage-filter-label">缓存命中</span>
+            <span className="usage-filter-label">{text("缓存命中", "Cache")}</span>
             <select
               className="input-plain"
               value={cacheFilter}
@@ -183,16 +189,16 @@ export function Usage() {
                 setCacheFilter(e.target.value as "all" | "hit" | "miss")
               }
             >
-              <option value="all">全部</option>
-              <option value="hit">仅命中</option>
-              <option value="miss">仅未命中</option>
+              <option value="all">{text("全部", "All")}</option>
+              <option value="hit">{text("仅命中", "Hits only")}</option>
+              <option value="miss">{text("仅未命中", "Misses only")}</option>
             </select>
           </label>
         </div>
         <p className="usage-filter-meta muted">
-          共 <strong>{filtered.length}</strong> 条
+          {text("共 ", "Total ")}<strong>{filtered.length}</strong>{text(" 条", "")}
           {(data?.length ?? 0) !== filtered.length
-            ? `（已筛选，原始 ${data?.length ?? 0} 条）`
+            ? text(`（已筛选，原始 ${data?.length ?? 0} 条）`, ` (filtered from ${data?.length ?? 0})`)
             : null}
         </p>
       </section>
@@ -202,25 +208,25 @@ export function Usage() {
           <table className="usage-table">
             <thead>
               <tr>
-                <th>时间</th>
+                  <th>{text("时间", "Time")}</th>
                 <th>AppKey</th>
-                <th>租户</th>
-                <th>模型</th>
-                <th>输入</th>
-                <th>输出</th>
-                <th>总计</th>
-                <th>费用 (USD)</th>
-                <th>缓存</th>
-                <th>供应商</th>
-                <th>延迟</th>
-                <th>状态</th>
+                  <th>{text("租户", "Tenant")}</th>
+                  <th>{text("模型", "Model")}</th>
+                  <th>{text("输入", "Input")}</th>
+                  <th>{text("输出", "Output")}</th>
+                  <th>{text("总计", "Total")}</th>
+                  <th>{text("费用 (USD)", "Cost (USD)")}</th>
+                  <th>{text("缓存", "Cache")}</th>
+                  <th>{text("供应商", "Provider")}</th>
+                  <th>{text("延迟", "Latency")}</th>
+                  <th>{text("状态", "Status")}</th>
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 ? (
                 <tr>
                   <td colSpan={12} className="usage-table-empty muted">
-                    无匹配记录，请调整筛选条件
+                    {text("无匹配记录，请调整筛选条件", "No matching records. Try adjusting the filters.")}
                   </td>
                 </tr>
               ) : (
@@ -237,10 +243,10 @@ export function Usage() {
                     }}
                     tabIndex={0}
                     role="button"
-                    aria-label="打开详情"
+                    aria-label={text("打开详情", "Open details")}
                   >
                     <td className="usage-td-time">
-                      {new Date(r.createdAt).toLocaleString("zh-CN")}
+                      {formatDateTime(r.createdAt)}
                     </td>
                     <td className="usage-td-name">{r.appKey.name}</td>
                     <td>{r.tenantName}</td>
@@ -248,22 +254,22 @@ export function Usage() {
                       <code className="usage-code">{r.model}</code>
                     </td>
                     <td className="tabular-nums">
-                      {r.promptTokens.toLocaleString("zh-CN")}
+                      {formatNumber(r.promptTokens)}
                     </td>
                     <td className="tabular-nums">
-                      {r.completionTokens.toLocaleString("zh-CN")}
+                      {formatNumber(r.completionTokens)}
                     </td>
                     <td className="tabular-nums usage-td-strong">
-                      {r.totalTokens.toLocaleString("zh-CN")}
+                      {formatNumber(r.totalTokens)}
                     </td>
                     <td className="tabular-nums">
                       $
-                      {Number(r.costUsd).toLocaleString("zh-CN", {
+                      {formatCurrencyAmount(r.costUsd, undefined, {
                         minimumFractionDigits: 2,
                         maximumFractionDigits: 6,
                       })}
                     </td>
-                    <td>{cacheBadge(r.cacheHit)}</td>
+                    <td>{cacheBadge(r.cacheHit, i18n.resolvedLanguage)}</td>
                     <td>{r.provider.name}</td>
                     <td className="tabular-nums">{r.latencyMs} ms</td>
                     <td>{statusBadge(r.statusCode)}</td>
@@ -289,95 +295,97 @@ export function Usage() {
             aria-labelledby="usage-drawer-title"
           >
             <div className="usage-drawer-hd">
-              <h2 id="usage-drawer-title">请求详情</h2>
+              <h2 id="usage-drawer-title">{text("请求详情", "Request Details")}</h2>
               <button
                 type="button"
                 className="btn btn-ghost usage-drawer-close"
                 onClick={() => setSelected(null)}
               >
-                关闭
+                {text("关闭", "Close")}
               </button>
             </div>
             <div className="usage-drawer-body">
               <dl className="usage-dl">
-                <dt>时间</dt>
-                <dd>{new Date(selected.createdAt).toLocaleString("zh-CN")}</dd>
-                <dt>日志 ID</dt>
+                <dt>{text("时间", "Time")}</dt>
+                <dd>{formatDateTime(selected.createdAt)}</dd>
+                <dt>{text("日志 ID", "Log ID")}</dt>
                 <dd>
                   <code className="usage-code-sm">{selected.id}</code>
                 </dd>
-                <dt>请求 ID</dt>
-                <dd>{selected.requestId ?? "—"}</dd>
-                <dt>链路追踪</dt>
-                <dd>{selected.traceId ?? "—"}</dd>
-                <dt>租户</dt>
+                <dt>{text("请求 ID", "Request ID")}</dt>
+                <dd>{selected.requestId ?? text("—", "—")}</dd>
+                <dt>{text("链路追踪", "Trace ID")}</dt>
+                <dd>{selected.traceId ?? text("—", "—")}</dd>
+                <dt>{text("租户", "Tenant")}</dt>
                 <dd>{selected.tenantName}</dd>
                 <dt>AppKey</dt>
                 <dd>{selected.appKey.name}</dd>
-                <dt>模型</dt>
+                <dt>{text("模型", "Model")}</dt>
                 <dd>
                   <code className="usage-code-sm">{selected.model}</code>
                 </dd>
-                <dt>输入 Token</dt>
-                <dd>{selected.promptTokens.toLocaleString("zh-CN")}</dd>
-                <dt>输出 Token</dt>
-                <dd>{selected.completionTokens.toLocaleString("zh-CN")}</dd>
-                <dt>总计 Token</dt>
-                <dd>{selected.totalTokens.toLocaleString("zh-CN")}</dd>
-                <dt>费用</dt>
+                <dt>{text("输入 Token", "Input Tokens")}</dt>
+                <dd>{formatNumber(selected.promptTokens)}</dd>
+                <dt>{text("输出 Token", "Output Tokens")}</dt>
+                <dd>{formatNumber(selected.completionTokens)}</dd>
+                <dt>{text("总计 Token", "Total Tokens")}</dt>
+                <dd>{formatNumber(selected.totalTokens)}</dd>
+                <dt>{text("费用", "Cost")}</dt>
                 <dd>
                   {selected.currency}{" "}
-                  {Number(selected.costUsd).toLocaleString("zh-CN", {
+                  {formatCurrencyAmount(selected.costUsd, undefined, {
                     minimumFractionDigits: 2,
                     maximumFractionDigits: 6,
                   })}
                   {selected.billingType ? (
                     <span className="muted usage-dl-note">
-                      （{selected.billingType}）
+                      {text(`（${selected.billingType}）`, ` (${selected.billingType})`)}
                     </span>
                   ) : null}
                 </dd>
-                <dt>计费快照</dt>
+                <dt>{text("计费快照", "Billing Snapshot")}</dt>
                 <dd>
-                  输入 ${selected.inputUnitPriceUsd} / 百万，输出 $
-                  {selected.outputUnitPriceUsd} / 百万
+                  {text(
+                    `输入 $${selected.inputUnitPriceUsd} / 百万，输出 $${selected.outputUnitPriceUsd} / 百万`,
+                    `Input $${selected.inputUnitPriceUsd} / million, output $${selected.outputUnitPriceUsd} / million`,
+                  )}
                 </dd>
-                <dt>缓存</dt>
-                <dd>{selected.cacheHit ? "命中" : "未命中"}</dd>
-                <dt>供应商</dt>
+                <dt>{text("缓存", "Cache")}</dt>
+                <dd>{selected.cacheHit ? text("命中", "Hit") : text("未命中", "Miss")}</dd>
+                <dt>{text("供应商", "Provider")}</dt>
                 <dd>
                   {selected.provider.name}{" "}
                   <span className="muted">({selected.provider.slug})</span>
                 </dd>
-                <dt>延迟</dt>
+                <dt>{text("延迟", "Latency")}</dt>
                 <dd>{selected.latencyMs} ms</dd>
-                <dt>HTTP 状态</dt>
+                <dt>{text("HTTP 状态", "HTTP Status")}</dt>
                 <dd>{statusBadge(selected.statusCode)}</dd>
-                <dt>供应商错误码</dt>
-                <dd>{selected.providerErrorCode ?? "—"}</dd>
-                <dt>重试次数</dt>
+                <dt>{text("供应商错误码", "Provider Error Code")}</dt>
+                <dd>{selected.providerErrorCode ?? text("—", "—")}</dd>
+                <dt>{text("重试次数", "Retry Count")}</dt>
                 <dd>{selected.retryCount}</dd>
-                <dt>路由</dt>
+                <dt>{text("路由", "Routing")}</dt>
                 <dd>
-                  {selected.routingPrimary ?? "—"} → {selected.routingActual ?? "—"}
+                  {selected.routingPrimary ?? text("—", "—")} → {selected.routingActual ?? text("—", "—")}
                   {selected.routingReason ? (
                     <span className="usage-reason">{selected.routingReason}</span>
                   ) : null}
                 </dd>
-                <dt>幂等键</dt>
-                <dd>{selected.idempotencyKey ?? "—"}</dd>
-                <dt>账期</dt>
+                <dt>{text("幂等键", "Idempotency Key")}</dt>
+                <dd>{selected.idempotencyKey ?? text("—", "—")}</dd>
+                <dt>{text("账期", "Billing Period")}</dt>
                 <dd>{selected.period}</dd>
-                <dt>对账状态</dt>
-                <dd>{selected.reconciliationStatus ?? "—"}</dd>
-                <dt>开票状态</dt>
-                <dd>{selected.invoiceStatus ?? "—"}</dd>
-                <dt>来源 IP</dt>
-                <dd>{selected.requestSourceIp ?? "—"}</dd>
+                <dt>{text("对账状态", "Reconciliation Status")}</dt>
+                <dd>{selected.reconciliationStatus ?? text("—", "—")}</dd>
+                <dt>{text("开票状态", "Invoice Status")}</dt>
+                <dd>{selected.invoiceStatus ?? text("—", "—")}</dd>
+                <dt>{text("来源 IP", "Source IP")}</dt>
+                <dd>{selected.requestSourceIp ?? text("—", "—")}</dd>
               </dl>
               {selected.billingDescription ? (
                 <div className="usage-drawer-note">
-                  <span className="usage-drawer-note-cap">计费说明</span>
+                  <span className="usage-drawer-note-cap">{text("计费说明", "Billing Notes")}</span>
                   <p className="muted">{selected.billingDescription}</p>
                 </div>
               ) : null}

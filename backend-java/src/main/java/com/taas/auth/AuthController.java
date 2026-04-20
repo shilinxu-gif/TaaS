@@ -53,14 +53,22 @@ public class AuthController {
   }
 
   public record RegisterRequest(
-      @NotBlank @Email String email,
-      @NotBlank @Size(min = 6, max = 128) String password,
-      @NotBlank @Size(min = 1, max = 80) String name) {
+      @NotBlank(message = "{validation.required}")
+      @Email(message = "{validation.email}")
+      String email,
+      @NotBlank(message = "{validation.required}")
+      @Size(min = 6, max = 128, message = "{validation.stringLength}")
+      String password,
+      @NotBlank(message = "{validation.required}")
+      @Size(min = 1, max = 80, message = "{validation.stringLength}")
+      String name) {
   }
 
   public record LoginRequest(
       String login,
       String email,
-      @NotBlank @Size(min = 1, max = 128) String password) {
+      @NotBlank(message = "{validation.required}")
+      @Size(min = 1, max = 128, message = "{validation.stringLength}")
+      String password) {
   }
 }
