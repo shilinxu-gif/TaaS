@@ -540,16 +540,31 @@ docker compose start postgres redis
 
 ## 15. 升级发布流程
 
-以后更新版本时，按下面顺序执行：
+当你已经把最新代码推到 Git 仓库后，线上机器更新版本请按下面顺序执行。
+
+这一节适用于：
+
+- 已经完成首次部署
+- 后端服务名为 `taas-backend`
+- 项目源码目录为 `/srv/taas/app/TaaS`
+- 后端运行文件为 `/srv/taas/backend/current/app.jar`
+- 前端静态目录为 `/srv/taas/frontend/current`
 
 说明：
 
 - 以下命令同样默认在 root shell 中执行
 - 如果你当前不是 root，请先重新执行 `sudo -i`
+- `npm install --prefix client` 和 `npm run build --prefix client` 必须在 `/srv/taas/app/TaaS` 目录执行
+- 不要在 `/srv/taas/backend/current` 目录执行前端命令；那个目录只有后端 jar，没有 `client/package.json`
+
+### 15.1 一次标准更新
+
+按下面顺序逐行执行：
 
 ```bash
 cd /srv/taas/app/TaaS
-git pull
+pwd
+git pull origin prod
 
 docker compose up -d postgres redis
 
@@ -561,19 +576,55 @@ mvn -f backend-java/pom.xml -DskipTests package
 cp backend-java/target/backend-java-0.0.1-SNAPSHOT.jar /srv/taas/backend/current/app.jar
 systemctl restart taas-backend
 
+curl http://127.0.0.1:3001/health/live
+curl http://127.0.0.1:3001/health
+
 npm install --prefix client
 npm run build --prefix client
 rm -rf /srv/taas/frontend/current/*
 cp -r client/dist/* /srv/taas/frontend/current/
+
+nginx -t
 systemctl reload nginx
+
+curl -I http://8.219.108.49
 ```
 
-升级后建议再次执行：
+### 15.2 建议检查点
+
+完成更新后，建议至少检查以下内容：
 
 ```bash
+pwd
+systemctl status taas-backend --no-pager
 curl http://127.0.0.1:3001/health
 curl -I http://8.219.108.49
 ```
+
+如果后端启动失败，优先看：
+
+```bash
+journalctl -u taas-backend -n 200 --no-pager
+tail -n 200 /srv/taas/logs/backend.out.log
+tail -n 200 /srv/taas/logs/backend.err.log
+```
+
+如果前端页面返回 `403` 或空白页，优先检查：
+
+```bash
+cd /srv/taas/app/TaaS
+ls client/dist
+ls /srv/taas/frontend/current
+```
+
+### 15.3 常见更新误区
+
+不要这样做：
+
+1. 在 `/srv/taas/backend/current` 目录执行 `npm install --prefix client`
+2. 先清空 `/srv/taas/frontend/current/*`，但没有成功执行前端 build
+3. 修改了 `.env` 但忘了 `systemctl restart taas-backend`
+4. 后端未通过健康检查，就直接继续重载 Nginx 或验证登录
 
 ## 16. 回滚建议
 

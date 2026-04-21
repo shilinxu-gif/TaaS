@@ -1,0 +1,2 @@
+ALTER TABLE app_keys
+ALTER COLUMN token DROP NOT NULL;

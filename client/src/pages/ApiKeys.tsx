@@ -10,6 +10,7 @@ import {
 } from "../api";
 import { formatDateTime } from "../i18n/format";
 import { pickText } from "../i18n/inline";
+import { copyText } from "../utils/clipboard";
 
 function statusBadge(status: string, language: string | undefined) {
   if (status === "active") {
@@ -49,6 +50,9 @@ export function ApiKeys() {
   const [idem, setIdem] = useState("");
   const [playResult, setPlayResult] = useState<string | null>(null);
   const [playErr, setPlayErr] = useState<string | null>(null);
+  const [copyFeedback, setCopyFeedback] = useState<"idle" | "copied" | "failed">(
+    "idle"
+  );
 
   useEffect(() => {
     if (!modalOpen) return;
@@ -109,6 +113,7 @@ export function ApiKeys() {
     onSuccess: (data) => {
       void qc.invalidateQueries({ queryKey: ["app-keys"] });
       setRevealToken(data.token);
+      setCopyFeedback("idle");
       setModalOpen(false);
       setFormName("");
       setFormDesc("");
@@ -552,9 +557,16 @@ export function ApiKeys() {
               <button
                 type="button"
                 className="btn btn-primary"
-                onClick={() => void navigator.clipboard.writeText(revealToken)}
+                onClick={async () => {
+                  const copied = await copyText(revealToken);
+                  setCopyFeedback(copied ? "copied" : "failed");
+                }}
               >
-                {text("复制密钥", "Copy key")}
+                {copyFeedback === "copied"
+                  ? text("已复制", "Copied")
+                  : copyFeedback === "failed"
+                    ? text("复制失败", "Copy failed")
+                    : text("复制密钥", "Copy key")}
               </button>
               <button
                 type="button"

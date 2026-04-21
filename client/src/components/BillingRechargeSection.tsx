@@ -11,6 +11,7 @@ import {
 } from "../api";
 import { formatCurrencyAmount, formatDateTime, formatNumber } from "../i18n/format";
 import { pickText } from "../i18n/inline";
+import { copyText } from "../utils/clipboard";
 
 const PAY_CHANNELS: {
   id: RechargePayChannel;
@@ -352,9 +353,13 @@ export function BillingRechargeSection({
                   `账号：${b.accountNo}`,
                   `公司：${b.companyName}`,
                 ].join("\n");
-                copyText(txt, () => {
-                  setCopied(true);
-                  showToast("账户信息已复制");
+                void copyText(txt).then((ok) => {
+                  if (ok) {
+                    setCopied(true);
+                    showToast("账户信息已复制");
+                    return;
+                  }
+                  showToast("复制失败，请手动复制");
                 });
               }}
             >
@@ -598,8 +603,4 @@ export function BillingRechargeSection({
       ) : null}
     </section>
   );
-}
-
-function copyText(text: string, onDone: () => void): void {
-  void navigator.clipboard.writeText(text).then(onDone);
 }
