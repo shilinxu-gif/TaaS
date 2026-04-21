@@ -54,7 +54,8 @@ root
 
 ```text
 /srv/taas/
-  app/                # Git 仓库
+  app/
+    TaaS/             # Git 仓库根目录
   backend/
     current/          # 当前后端 jar
   frontend/
@@ -158,7 +159,8 @@ mkdir -p /srv/taas/{app,backend/current,frontend/current,logs,scripts}
 
 ```bash
 cd /srv/taas/app
-git clone <你的仓库地址> .
+git clone <你的仓库地址> TaaS
+cd /srv/taas/app/TaaS
 ```
 
 ## 5. 准备环境变量
@@ -166,7 +168,7 @@ git clone <你的仓库地址> .
 在项目根目录生成 `.env`：
 
 ```bash
-cd /srv/taas/app
+cd /srv/taas/app/TaaS
 cp .env.example .env
 ```
 
@@ -210,7 +212,7 @@ ALLOW_MOCK_PROVIDER=false
 限制权限：
 
 ```bash
-chmod 600 /srv/taas/app/.env
+chmod 600 /srv/taas/app/TaaS/.env
 ```
 
 ## 6. 启动 PostgreSQL 和 Redis
@@ -218,7 +220,7 @@ chmod 600 /srv/taas/app/.env
 本文档采用仓库自带 `docker-compose.yml`，但只启动 `postgres` 和 `redis`：
 
 ```bash
-cd /srv/taas/app
+cd /srv/taas/app/TaaS
 docker compose up -d postgres redis
 ```
 
@@ -251,7 +253,7 @@ PONG
 在项目根目录执行：
 
 ```bash
-cd /srv/taas/app
+cd /srv/taas/app/TaaS
 set -a
 source ./.env
 set +a
@@ -282,8 +284,8 @@ Wants=docker.service
 
 [Service]
 Type=simple
-WorkingDirectory=/srv/taas/app
-EnvironmentFile=/srv/taas/app/.env
+WorkingDirectory=/srv/taas/app/TaaS
+EnvironmentFile=/srv/taas/app/TaaS/.env
 ExecStart=/usr/bin/java -jar /srv/taas/backend/current/app.jar
 Restart=always
 RestartSec=5
@@ -319,7 +321,7 @@ curl http://127.0.0.1:3001/actuator/health
 ## 9. 构建前端
 
 ```bash
-cd /srv/taas/app
+cd /srv/taas/app/TaaS
 npm install --prefix client
 npm run build --prefix client
 ```
@@ -344,7 +346,7 @@ vi /etc/nginx/conf.d/taas.conf
 ```nginx
 server {
     listen 80;
-    server_name _;
+    server_name 8.219.108.49;
 
     root /srv/taas/frontend/current;
     index index.html;
@@ -402,25 +404,31 @@ systemctl reload nginx
 
 如果已经有域名并解析到这台轻量服务器：
 
-1. 将 `server_name _;` 改为你的正式域名，例如：
+1. 当前如果直接通过公网 IP 访问，可保留：
+
+```nginx
+server_name 8.219.108.49;
+```
+
+2. 如果后续绑定正式域名，再改成你的正式域名，例如：
 
 ```nginx
 server_name taas.example.com;
 ```
 
-2. 安装 Certbot：
+3. 安装 Certbot：
 
 ```bash
 dnf install -y certbot python3-certbot-nginx
 ```
 
-3. 申请证书：
+4. 申请证书：
 
 ```bash
 certbot --nginx -d taas.example.com
 ```
 
-4. 开启自动续期：
+5. 开启自动续期：
 
 ```bash
 systemctl enable --now certbot-renew.timer
@@ -433,7 +441,7 @@ systemctl list-timers | grep certbot
 
 访问：
 
-- `http://你的服务器IP`
+- `http://8.219.108.49`
 - 或 `https://你的域名`
 
 使用以下账号登录：
@@ -444,7 +452,7 @@ systemctl list-timers | grep certbot
 确认管理员登录成功后，建议：
 
 1. 修改管理员密码
-2. 从 `/srv/taas/app/.env` 中移除 `BOOTSTRAP_ADMIN_PASSWORD`
+2. 从 `/srv/taas/app/TaaS/.env` 中移除 `BOOTSTRAP_ADMIN_PASSWORD`
 3. 重启后端服务
 
 ```bash
@@ -475,7 +483,7 @@ systemctl restart taas-backend
 curl http://127.0.0.1:3001/health/live
 curl http://127.0.0.1:3001/health
 curl http://127.0.0.1:3001/actuator/health
-curl -I http://127.0.0.1
+curl -I http://8.219.108.49
 ```
 
 ### 13.2 页面验收
@@ -510,7 +518,7 @@ journalctl -u taas-backend -f
 ### 14.2 查看容器状态
 
 ```bash
-cd /srv/taas/app
+cd /srv/taas/app/TaaS
 docker compose ps
 docker compose logs -f postgres redis
 ```
@@ -525,7 +533,7 @@ systemctl reload nginx
 ### 14.4 停止 / 启动数据库与 Redis
 
 ```bash
-cd /srv/taas/app
+cd /srv/taas/app/TaaS
 docker compose stop postgres redis
 docker compose start postgres redis
 ```
@@ -540,7 +548,7 @@ docker compose start postgres redis
 - 如果你当前不是 root，请先重新执行 `sudo -i`
 
 ```bash
-cd /srv/taas/app
+cd /srv/taas/app/TaaS
 git pull
 
 docker compose up -d postgres redis
@@ -564,7 +572,7 @@ systemctl reload nginx
 
 ```bash
 curl http://127.0.0.1:3001/health
-curl -I http://127.0.0.1
+curl -I http://8.219.108.49
 ```
 
 ## 16. 回滚建议

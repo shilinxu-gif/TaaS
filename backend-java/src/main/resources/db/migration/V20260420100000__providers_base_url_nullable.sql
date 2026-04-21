@@ -1,0 +1,2 @@
+ALTER TABLE providers
+ALTER COLUMN base_url DROP NOT NULL;
