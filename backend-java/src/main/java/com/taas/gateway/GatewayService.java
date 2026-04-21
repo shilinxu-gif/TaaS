@@ -21,6 +21,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.UUID;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -69,13 +70,13 @@ public class GatewayService {
     }
     String rawKey = authorizationHeader.substring("Bearer ".length()).trim();
     AppKeyRow appKey = requireAppKey(rawKey);
-    String model = String.valueOf(requestBody.getOrDefault("model", "gpt-4o-mini")).trim();
     List<String> scopes = jsons.readStringList(appKey.scopesJson());
     if (!scopes.contains("chat:complete")) {
       throw new ApiException(403, "This AppKey does not have chat:complete scope");
     }
     List<String> allowedModels = jsons.readStringList(appKey.allowedModelsJson());
-    if (!allowedModels.isEmpty() && !allowedModels.contains(model)) {
+    String requestedModel = normalizeRequestedModel(requestBody.get("model"));
+    if (requestedModel != null && !allowedModels.isEmpty() && !allowedModels.contains(requestedModel)) {
       return new GatewayResponse(
           HttpStatus.FORBIDDEN,
           Map.of("error", "此 AppKey 未授权使用该 model", "allowedModels", allowedModels),
@@ -92,14 +93,22 @@ public class GatewayService {
     if (idemKey != null) {
       Map<String, Object> cached = cacheService.getIdempotentResponse(idemKey);
       if (cached != null) {
-        recordCacheHit(appKey, model, requestIp, idempotencyKey, cached);
+        recordCacheHit(
+            appKey,
+            firstNonBlank(requestedModel, stringValue(cached.get("model"))),
+            requestIp,
+            idempotencyKey,
+            cached);
         return new GatewayResponse(HttpStatus.OK, cached, Map.of());
       }
     }
 
     enforceBudgets(appKey);
     RoutingConfig routingConfig = routingConfig(appKey.tenantId());
-    ProviderSelection selection = chooseProvider(model, routingConfig.mode());
+    ResolvedModelSelection resolvedModel =
+        resolveModelSelection(requestedModel, allowedModels, routingConfig.mode());
+    String model = resolvedModel.model();
+    ProviderSelection selection = resolvedModel.selection();
     Map<String, Object> payload;
     ProviderExecution execution;
     try {
@@ -145,6 +154,39 @@ public class GatewayService {
       cacheService.setIdempotentResponse(idemKey, payload);
     }
     return new GatewayResponse(HttpStatus.OK, payload, Map.of());
+  }
+
+  private ResolvedModelSelection resolveModelSelection(
+      String requestedModel, List<String> allowedModels, String mode) {
+    if (requestedModel != null) {
+      return new ResolvedModelSelection(requestedModel, chooseProvider(requestedModel, mode));
+    }
+    if (allowedModels.isEmpty()) {
+      throw new ApiException(
+          400,
+          "model is required when AppKey does not bind allowedModels",
+          "model_required_without_binding");
+    }
+    List<ResolvedModelSelection> availableSelections = new ArrayList<>();
+    for (String allowedModel : allowedModels) {
+      try {
+        availableSelections.add(new ResolvedModelSelection(allowedModel, chooseProvider(allowedModel, mode)));
+      } catch (ApiException exception) {
+        if (!"no_provider_for_model".equals(exception.getCode())) {
+          throw exception;
+        }
+      }
+    }
+    if (availableSelections.isEmpty()) {
+      throw new ApiException(
+          503,
+          "No enabled provider can serve any model allowed by this AppKey",
+          "no_provider_for_allowed_models");
+    }
+    if (availableSelections.size() == 1) {
+      return availableSelections.get(0);
+    }
+    return availableSelections.get(ThreadLocalRandom.current().nextInt(availableSelections.size()));
   }
 
   private AppKeyRow requireAppKey(String rawKey) {
@@ -782,6 +824,14 @@ public class GatewayService {
     return null;
   }
 
+  private static String normalizeRequestedModel(Object rawModel) {
+    if (rawModel == null) {
+      return null;
+    }
+    String model = String.valueOf(rawModel).trim();
+    return model.isBlank() ? null : model;
+  }
+
   private static String stringValue(Object value) {
     return value == null ? null : String.valueOf(value);
   }
@@ -892,6 +942,9 @@ public class GatewayService {
   }
 
   private record RoutingConfig(String mode, String primaryProviderType) {
+  }
+
+  private record ResolvedModelSelection(String model, ProviderSelection selection) {
   }
 
   private record ProviderExecution(

@@ -47,8 +47,11 @@ export function ApiKeys() {
   const [formScopes, setFormScopes] = useState<string[]>(["chat:complete"]);
 
   const [playKey, setPlayKey] = useState("");
-  const [model, setModel] = useState("gpt-4o-mini");
+  const [model, setModel] = useState("");
   const [idem, setIdem] = useState("");
+  const [playMessage, setPlayMessage] = useState(
+    text("你好，请返回一条连通性测试结果。", "Hello, please return a connectivity test result.")
+  );
   const [playResult, setPlayResult] = useState<string | null>(null);
   const [playErr, setPlayErr] = useState<string | null>(null);
   const [copyFeedback, setCopyFeedback] = useState<"idle" | "copied" | "failed">(
@@ -76,11 +79,8 @@ export function ApiKeys() {
   const availableModels = availableModelsQuery.data ?? [];
 
   useEffect(() => {
-    if (availableModels.length === 0) return;
     setModel((current) =>
-      availableModels.some((item) => item.model === current)
-        ? current
-        : availableModels[0].model
+      current === "" || availableModels.some((item) => item.model === current) ? current : ""
     );
   }, [availableModels]);
 
@@ -140,13 +140,24 @@ export function ApiKeys() {
   async function runPlayground() {
     setPlayErr(null);
     setPlayResult(null);
+    const message = playMessage.trim();
+    if (!message) {
+      setPlayErr(text("请输入要发送给模型的消息", "Please enter a message to send to the model"));
+      return;
+    }
     try {
+      const payload: {
+        model?: string;
+        messages: { role: "user"; content: string }[];
+      } = {
+        messages: [{ role: "user", content: message }],
+      };
+      if (model.trim()) {
+        payload.model = model.trim();
+      }
       const res = await gatewayChat(
         playKey.trim(),
-        {
-          model,
-          messages: [{ role: "user", content: text("你好，请返回一条连通性测试结果。", "Hello, please return a connectivity test result.") }],
-        },
+        payload,
         idem.trim() || undefined
       );
       setPlayResult(JSON.stringify(res, null, 2));
@@ -294,7 +305,10 @@ export function ApiKeys() {
         <summary>{text("网关试用", "Gateway Playground")}</summary>
         <p className="muted keys-details-hint">
           {text("粘贴完整 ", "Paste the full ")}<code className="keys-inline-code">sk-…</code>{" "}
-          {text("密钥。若密钥配置了模型白名单，请选用允许的 model。", "key. If a model allowlist is configured, choose an allowed model.")}
+          {text(
+            "密钥。现在 model 可留空：若 AppKey 只绑定一个模型会自动使用；若绑定多个白名单模型，网关会自动随机选择当前可用模型。",
+            "key. You can now leave model unset: if the AppKey binds one model, the gateway uses it automatically; if it binds multiple allowed models, the gateway randomly picks a currently available model."
+          )}
         </p>
         <div className="keys-play-grid">
           <input
@@ -304,14 +318,29 @@ export function ApiKeys() {
             onChange={(e) => setPlayKey(e.target.value)}
             autoComplete="off"
           />
+          <textarea
+            className="input-plain keys-play-message"
+            placeholder={text(
+              "输入一段要发送给模型的消息，例如：请用一句话介绍你自己",
+              "Enter a message for the model, for example: Introduce yourself in one sentence"
+            )}
+            value={playMessage}
+            onChange={(e) => setPlayMessage(e.target.value)}
+            rows={3}
+          />
           <div className="keys-play-row">
             <select
               className="input-plain"
               value={model}
               onChange={(e) => setModel(e.target.value)}
             >
+              <option value="">
+                {text("自动按 AppKey 选模型（推荐）", "Auto-select by AppKey (recommended)")}
+              </option>
               {availableModels.length === 0 ? (
-                <option value="">{text("暂无已配置模型", "No configured models")}</option>
+                <option value="" disabled>
+                  {text("暂无可手动选择的模型", "No models available for manual selection")}
+                </option>
               ) : (
                 availableModels.map((item) => (
                   <option key={item.id} value={item.model}>
@@ -329,7 +358,7 @@ export function ApiKeys() {
             <button
               type="button"
               className="btn btn-ghost"
-              disabled={availableModels.length === 0}
+              disabled={!playKey.trim()}
               onClick={() => void runPlayground()}
             >
               {text("发送请求", "Send request")}

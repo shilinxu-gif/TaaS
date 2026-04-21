@@ -2021,6 +2021,13 @@ ul.saas-chart {
   flex: 1;
 }
 
+.keys-play-message {
+  resize: vertical;
+  min-height: 5.5rem;
+  font-family: inherit;
+  line-height: 1.55;
+}
+
 .keys-pre {
   margin-top: 0.75rem;
   padding: 0.85rem;

@@ -185,7 +185,6 @@ export function IntegrationDocs() {
     () =>
       JSON.stringify(
         {
-          model: exampleModel,
           messages: [
             { role: "system", content: systemPrompt },
             { role: "user", content: userPrompt },
@@ -328,8 +327,8 @@ console.log(JSON.stringify(completion, null, 2));`,
         label: "Java HttpClient",
         title: text("Java 直连示例", "Java direct HTTP example"),
         summary: text(
-          "适合 Java 后端服务集成，不依赖额外 SDK，便于你在现有服务治理体系内统一接入。",
-          "A good fit for Java backend services when you want to avoid extra SDK dependencies and keep integration inside your existing service stack."
+          "适合 Java 后端服务集成。若 AppKey 已绑定模型，可直接省略 `model`，由网关自动选择。",
+          "A good fit for Java backend services. If the AppKey already binds model(s), you can omit `model` and let the gateway choose automatically."
         ),
         install: null,
         code: `import java.net.URI;
@@ -340,7 +339,6 @@ import java.net.http.HttpResponse;
 HttpClient client = HttpClient.newHttpClient();
 String body = """
 {
-  "model": "${exampleModel}",
   "messages": [
     { "role": "system", "content": "${systemPrompt}" },
     { "role": "user", "content": "${userPrompt}" }
@@ -364,8 +362,8 @@ System.out.println(response.body());`,
         label: "Python requests",
         title: text("Python requests 直连网关", "Python requests direct call"),
         summary: text(
-          "当你不想额外引入 SDK 时，可以直接通过标准 HTTP 请求接入。",
-          "Use plain HTTP when you do not want to add an SDK dependency."
+          "当你不想额外引入 SDK 时，可以直接通过标准 HTTP 请求接入；若 AppKey 已绑定模型，可省略 `model`。",
+          "Use plain HTTP when you do not want to add an SDK dependency; if the AppKey already binds model(s), you can omit `model`."
         ),
         install: "pip install requests",
         code: `import requests
@@ -378,7 +376,6 @@ headers = {
     "Idempotency-Key": "${idempotencyValue}",
 }
 payload = {
-    "model": "${exampleModel}",
     "messages": [
         {"role": "system", "content": "${systemPrompt}"},
         {"role": "user", "content": "${userPrompt}"}
@@ -394,8 +391,8 @@ print(response.json())`,
         label: "Node fetch",
         title: text("Node.js fetch 直连网关", "Node.js fetch direct call"),
         summary: text(
-          "适合网关、BFF 或任何后端服务；依赖最少，调试路径也最直接。",
-          "A minimal option for gateways, BFFs, or any backend service, with the shortest debugging path."
+          "适合网关、BFF 或任何后端服务；若 AppKey 已绑定模型，可省略 `model`，调试路径也最直接。",
+          "A minimal option for gateways, BFFs, or any backend service; if the AppKey already binds model(s), you can omit `model` and keep the debugging path simple."
         ),
         install: null,
         code: `const response = await fetch("${chatEndpoint}", {
@@ -407,7 +404,6 @@ print(response.json())`,
     "Idempotency-Key": "${idempotencyValue}",
   },
   body: JSON.stringify({
-    model: "${exampleModel}",
     messages: [
       { role: "system", content: "${systemPrompt}" },
       { role: "user", content: "${userPrompt}" },
@@ -426,8 +422,8 @@ console.log(await response.json());`,
         label: "cURL",
         title: text("cURL 快速联调", "cURL quick smoke test"),
         summary: text(
-          "最适合做上线前联调、排查模型白名单、速率限制和权限边界。",
-          "Best for pre-launch smoke tests and for debugging model allowlists, rate limits, and auth boundaries."
+          "最适合做上线前联调；如果 AppKey 已绑定模型，甚至可以不传 `model` 直接验证自动选模。",
+          "Best for pre-launch smoke tests; if the AppKey already binds model(s), you can even omit `model` and validate auto-selection directly."
         ),
         install: null,
         code: `curl "${chatEndpoint}" \\
@@ -571,9 +567,29 @@ console.log(await response.json());`,
         "A model existing does not mean your AppKey is allowed to use it. Check the AppKey allowlist, provider configuration, and whether the model is actually available."
       ),
     },
+    {
+      question: text(
+        "我能不能完全不传 model，只靠 AppKey 调用？",
+        "Can I omit model entirely and rely only on the AppKey?"
+      ),
+      answer: text(
+        "可以。如果 AppKey 只绑定了一个模型，网关会自动使用该模型；如果 AppKey 绑定了多个允许模型，网关会在当前可用模型中随机选择。如果 AppKey 没有限定模型范围，仍建议显式传 model。",
+        "Yes. If the AppKey binds a single model, the gateway uses it automatically. If the AppKey binds multiple allowed models, the gateway randomly chooses from currently available ones. If the AppKey does not restrict models, you should still send model explicitly."
+      ),
+    },
   ];
 
   const changelogItems = [
+    {
+      version: "v1.3",
+      date: "2026-04-21",
+      summary: text("支持按 AppKey 自动选模型", "Added AppKey-driven model auto-selection"),
+      items: [
+        text("当请求未传 model 且 AppKey 只绑定一个模型时，自动使用该模型。", "When model is omitted and the AppKey binds a single model, the gateway now uses it automatically."),
+        text("当请求未传 model 且 AppKey 绑定多个模型时，会在当前可用模型中随机选择。", "When model is omitted and the AppKey binds multiple models, the gateway now randomly chooses from currently available ones."),
+        text("更新了控制台 Playground 和 SDK 文档说明。", "Updated the console playground and SDK docs to reflect the new behavior."),
+      ],
+    },
     {
       version: "v1.2",
       date: "2026-04-21",
@@ -731,6 +747,15 @@ console.log(await response.json());`,
               )}
             />
             <SupportRow
+              feature={text("按 AppKey 自动选模型", "Auto-select model by AppKey")}
+              status="available"
+              statusLabel={text("可用", "Available")}
+              detail={text(
+                "当请求未显式传入 model 时：若 AppKey 只绑定一个模型则自动使用该模型；若绑定多个允许模型则会在当前可用模型中随机选择。",
+                "When a request omits model: if the AppKey binds a single model, the gateway uses it automatically; if the AppKey binds multiple allowed models, the gateway randomly chooses from currently available ones."
+              )}
+            />
+            <SupportRow
               feature={text("控制台 API 的 AppKey 访问", "AppKey access to console APIs")}
               status="limited"
               statusLabel={text("不支持", "Not supported")}
@@ -793,8 +818,8 @@ console.log(await response.json());`,
               <strong>{text("优先走现有 SDK", "Prefer your existing SDK")}</strong>
               <span>
                 {text(
-                  "如果你已使用 OpenAI SDK，通常只需切换 `base_url` / `baseURL` 与 `apiKey`。",
-                  "If you already use an OpenAI SDK, you usually only need to update `base_url` / `baseURL` and `apiKey`."
+                  "如果你已使用 OpenAI SDK，通常只需切换 `base_url` / `baseURL` 与 `apiKey`。如果走原生 HTTP，请求里的 model 在 AppKey 已绑定模型时可以省略。",
+                  "If you already use an OpenAI SDK, you usually only need to update `base_url` / `baseURL` and `apiKey`. If you use raw HTTP, model can be omitted when the AppKey already binds model(s)."
                 )}
               </span>
             </li>
@@ -818,7 +843,11 @@ console.log(await response.json());`,
             <SpecItem label={text("兼容路径", "Compatibility path")} value="/gateway/v1/chat/completions" />
             <SpecItem label={text("鉴权", "Auth")} value="Bearer AppKey" />
             <SpecItem label={text("内容类型", "Content-Type")} value="application/json" />
-            <SpecItem label={text("必填字段", "Required fields")} value="model, messages[]" />
+            <SpecItem label={text("必填字段", "Required fields")} value="messages[]" />
+            <SpecItem
+              label={text("model 字段", "model field")}
+              value={text("可选（若 AppKey 已绑定模型）", "Optional when AppKey binds model(s)")}
+            />
           </div>
         </article>
 
@@ -827,7 +856,7 @@ console.log(await response.json());`,
           <pre className="integration-code-block">{`export TAAS_BASE_URL="${openAiBaseUrl}"
 export TAAS_CHAT_URL="${chatEndpoint}"
 export TAAS_APP_KEY="sk-your-app-key"
-export TAAS_MODEL="${exampleModel}"`}</pre>
+export TAAS_MODEL="${exampleModel}" # optional when AppKey binds model(s)`}</pre>
         </article>
       </section>
 
@@ -890,6 +919,9 @@ export TAAS_MODEL="${exampleModel}"`}</pre>
                 <span className="integration-chip">
                   {text("调用方式", "Mode")}: {text("非流式", "Non-streaming")}
                 </span>
+                <span className="integration-chip">
+                  {text("model", "model")}: {text("原生 HTTP 可省略", "Optional for raw HTTP")}
+                </span>
               </div>
             </div>
             {activeSnippet.install ? (
@@ -924,12 +956,12 @@ export TAAS_MODEL="${exampleModel}"`}</pre>
               <p className="muted">
                 {modelList.length
                   ? text(
-                      `已自动带入当前可用模型示例：${exampleModel}`,
-                      `Using the first currently available model as an example: ${exampleModel}`
+                      `当前示例默认演示“省略 model，由 AppKey 自动选模型”；若你仍想显式指定，可传 ${exampleModel}`,
+                      `The default sample demonstrates omitting model so the AppKey can auto-select it. If you still want to pin one explicitly, you can pass ${exampleModel}`
                     )
                   : text(
-                      "当前未读取到可用模型，示例里使用默认模型名占位。",
-                      "No available model could be loaded, so the examples use a default placeholder model."
+                      "当前未读取到可用模型，示例里继续演示省略 model 的自动选模方式。",
+                      "No available model could be loaded, so the example continues to demonstrate omitting model for AppKey-driven auto-selection."
                     )}
               </p>
             </div>
