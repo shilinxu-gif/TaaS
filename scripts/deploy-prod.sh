@@ -83,9 +83,9 @@ git checkout "$BRANCH"
 git pull --ff-only origin "$BRANCH"
 
 if [[ -n "$DOCKER_SERVICES" ]]; then
-  log "ensuring docker services are running: $DOCKER_SERVICES"
-  # shellcheck disable=SC2086
-  docker compose up -d $DOCKER_SERVICES
+  IFS=' ' read -r -a docker_service_args <<<"$DOCKER_SERVICES"
+  log "ensuring docker compose services are running (${#docker_service_args[@]}): ${docker_service_args[*]}"
+  docker compose up -d "${docker_service_args[@]}"
 fi
 
 if [[ -f "$APP_DIR/.env" ]]; then
