@@ -51,8 +51,8 @@ export const resources = {
           trialHint: "企业试用默认 14 天，注册后自动创建租户、预算与路由策略。",
           createAccount: "创建账户",
           forgotPassword: "忘记密码？",
-          heroLead: "AI 正在改变世界…",
-          heroSub: "多模型路由 · 企业计费 · 可审计 AI 网关",
+          heroLead: "AI is changing the world…",
+          heroSub: "Multi-model routing · Enterprise billing · Auditable AI gateway",
           forgotTitle: "找回密码",
           forgotBody1: "当前版本还没有接入自助找回密码流程。",
           forgotBody2:
