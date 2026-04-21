@@ -24,6 +24,7 @@ export const resources = {
         tenantLinks: {
           dashboard: "工作台",
           apiKeys: "API 密钥",
+          integrationDocs: "接入文档",
           usage: "用量",
           optimization: "成本优化",
           routing: "路由调度",
@@ -104,6 +105,7 @@ export const resources = {
         tenantLinks: {
           dashboard: "Dashboard",
           apiKeys: "API Keys",
+          integrationDocs: "Integration Docs",
           usage: "Usage",
           optimization: "Cost Optimization",
           routing: "Routing",

@@ -9,6 +9,7 @@ import { AdminUsers } from "./pages/AdminUsers";
 import { ApiKeys } from "./pages/ApiKeys";
 import { Billing } from "./pages/Billing";
 import { Dashboard } from "./pages/Dashboard";
+import { IntegrationDocs } from "./pages/IntegrationDocs";
 import { Invoices } from "./pages/Invoices";
 import { Recharge } from "./pages/Recharge";
 import { Login } from "./pages/Login";
@@ -58,6 +59,7 @@ export function App() {
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="dashboard" element={<Dashboard />} />
         <Route path="api-keys" element={<ApiKeys />} />
+        <Route path="integration-docs" element={<IntegrationDocs />} />
         <Route path="usage" element={<Usage />} />
         <Route path="optimization" element={<Optimization />} />
         <Route path="routing" element={<Routing />} />

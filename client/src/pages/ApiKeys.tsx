@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Link } from "react-router-dom";
 import {
   api,
   gatewayChat,
@@ -191,9 +192,14 @@ export function ApiKeys() {
            {text("（OpenAI 兼容，多供应商真实网关）", "(OpenAI-compatible, real multi-provider gateway)")}
           </p>
         </div>
-        <button type="button" className="btn btn-primary" onClick={openCreateModal}>
-          {text("创建密钥", "Create key")}
-        </button>
+        <div className="keys-header-actions">
+          <Link to="/integration-docs" className="btn btn-ghost">
+            {text("查看接入文档", "View integration docs")}
+          </Link>
+          <button type="button" className="btn btn-primary" onClick={openCreateModal}>
+            {text("创建密钥", "Create key")}
+          </button>
+        </div>
       </header>
 
       <div className="keys-table-card">
@@ -554,6 +560,13 @@ export function ApiKeys() {
               <code className="keys-reveal-token">{revealToken}</code>
             </div>
             <div className="keys-modal-actions">
+              <Link
+                to="/integration-docs"
+                className="btn btn-ghost"
+                onClick={() => setRevealToken(null)}
+              >
+                {text("查看接入文档", "View integration docs")}
+              </Link>
               <button
                 type="button"
                 className="btn btn-primary"
