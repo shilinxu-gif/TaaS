@@ -194,7 +194,7 @@ export function ApiKeys() {
         </div>
         <div className="keys-header-actions">
           <Link to="/integration-docs" className="btn btn-ghost">
-            {text("查看接入文档", "View integration docs")}
+            {text("查看 SDK 文档中心", "Open SDK docs")}
           </Link>
           <button type="button" className="btn btn-primary" onClick={openCreateModal}>
             {text("创建密钥", "Create key")}
@@ -565,7 +565,7 @@ export function ApiKeys() {
                 className="btn btn-ghost"
                 onClick={() => setRevealToken(null)}
               >
-                {text("查看接入文档", "View integration docs")}
+                {text("查看 SDK 文档中心", "Open SDK docs")}
               </Link>
               <button
                 type="button"

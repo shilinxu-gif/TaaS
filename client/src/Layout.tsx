@@ -10,7 +10,6 @@ import {
   IcDashboard,
   IcInvoiceDoc,
   IcKey,
-  IcLead,
   IcOps,
   IcPeople,
   IcReceipt,
@@ -29,7 +28,6 @@ const tenantLinks: {
 }[] = [
   { to: "/dashboard", labelKey: "layout.tenantLinks.dashboard", end: true, Icon: IcDashboard },
   { to: "/api-keys", labelKey: "layout.tenantLinks.apiKeys", Icon: IcKey },
-  { to: "/integration-docs", labelKey: "layout.tenantLinks.integrationDocs", Icon: IcLead },
   { to: "/usage", labelKey: "layout.tenantLinks.usage", Icon: IcChart },
   { to: "/optimization", labelKey: "layout.tenantLinks.optimization", Icon: IcBolt },
   { to: "/routing", labelKey: "layout.tenantLinks.routing", Icon: IcRoute },
@@ -96,6 +94,16 @@ export function Layout() {
           <BrandLogo variant="header" />
         </div>
         <div className="desk-header-right">
+          {platformRole !== "platform_admin" ? (
+            <NavLink
+              to="/integration-docs"
+              className={({ isActive }) =>
+                `desk-header-link${isActive ? " desk-header-link--active" : ""}`
+              }
+            >
+              {t("layout.tenantLinks.integrationDocs")}
+            </NavLink>
+          ) : null}
           <LanguageSwitcher compact />
           <span className="muted saas-tenant-pill">
             {tenantLabel}
