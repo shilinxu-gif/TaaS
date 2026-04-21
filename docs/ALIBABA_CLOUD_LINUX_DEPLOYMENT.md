@@ -590,7 +590,75 @@ systemctl reload nginx
 curl -I http://8.219.108.49
 ```
 
-### 15.2 建议检查点
+### 15.2 使用一键更新脚本
+
+仓库内已经提供一键更新脚本：
+
+- 路径：`scripts/deploy-prod.sh`
+- 默认分支：`prod`
+- 默认源码目录：`/srv/taas/app/TaaS`
+- 默认后端服务：`taas-backend`
+
+脚本会自动执行以下动作：
+
+1. `git fetch` + `git pull --ff-only origin prod`
+2. 启动 `postgres` / `redis`
+3. 加载项目根目录 `.env`
+4. 构建后端 jar
+5. 备份旧版 `app.jar` 并发布新包
+6. 重启 `taas-backend`
+7. 检查 `/health/live` 与 `/health`
+8. 安装前端依赖并执行 `vite build`
+9. 发布前端静态资源到 `/srv/taas/frontend/current`
+10. 执行 `nginx -t` 并 reload `nginx`
+11. 验证公网入口
+
+首次在服务器上使用：
+
+```bash
+cd /srv/taas/app/TaaS
+chmod +x scripts/deploy-prod.sh
+```
+
+执行一键更新：
+
+```bash
+cd /srv/taas/app/TaaS
+bash scripts/deploy-prod.sh
+```
+
+如果你以后要切换分支，也可以显式指定：
+
+```bash
+cd /srv/taas/app/TaaS
+bash scripts/deploy-prod.sh prod
+```
+
+如果你想覆盖默认参数，可以临时传环境变量：
+
+```bash
+cd /srv/taas/app/TaaS
+APP_DIR=/srv/taas/app/TaaS \
+BACKEND_SERVICE=taas-backend \
+PUBLIC_CHECK_URL=http://8.219.108.49 \
+bash scripts/deploy-prod.sh
+```
+
+脚本要求：
+
+- 必须在 `root shell` 下执行
+- 机器上已安装 `git` / `docker` / `mvn` / `npm` / `curl` / `nginx`
+- 已完成首次部署，且目录结构与本手册保持一致
+
+如果脚本执行失败，优先看：
+
+```bash
+systemctl status taas-backend --no-pager
+journalctl -u taas-backend -n 200 --no-pager
+nginx -t
+```
+
+### 15.3 建议检查点
 
 完成更新后，建议至少检查以下内容：
 
@@ -617,7 +685,7 @@ ls client/dist
 ls /srv/taas/frontend/current
 ```
 
-### 15.3 常见更新误区
+### 15.4 常见更新误区
 
 不要这样做：
 
