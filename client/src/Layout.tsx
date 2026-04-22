@@ -43,8 +43,7 @@ const adminLinks: {
   end?: boolean;
   Icon: ComponentType;
 }[] = [
-  { to: "/dashboard", labelKey: "layout.adminLinks.dashboard", end: true, Icon: IcDashboard },
-  { to: "/admin/usage", labelKey: "layout.adminLinks.usage", Icon: IcChart },
+  { to: "/admin/usage", labelKey: "layout.adminLinks.dashboard", end: true, Icon: IcDashboard },
   { to: "/admin/providers", labelKey: "layout.adminLinks.providers", Icon: IcRoute },
   { to: "/admin/users", labelKey: "layout.adminLinks.users", Icon: IcPeople },
   { to: "/ops", labelKey: "layout.adminLinks.ops", Icon: IcOps },

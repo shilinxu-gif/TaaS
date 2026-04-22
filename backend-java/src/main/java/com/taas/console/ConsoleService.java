@@ -25,12 +25,16 @@ import java.util.Set;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class ConsoleService {
   private static final List<String> DEFAULT_APP_KEY_SCOPES =
       List.of("chat:complete", "usage:read", "billing:read", "admin:ops");
+  private static final Set<String> MEMBER_ROLES =
+      Set.of("owner", "admin", "developer", "billing", "member");
   private static final Set<String> WRITE_ROLES = Set.of("owner", "admin", "developer");
   private static final Set<String> ADMIN_ROLES = Set.of("owner", "admin");
   private static final Set<String> OPS_ROLES = Set.of("owner", "admin", "billing");
@@ -62,16 +66,19 @@ public class ConsoleService {
   private final Jsons jsons;
   private final CryptoUtils cryptoUtils;
   private final AuditService auditService;
+  private final PasswordEncoder passwordEncoder;
 
   public ConsoleService(
       NamedParameterJdbcTemplate jdbcTemplate,
       Jsons jsons,
       CryptoUtils cryptoUtils,
-      AuditService auditService) {
+      AuditService auditService,
+      PasswordEncoder passwordEncoder) {
     this.jdbcTemplate = jdbcTemplate;
     this.jsons = jsons;
     this.cryptoUtils = cryptoUtils;
     this.auditService = auditService;
+    this.passwordEncoder = passwordEncoder;
   }
 
   public Map<String, Object> dashboardSummary(JwtPrincipal principal) {
@@ -1185,7 +1192,8 @@ public class ConsoleService {
         """
         select
           tm.user_id, tm.role, tm.allowed_models::text as allowed_models,
-          t.id as tenant_id, t.name as tenant_name, t.slug as tenant_slug, t.status as tenant_status
+          t.id as tenant_id, t.name as tenant_name, t.slug as tenant_slug, t.status as tenant_status,
+          t.balance_tokens
         from tenant_members tm
         join tenants t on t.id = tm.tenant_id
         order by tm.id asc
@@ -1202,11 +1210,184 @@ public class ConsoleService {
                     "tenantSlug", rs.getString("tenant_slug"),
                     "tenantStatus", rs.getString("tenant_status"),
                     "role", rs.getString("role"),
+                    "balanceTokens", MoneyUtils.money(rs.getBigDecimal("balance_tokens")),
                     "allowedModels", jsons.readStringList(rs.getString("allowed_models"))));
           }
           return null;
         });
     return users;
+  }
+
+  public List<Map<String, Object>> adminUserTenantOptions(JwtPrincipal principal) {
+    requirePlatformAdmin(principal);
+    return jdbcTemplate.query(
+        """
+        select id, name, slug, status, balance_tokens
+        from tenants
+        order by created_at desc, name asc
+        """,
+        (rs, rowNum) ->
+            orderedMap(
+                "id", rs.getString("id"),
+                "name", rs.getString("name"),
+                "slug", rs.getString("slug"),
+                "status", rs.getString("status"),
+                "balanceTokens", MoneyUtils.money(rs.getBigDecimal("balance_tokens"))));
+  }
+
+  @Transactional
+  public Map<String, Object> createAdminUser(
+      JwtPrincipal principal, Map<String, Object> body, String ip) {
+    requirePlatformAdmin(principal);
+    String name = nullableTrim(body.get("name"));
+    String email = nullableTrim(body.get("email"));
+    String password = stringValue(body.get("password"));
+    String platformRole = blankDefault(body.get("platformRole"), "user");
+    String tenantMode = blankDefault(body.get("tenantMode"), "new");
+    String tenantRole = blankDefault(body.get("tenantRole"), "owner");
+    if (name == null || name.length() > 80) {
+      throw new ApiException(400, "姓名不能为空且不能超过 80 个字符");
+    }
+    if (email == null || email.length() > 200 || !email.contains("@")) {
+      throw new ApiException(400, "邮箱格式不正确");
+    }
+    if (password.length() < 6 || password.length() > 128) {
+      throw new ApiException(400, "密码长度必须在 6 到 128 个字符之间");
+    }
+    if (!Set.of("user", "platform_admin").contains(platformRole)) {
+      throw new ApiException(400, "平台角色不支持");
+    }
+    if (!Set.of("new", "existing").contains(tenantMode)) {
+      throw new ApiException(400, "租户模式不支持");
+    }
+    if (!MEMBER_ROLES.contains(tenantRole)) {
+      throw new ApiException(400, "租户角色不支持");
+    }
+    String normalizedEmail = email.trim().toLowerCase();
+    BigDecimal tokenBalance;
+    try {
+      tokenBalance = decimalOrDefault(body.get("tokenBalance"), new BigDecimal("250000"));
+    } catch (RuntimeException ex) {
+      throw new ApiException(400, "Token 余额格式不正确");
+    }
+    if (tokenBalance.compareTo(BigDecimal.ZERO) < 0
+        || tokenBalance.compareTo(new BigDecimal("999999999999999")) > 0) {
+      throw new ApiException(400, "Token 余额超出允许范围");
+    }
+    Integer existing =
+        jdbcTemplate.queryForObject(
+            "select count(*) from users where email = :email",
+            Map.of("email", normalizedEmail),
+            Integer.class);
+    if (existing != null && existing > 0) {
+      throw new ApiException(409, "邮箱已存在");
+    }
+
+    Instant now = Instant.now();
+    String userId = Ids.cuidLike("usr");
+    jdbcTemplate.update(
+        """
+        insert into users (id, email, password_hash, name, platform_role, created_at, updated_at)
+        values (:id, :email, :passwordHash, :name, :platformRole, :now, :now)
+        """,
+        new MapSqlParameterSource()
+            .addValue("id", userId)
+            .addValue("email", normalizedEmail)
+            .addValue("passwordHash", passwordEncoder.encode(password))
+            .addValue("name", name)
+            .addValue("platformRole", platformRole)
+            .addValue("now", ts(now)));
+
+    String tenantId;
+    String tenantName;
+    if ("new".equals(tenantMode)) {
+      tenantName = nullableTrim(body.get("tenantName"));
+      if (tenantName == null || tenantName.length() > 120) {
+        throw new ApiException(400, "租户名称不能为空且不能超过 120 个字符");
+      }
+      String starterPlanId =
+          jdbcTemplate.query(
+                  "select id from plans where code = 'starter' limit 1",
+                  (rs, rowNum) -> rs.getString("id"))
+              .stream()
+              .findFirst()
+              .orElse(null);
+      tenantId = Ids.cuidLike("tenant");
+      jdbcTemplate.update(
+          """
+          insert into tenants (
+            id, name, slug, status, plan_id, balance_tokens, trial_ends_at, billing_email,
+            contact_sales_email, monthly_budget_usd, spend_cap_enforced, created_at, updated_at
+          ) values (
+            :id, :name, :slug, 'active', :planId, :balanceTokens, null, :billingEmail,
+            null, 0, false, :now, :now
+          )
+          """,
+          new MapSqlParameterSource()
+              .addValue("id", tenantId)
+              .addValue("name", tenantName)
+              .addValue("slug", nextTenantSlug())
+              .addValue("planId", starterPlanId)
+              .addValue("balanceTokens", tokenBalance)
+              .addValue("billingEmail", normalizedEmail)
+              .addValue("now", ts(now)));
+      ensureTenantDefaults(tenantId, now);
+    } else {
+      tenantId = nullableTrim(body.get("tenantId"));
+      if (tenantId == null) {
+        throw new ApiException(400, "请选择已有租户");
+      }
+      TenantRow tenant = requireTenant(tenantId);
+      tenantName = tenant.name();
+      jdbcTemplate.update(
+          """
+          update tenants
+          set balance_tokens = :balanceTokens, updated_at = :now
+          where id = :tenantId
+          """,
+          new MapSqlParameterSource()
+              .addValue("tenantId", tenantId)
+              .addValue("balanceTokens", tokenBalance)
+              .addValue("now", ts(now)));
+    }
+
+    jdbcTemplate.update(
+        """
+        insert into tenant_members (id, user_id, tenant_id, role)
+        values (:id, :userId, :tenantId, :role)
+        """,
+        new MapSqlParameterSource()
+            .addValue("id", Ids.cuidLike("tm"))
+            .addValue("userId", userId)
+            .addValue("tenantId", tenantId)
+            .addValue("role", tenantRole));
+
+    auditService.write(
+        principal.tenantId(),
+        principal.userId(),
+        "user",
+        "admin.user.create",
+        "user",
+        userId,
+        ip,
+        orderedMap(
+            "email", normalizedEmail,
+            "platformRole", platformRole,
+            "tenantMode", tenantMode,
+            "tenantRole", tenantRole,
+            "tenantId", tenantId,
+            "tenantName", tenantName,
+            "tokenBalance", MoneyUtils.money(tokenBalance)));
+
+    return orderedMap(
+        "id", userId,
+        "email", normalizedEmail,
+        "name", name,
+        "platformRole", platformRole,
+        "tenantId", tenantId,
+        "tenantName", tenantName,
+        "tenantRole", tenantRole,
+        "tokenBalance", MoneyUtils.money(tokenBalance));
   }
 
   public Map<String, Object> updateAdminUserAllowedModels(
@@ -1866,6 +2047,48 @@ public class ConsoleService {
     if (!"platform_admin".equals(principal.platformRole())) {
       throw new ApiException(403, "Forbidden");
     }
+  }
+
+  private String nextTenantSlug() {
+    String slug = "t-" + Ids.shortHex(6);
+    Integer exists =
+        jdbcTemplate.queryForObject(
+            "select count(*) from tenants where slug = :slug",
+            Map.of("slug", slug),
+            Integer.class);
+    if (exists != null && exists > 0) {
+      return nextTenantSlug();
+    }
+    return slug;
+  }
+
+  private void ensureTenantDefaults(String tenantId, Instant now) {
+    jdbcTemplate.update(
+        """
+        insert into tenant_routing_strategies (
+          id, tenant_id, mode, primary_provider_type, fallback_provider_types, max_retries, timeout_ms, created_at, updated_at
+        ) values (
+          :id, :tenantId, 'balance', null, '["anthropic","google"]'::jsonb, 1, 30000, :now, :now
+        )
+        on conflict (tenant_id) do nothing
+        """,
+        new MapSqlParameterSource()
+            .addValue("id", Ids.cuidLike("route"))
+            .addValue("tenantId", tenantId)
+            .addValue("now", ts(now)));
+    jdbcTemplate.update(
+        """
+        insert into tenant_cache_settings (
+          id, tenant_id, enabled, mode, similarity_threshold, ttl_seconds, created_at, updated_at
+        ) values (
+          :id, :tenantId, true, 'semantic', 0.920, 86400, :now, :now
+        )
+        on conflict (tenant_id) do nothing
+        """,
+        new MapSqlParameterSource()
+            .addValue("id", Ids.cuidLike("cache"))
+            .addValue("tenantId", tenantId)
+            .addValue("now", ts(now)));
   }
 
   private Map<String, Object> getAppKey(String tenantId, String appKeyId) {

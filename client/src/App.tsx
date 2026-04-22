@@ -20,6 +20,10 @@ import { Register } from "./pages/Register";
 import { Routing } from "./pages/Routing";
 import { Usage } from "./pages/Usage";
 
+function homePathForRole(platformRole?: string) {
+  return platformRole === "platform_admin" ? "/admin/usage" : "/dashboard";
+}
+
 function Protected({ children }: { children: ReactNode }) {
   const { token, user, loading } = useAuth();
   const { t } = useTranslation();
@@ -44,6 +48,19 @@ function AdminOnly({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
+function HomeRedirect() {
+  const { user } = useAuth();
+  return <Navigate to={homePathForRole(user?.platformRole)} replace />;
+}
+
+function DashboardEntry() {
+  const { user } = useAuth();
+  if (user?.platformRole === "platform_admin") {
+    return <Navigate to="/admin/usage" replace />;
+  }
+  return <Dashboard />;
+}
+
 export function App() {
   return (
     <Routes>
@@ -57,8 +74,8 @@ export function App() {
           </Protected>
         }
       >
-        <Route index element={<Navigate to="/dashboard" replace />} />
-        <Route path="dashboard" element={<Dashboard />} />
+        <Route index element={<HomeRedirect />} />
+        <Route path="dashboard" element={<DashboardEntry />} />
         <Route path="api-keys" element={<ApiKeys />} />
         <Route path="model-hub" element={<ModelHub />} />
         <Route path="integration-docs" element={<IntegrationDocs />} />
@@ -94,7 +111,7 @@ export function App() {
           }
         />
       </Route>
-      <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
 }

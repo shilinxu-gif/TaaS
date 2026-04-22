@@ -625,8 +625,17 @@ export type AdminUserRow = {
     tenantSlug: string;
     tenantStatus: string;
     role: string;
+    balanceTokens: string;
     allowedModels: string[];
   }[];
+};
+
+export type AdminUserTenantOption = {
+  id: string;
+  name: string;
+  slug: string;
+  status: string;
+  balanceTokens: string;
 };
 
 export type AdminAppKeyUsageRow = {

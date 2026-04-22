@@ -25,6 +25,7 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
+import org.springframework.security.crypto.password.PasswordEncoder;
 
 class ConsoleServiceTest {
   private final NamedParameterJdbcTemplate jdbcTemplate = mock(NamedParameterJdbcTemplate.class);
@@ -33,7 +34,8 @@ class ConsoleServiceTest {
           jdbcTemplate,
           new Jsons(new ObjectMapper()),
           mock(CryptoUtils.class),
-          mock(AuditService.class));
+          mock(AuditService.class),
+          mock(PasswordEncoder.class));
 
   @Test
   void updateAppKeyShouldRejectStatusChangeForRevokedKey() throws Exception {

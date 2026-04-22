@@ -1,15 +1,50 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { api, type AdminUserRow, type AppKeyAvailableModel } from "../api";
+import {
+  api,
+  type AdminUserRow,
+  type AdminUserTenantOption,
+  type AppKeyAvailableModel,
+} from "../api";
 import { formatDateTime, formatNumber } from "../i18n/format";
 import { pickText } from "../i18n/inline";
+
+const DEFAULT_TOKEN_BALANCE = "250000";
+
+type CreateUserForm = {
+  name: string;
+  email: string;
+  password: string;
+  platformRole: "user" | "platform_admin";
+  tenantMode: "new" | "existing";
+  tenantRole: "owner" | "admin" | "developer" | "billing" | "member";
+  tenantName: string;
+  tenantId: string;
+  tokenBalance: string;
+};
+
+function defaultCreateForm(): CreateUserForm {
+  return {
+    name: "",
+    email: "",
+    password: "",
+    platformRole: "user",
+    tenantMode: "new",
+    tenantRole: "owner",
+    tenantName: "",
+    tenantId: "",
+    tokenBalance: DEFAULT_TOKEN_BALANCE,
+  };
+}
 
 export function AdminUsers() {
   const { i18n } = useTranslation();
   const text = (zhCN: string, enUS: string) => pickText(i18n.resolvedLanguage, zhCN, enUS);
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createForm, setCreateForm] = useState<CreateUserForm>(() => defaultCreateForm());
   const [configOpen, setConfigOpen] = useState(false);
   const [selectedMembership, setSelectedMembership] = useState<{
     userId: string;
@@ -23,9 +58,28 @@ export function AdminUsers() {
     queryKey: ["admin", "users"],
     queryFn: () => api<AdminUserRow[]>("/admin/users"),
   });
+  const tenantOptionsQuery = useQuery({
+    queryKey: ["admin", "users", "tenant-options"],
+    queryFn: () => api<AdminUserTenantOption[]>("/admin/users/tenant-options"),
+  });
   const modelOptionsQuery = useQuery({
     queryKey: ["admin", "users", "available-models"],
     queryFn: () => api<AppKeyAvailableModel[]>("/admin/users/available-models"),
+  });
+  const createMut = useMutation({
+    mutationFn: () =>
+      api<{ id: string }>("/admin/users", {
+        method: "POST",
+        body: JSON.stringify(createForm),
+      }),
+    onSuccess: async () => {
+      setCreateOpen(false);
+      setCreateForm(defaultCreateForm());
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["admin", "users"] }),
+        qc.invalidateQueries({ queryKey: ["admin", "users", "tenant-options"] }),
+      ]);
+    },
   });
 
   const saveMut = useMutation({
@@ -68,6 +122,7 @@ export function AdminUsers() {
   }, [search, usersQuery.data]);
 
   const modelOptions = modelOptionsQuery.data ?? [];
+  const tenantOptions = tenantOptionsQuery.data ?? [];
 
   useEffect(() => {
     if (!configOpen || !selectedMembership) {
@@ -78,6 +133,48 @@ export function AdminUsers() {
     }
     setModelSelection(modelOptions.map((item) => item.model));
   }, [configOpen, modelOptions, selectedMembership]);
+
+  useEffect(() => {
+    if (
+      !createOpen ||
+      createForm.tenantMode !== "existing" ||
+      createForm.tenantId ||
+      tenantOptions.length === 0
+    ) {
+      return;
+    }
+    const first = tenantOptions[0];
+    setCreateForm((current) => ({
+      ...current,
+      tenantId: first.id,
+      tokenBalance: first.balanceTokens,
+    }));
+  }, [createOpen, createForm.tenantId, createForm.tenantMode, tenantOptions]);
+
+  function openCreateModal() {
+    setCreateOpen(true);
+    setCreateForm(defaultCreateForm());
+    createMut.reset();
+  }
+
+  function closeCreateModal() {
+    setCreateOpen(false);
+    setCreateForm(defaultCreateForm());
+    createMut.reset();
+  }
+
+  function updateCreateForm(patch: Partial<CreateUserForm>) {
+    setCreateForm((current) => ({ ...current, ...patch }));
+  }
+
+  function applyExistingTenant(tenantId: string) {
+    const selected = tenantOptions.find((item) => item.id === tenantId);
+    updateCreateForm({
+      tenantMode: "existing",
+      tenantId,
+      tokenBalance: selected?.balanceTokens ?? createForm.tokenBalance,
+    });
+  }
 
   function openConfig(
     user: Pick<AdminUserRow, "id" | "name">,
@@ -112,9 +209,15 @@ export function AdminUsers() {
         <div>
           <h1 className="usage-title">{text("用户管理", "User Management")}</h1>
           <p className="usage-subtitle muted">
-            {text("查看全平台账号、平台角色和租户归属关系", "Review platform accounts, platform roles, and tenant membership")}
+            {text(
+              "查看全平台账号、平台角色、租户归属关系，并支持直接新增用户或管理员账号",
+              "Review platform accounts, platform roles, tenant membership, and create users or admins directly"
+            )}
           </p>
         </div>
+        <button type="button" className="btn btn-primary" onClick={openCreateModal}>
+          {text("新增账号", "Create account")}
+        </button>
       </header>
 
       <section className="bill-section">
@@ -182,6 +285,13 @@ export function AdminUsers() {
                                 {`${item.tenantName}（${item.role} / ${item.tenantStatus}）`}
                                 {" · "}
                                 <span className="muted">
+                                  {text(
+                                    `余额 ${formatNumber(Number(item.balanceTokens), i18n.resolvedLanguage)} Token`,
+                                    `Balance ${formatNumber(Number(item.balanceTokens), i18n.resolvedLanguage)} tokens`
+                                  )}
+                                </span>
+                                {" · "}
+                                <span className="muted">
                                   {item.allowedModels.length === 0
                                     ? text("全部模型", "All models")
                                     : text(
@@ -213,6 +323,221 @@ export function AdminUsers() {
           </table>
         </div>
       </section>
+
+      {createOpen ? (
+        <div
+          className="keys-modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="admin-user-create-title"
+        >
+          <div className="keys-modal keys-modal--wide">
+            <div className="keys-modal-hd">
+              <h2 id="admin-user-create-title">{text("新增用户 / 管理员", "Create user / admin")}</h2>
+              <button
+                type="button"
+                className="btn btn-header-ghost"
+                onClick={closeCreateModal}
+                disabled={createMut.isPending}
+              >
+                {text("关闭", "Close")}
+              </button>
+            </div>
+            <div className="keys-form">
+              <div className="provider-delete-warning">
+                <p className="provider-delete-title">
+                  {text("创建后可立即登录控制台", "New account can sign in immediately")}
+                </p>
+                <p className="muted provider-delete-text">
+                  {text(
+                    "支持两种方式：1）自动创建一个新租户并绑定给该账号；2）加入已有租户。这里配置的 Token 余额实际属于租户余额，如果选择已有租户，保存时会同步更新该租户当前余额。",
+                    "Two modes are supported: create a new tenant for the account, or join an existing tenant. The token balance configured here belongs to the tenant. If you choose an existing tenant, saving will update that tenant's current balance."
+                  )}
+                </p>
+              </div>
+
+              <div className="keys-field-row">
+                <label className="keys-field keys-field--half">
+                  <span className="keys-label">{text("姓名", "Name")}</span>
+                  <input
+                    value={createForm.name}
+                    onChange={(e) => updateCreateForm({ name: e.target.value })}
+                    placeholder={text("例如：张三", "Example: Jane Doe")}
+                    disabled={createMut.isPending}
+                  />
+                </label>
+                <label className="keys-field keys-field--half">
+                  <span className="keys-label">{text("邮箱", "Email")}</span>
+                  <input
+                    type="email"
+                    value={createForm.email}
+                    onChange={(e) => updateCreateForm({ email: e.target.value })}
+                    placeholder="name@example.com"
+                    disabled={createMut.isPending}
+                  />
+                </label>
+              </div>
+
+              <div className="keys-field-row">
+                <label className="keys-field keys-field--half">
+                  <span className="keys-label">{text("登录密码", "Password")}</span>
+                  <input
+                    type="password"
+                    minLength={6}
+                    value={createForm.password}
+                    onChange={(e) => updateCreateForm({ password: e.target.value })}
+                    placeholder={text("至少 6 位", "At least 6 characters")}
+                    disabled={createMut.isPending}
+                  />
+                </label>
+                <label className="keys-field keys-field--half">
+                  <span className="keys-label">{text("平台角色", "Platform Role")}</span>
+                  <select
+                    value={createForm.platformRole}
+                    onChange={(e) =>
+                      updateCreateForm({
+                        platformRole: e.target.value as CreateUserForm["platformRole"],
+                      })
+                    }
+                    disabled={createMut.isPending}
+                  >
+                    <option value="user">{text("普通用户", "User")}</option>
+                    <option value="platform_admin">{text("平台管理员", "Platform Admin")}</option>
+                  </select>
+                </label>
+              </div>
+
+              <div className="keys-field-row">
+                <label className="keys-field keys-field--half">
+                  <span className="keys-label">{text("租户模式", "Tenant Mode")}</span>
+                  <select
+                    value={createForm.tenantMode}
+                    onChange={(e) => {
+                      const nextMode = e.target.value as CreateUserForm["tenantMode"];
+                      if (nextMode === "new") {
+                        updateCreateForm({
+                          tenantMode: "new",
+                          tenantId: "",
+                          tenantName: "",
+                          tokenBalance:
+                            createForm.tenantMode === "existing"
+                              ? DEFAULT_TOKEN_BALANCE
+                              : createForm.tokenBalance,
+                        });
+                        return;
+                      }
+                      if (tenantOptions.length > 0) {
+                        applyExistingTenant(tenantOptions[0].id);
+                      } else {
+                        updateCreateForm({ tenantMode: "existing", tenantId: "" });
+                      }
+                    }}
+                    disabled={createMut.isPending}
+                  >
+                    <option value="new">{text("自动创建新租户", "Create new tenant")}</option>
+                    <option value="existing">{text("加入已有租户", "Join existing tenant")}</option>
+                  </select>
+                </label>
+                <label className="keys-field keys-field--half">
+                  <span className="keys-label">{text("租户角色", "Tenant Role")}</span>
+                  <select
+                    value={createForm.tenantRole}
+                    onChange={(e) =>
+                      updateCreateForm({
+                        tenantRole: e.target.value as CreateUserForm["tenantRole"],
+                      })
+                    }
+                    disabled={createMut.isPending}
+                  >
+                    <option value="owner">{text("所有者", "Owner")}</option>
+                    <option value="admin">{text("管理员", "Admin")}</option>
+                    <option value="developer">{text("开发者", "Developer")}</option>
+                    <option value="billing">{text("财务", "Billing")}</option>
+                    <option value="member">{text("成员", "Member")}</option>
+                  </select>
+                </label>
+              </div>
+
+              {createForm.tenantMode === "new" ? (
+                <label className="keys-field">
+                  <span className="keys-label">{text("新租户名称", "New Tenant Name")}</span>
+                  <input
+                    value={createForm.tenantName}
+                    onChange={(e) => updateCreateForm({ tenantName: e.target.value })}
+                    placeholder={text("例如：某某科技", "Example: Acme AI")}
+                    disabled={createMut.isPending}
+                  />
+                </label>
+              ) : (
+                <label className="keys-field">
+                  <span className="keys-label">{text("选择已有租户", "Select Existing Tenant")}</span>
+                  <select
+                    value={createForm.tenantId}
+                    onChange={(e) => applyExistingTenant(e.target.value)}
+                    disabled={createMut.isPending || tenantOptionsQuery.isLoading}
+                  >
+                    {tenantOptions.length === 0 ? (
+                      <option value="">{text("暂无可选租户", "No tenant available")}</option>
+                    ) : (
+                      tenantOptions.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {text(
+                            `${item.name}（${item.slug} / 余额 ${formatNumber(Number(item.balanceTokens), i18n.resolvedLanguage)}）`,
+                            `${item.name} (${item.slug} / balance ${formatNumber(Number(item.balanceTokens), i18n.resolvedLanguage)})`
+                          )}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                </label>
+              )}
+
+              <label className="keys-field">
+                <span className="keys-label">{text("Token 余额", "Token Balance")}</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={createForm.tokenBalance}
+                  onChange={(e) => updateCreateForm({ tokenBalance: e.target.value })}
+                  disabled={createMut.isPending}
+                />
+                <span className="muted">
+                  {text(
+                    "该值会写入租户当前 token 余额。创建新租户时表示初始余额；加入已有租户时表示更新后的租户余额。",
+                    "This value will be stored as the tenant's current token balance. For a new tenant, it becomes the initial balance. For an existing tenant, it becomes the updated balance."
+                  )}
+                </span>
+              </label>
+
+              {createMut.error ? <p className="error">{(createMut.error as Error).message}</p> : null}
+
+              <div className="keys-modal-actions">
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={closeCreateModal}
+                  disabled={createMut.isPending}
+                >
+                  {text("取消", "Cancel")}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => createMut.mutate()}
+                  disabled={
+                    createMut.isPending ||
+                    (createForm.tenantMode === "existing" &&
+                      (tenantOptionsQuery.isLoading || tenantOptions.length === 0))
+                  }
+                >
+                  {createMut.isPending ? text("创建中…", "Creating…") : text("确认创建", "Create")}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {configOpen && selectedMembership ? (
         <div

@@ -172,6 +172,19 @@ public class ConsoleController {
     return consoleService.adminUsers(principal());
   }
 
+  @PostMapping("/admin/users")
+  @ResponseStatus(HttpStatus.CREATED)
+  public Map<String, Object> createAdminUser(
+      @RequestBody Map<String, Object> body,
+      @RequestHeader(value = "X-Forwarded-For", required = false) String forwardedFor) {
+    return consoleService.createAdminUser(principal(), body, clientIp(forwardedFor));
+  }
+
+  @GetMapping("/admin/users/tenant-options")
+  public List<Map<String, Object>> adminUserTenantOptions() {
+    return consoleService.adminUserTenantOptions(principal());
+  }
+
   @GetMapping("/admin/users/available-models")
   public List<Map<String, Object>> adminUserAvailableModels() {
     return consoleService.adminUserAvailableModels(principal());

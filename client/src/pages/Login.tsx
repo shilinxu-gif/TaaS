@@ -12,6 +12,10 @@ type LoginRes = {
   user: User;
 };
 
+function homePathForRole(platformRole?: string) {
+  return platformRole === "platform_admin" ? "/admin/usage" : "/dashboard";
+}
+
 export function Login() {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -31,7 +35,7 @@ export function Login() {
       });
       login(res.token, res.user);
       await refreshMe();
-      navigate("/dashboard", { replace: true });
+      navigate(homePathForRole(res.user.platformRole), { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : t("auth.loginFailed"));
     }
