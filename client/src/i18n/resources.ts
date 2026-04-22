@@ -24,6 +24,7 @@ export const resources = {
         tenantLinks: {
           dashboard: "工作台",
           apiKeys: "API 密钥",
+          modelHub: "模型广场",
           integrationDocs: "SDK 文档中心",
           usage: "用量",
           optimization: "成本优化",
@@ -105,6 +106,7 @@ export const resources = {
         tenantLinks: {
           dashboard: "Dashboard",
           apiKeys: "API Keys",
+          modelHub: "Model Hub",
           integrationDocs: "SDK Docs",
           usage: "Usage",
           optimization: "Cost Optimization",

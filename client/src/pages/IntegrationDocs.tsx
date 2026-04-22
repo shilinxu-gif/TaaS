@@ -49,6 +49,40 @@ function CapabilityCard({
   );
 }
 
+function EndpointCard({
+  title,
+  badge,
+  endpoint,
+  note,
+  copyLabel,
+  copiedLabel,
+  isCopied,
+  onCopy,
+}: {
+  title: string;
+  badge: string;
+  endpoint: string;
+  note: string;
+  copyLabel: string;
+  copiedLabel: string;
+  isCopied: boolean;
+  onCopy: () => void;
+}) {
+  return (
+    <article className="integration-endpoint-card">
+      <div className="integration-endpoint-head">
+        <strong>{title}</strong>
+        <span className="integration-chip">{badge}</span>
+      </div>
+      <code className="integration-endpoint-code">{endpoint}</code>
+      <button type="button" className="btn btn-ghost integration-endpoint-copy" onClick={onCopy}>
+        {isCopied ? copiedLabel : copyLabel}
+      </button>
+      <p>{note}</p>
+    </article>
+  );
+}
+
 function SupportBadge({
   status,
   label,
@@ -166,11 +200,10 @@ export function IntegrationDocs() {
 
   const exampleModel = modelsQuery.data?.[0]?.model ?? "gpt-4o-mini";
   const modelList = modelsQuery.data ?? [];
-  const gatewayOrigin =
-    typeof window !== "undefined" ? window.location.origin : "https://your-domain.com";
-  const chatEndpoint = `${gatewayOrigin}/v1/chat/completions`;
-  const fallbackEndpoint = `${gatewayOrigin}/gateway/v1/chat/completions`;
-  const openAiBaseUrl = `${gatewayOrigin}/v1`;
+  const publicGatewayOrigin = "http://www.itoken.group";
+  const sdkBaseUrl = `${publicGatewayOrigin}/v1`;
+  const chatEndpoint = `${publicGatewayOrigin}/gateway/v1/chat/completions`;
+  const futureApiFamily = `${publicGatewayOrigin}/gateway/v1/{images|video|audio|...}`;
   const systemPrompt = text(
     "你是一个企业 AI 助手，请简洁回答。",
     "You are an enterprise AI assistant. Answer concisely."
@@ -283,7 +316,7 @@ export function IntegrationDocs() {
 
 client = OpenAI(
     api_key="sk-your-app-key",
-    base_url="${openAiBaseUrl}",
+    base_url="${sdkBaseUrl}",
 )
 
 resp = client.chat.completions.create(
@@ -309,7 +342,7 @@ print(resp.model_dump_json(indent=2))`,
 
 const client = new OpenAI({
   apiKey: "sk-your-app-key",
-  baseURL: "${openAiBaseUrl}",
+  baseURL: "${sdkBaseUrl}",
 });
 
 const completion = await client.chat.completions.create({
@@ -440,7 +473,7 @@ console.log(await response.json());`,
       exampleModel,
       idempotencyValue,
       language,
-      openAiBaseUrl,
+      sdkBaseUrl,
       payloadJson,
       systemPrompt,
       text,
@@ -452,6 +485,7 @@ console.log(await response.json());`,
 
   const sectionLinks = [
     { id: "overview", label: text("概览", "Overview") },
+    { id: "endpoints", label: text("地址体系", "Endpoints") },
     { id: "capabilities", label: text("能力边界", "Capabilities") },
     { id: "quickstart", label: text("快速开始", "Quickstart") },
     { id: "sdk-center", label: text("SDK 示例", "SDK Examples") },
@@ -533,8 +567,8 @@ console.log(await response.json());`,
         "Why do I still need an AppKey if I already have a console login?"
       ),
       answer: text(
-        "因为当前控制台 JWT 和网关调用是两套认证边界。JWT 用于控制台管理接口，AppKey 用于 `POST /v1/chat/completions` 网关调用。",
-        "Because console JWT and gateway calls are separate auth boundaries. JWT is for console management APIs, while AppKey is for `POST /v1/chat/completions` gateway calls."
+        "因为当前控制台 JWT 和网关调用是两套认证边界。JWT 用于控制台管理接口；AppKey 用于 SDK Base URL `http://www.itoken.group/v1` 或聊天直连接口 `http://www.itoken.group/gateway/v1/chat/completions`。",
+        "Because console JWT and gateway calls are separate auth boundaries. JWT is for console management APIs, while AppKeys are for the SDK Base URL `http://www.itoken.group/v1` or the direct chat endpoint `http://www.itoken.group/gateway/v1/chat/completions`."
       ),
     },
     {
@@ -569,6 +603,16 @@ console.log(await response.json());`,
     },
     {
       question: text(
+        "终端用户到底该用哪个地址？",
+        "Which endpoint should end users actually use?"
+      ),
+      answer: text(
+        "如果你接的是 OpenAI Python / Node.js SDK，或者任何需要配置 `baseURL` / `base_url` 的兼容客户端，就用 `http://www.itoken.group/v1`。如果你是自己发 HTTP 请求，比如 `curl`、`fetch`、`requests` 或 Java HttpClient，就直接调用 `http://www.itoken.group/gateway/v1/chat/completions`。后续 Images、Video 等能力会继续放在 `http://www.itoken.group/gateway/v1/...` 下面。",
+        "If you use OpenAI Python / Node.js SDKs or any compatible client that expects `baseURL` / `base_url`, use `http://www.itoken.group/v1`. If you send HTTP requests yourself with `curl`, `fetch`, `requests`, or Java HttpClient, call `http://www.itoken.group/gateway/v1/chat/completions` directly. Future Images, Video, and similar APIs will continue under `http://www.itoken.group/gateway/v1/...`."
+      ),
+    },
+    {
+      question: text(
         "我能不能完全不传 model，只靠 AppKey 调用？",
         "Can I omit model entirely and rely only on the AppKey?"
       ),
@@ -577,9 +621,29 @@ console.log(await response.json());`,
         "Yes. If the AppKey binds a single model, the gateway uses it automatically. If the AppKey binds multiple allowed models, the gateway randomly chooses from currently available ones. If the AppKey does not restrict models, you should still send model explicitly."
       ),
     },
+    {
+      question: text(
+        "`system` 和 `user` 有什么区别？",
+        "What is the difference between `system` and `user`?"
+      ),
+      answer: text(
+        "`system` 用来定义模型角色、回答风格和约束规则，例如“你是一个企业 AI 助手，请简洁回答”。`user` 用来承载用户真正的问题或任务，例如“请总结这段文本”。不要把提问内容写进 `system`，否则上游模型可能把它当成规则而不是待回答的问题。",
+        "`system` defines the model role, response style, and constraints, for example 'You are an enterprise AI assistant. Answer concisely.' `user` carries the actual question or task, for example 'Summarize this text.' Do not put the real question into `system`, or upstream models may treat it as an instruction rather than something to answer."
+      ),
+    },
   ];
 
   const changelogItems = [
+    {
+      version: "v1.4",
+      date: "2026-04-20",
+      summary: text("重构文档中的地址体系展示", "Redesigned endpoint architecture guidance"),
+      items: [
+        text("明确区分 SDK Base URL、Chat Completions 直连接口，以及未来多模态 API 家族。", "Clearly separated SDK Base URL, the direct Chat Completions endpoint, and the future multimodal API family."),
+        text("新增地址体系卡片与 FAQ，避免终端用户混淆 `base_url` 和具体 POST 地址。", "Added endpoint cards and FAQ guidance so end users do not confuse `base_url` with the concrete POST endpoint."),
+        text("所有示例继续保持 OpenAI SDK 与原生 HTTP 两种接入视角。", "All examples continue to cover both OpenAI SDK integration and raw HTTP integration."),
+      ],
+    },
     {
       version: "v1.3",
       date: "2026-04-21",
@@ -643,6 +707,9 @@ console.log(await response.json());`,
             )}
           </p>
           <div className="integration-hero-actions">
+            <Link to="/model-hub" className="btn btn-ghost">
+              {text("先看模型广场", "Browse model hub")}
+            </Link>
             <Link to="/api-keys" className="btn btn-primary">
               {text("返回 API 密钥", "Back to API Keys")}
             </Link>
@@ -652,29 +719,71 @@ console.log(await response.json());`,
               onClick={() => void handleCopy("endpoint", chatEndpoint)}
             >
               {copiedId === "endpoint"
-                ? text("端点已复制", "Endpoint copied")
-                : text("复制请求地址", "Copy endpoint")}
+                ? text("Chat 地址已复制", "Chat API copied")
+                : text("复制 Chat API", "Copy Chat API")}
             </button>
           </div>
         </div>
         <div className="integration-hero-panel">
           <div className="integration-mini-card">
-            <span>{text("主端点", "Primary endpoint")}</span>
+            <span>{text("SDK Base URL", "SDK Base URL")}</span>
+            <code>{sdkBaseUrl}</code>
+          </div>
+          <div className="integration-mini-card">
+            <span>{text("Completions API", "Completions API")}</span>
             <code>{chatEndpoint}</code>
           </div>
           <div className="integration-mini-card">
-            <span>{text("兼容路径", "Compatibility path")}</span>
-            <code>{fallbackEndpoint}</code>
-          </div>
-          <div className="integration-mini-card">
-            <span>{text("SDK 基址", "SDK base URL")}</span>
-            <code>{openAiBaseUrl}</code>
+            <span>{text("未来 API 家族", "Future API family")}</span>
+            <code>{futureApiFamily}</code>
           </div>
           <div className="integration-mini-card">
             <span>{text("认证方式", "Authentication")}</span>
             <code>Authorization: Bearer sk-...</code>
           </div>
         </div>
+      </section>
+
+      <section id="endpoints" className="integration-endpoint-grid">
+        <EndpointCard
+          title={text("SDK / OpenAI 兼容客户端入口", "SDK / OpenAI-compatible client entry")}
+          badge={text("推荐给 SDK", "For SDKs")}
+          endpoint={sdkBaseUrl}
+          copyLabel={text("复制 Base URL", "Copy Base URL")}
+          copiedLabel={text("已复制", "Copied")}
+          isCopied={copiedId === "sdk-base-url"}
+          onCopy={() => void handleCopy("sdk-base-url", sdkBaseUrl)}
+          note={text(
+            "用于 OpenAI Python / Node.js SDK，以及任何只需要配置 `baseURL` / `base_url` 的兼容客户端。",
+            "Use this for OpenAI Python / Node.js SDKs and any compatible client that only needs a `baseURL` / `base_url`."
+          )}
+        />
+        <EndpointCard
+          title={text("Chat Completions 直连接口", "Direct Chat Completions endpoint")}
+          badge={text("推荐给原生 HTTP", "For raw HTTP")}
+          endpoint={chatEndpoint}
+          copyLabel={text("复制 Chat API", "Copy Chat API")}
+          copiedLabel={text("已复制", "Copied")}
+          isCopied={copiedId === "chat-api-url"}
+          onCopy={() => void handleCopy("chat-api-url", chatEndpoint)}
+          note={text(
+            "用于 `fetch`、`requests`、`curl`、Java HttpClient 等直接发 POST 请求的场景。这是当前聊天能力最明确的接口地址。",
+            "Use this for direct POST calls via `fetch`, `requests`, `curl`, Java HttpClient, and similar clients. This is the clearest current endpoint for chat capabilities."
+          )}
+        />
+        <EndpointCard
+          title={text("未来多模态 API 地址族", "Future multimodal API family")}
+          badge={text("规划中", "Planned")}
+          endpoint={futureApiFamily}
+          copyLabel={text("复制地址族", "Copy API family")}
+          copiedLabel={text("已复制", "Copied")}
+          isCopied={copiedId === "future-api-family"}
+          onCopy={() => void handleCopy("future-api-family", futureApiFamily)}
+          note={text(
+            "后续 Images API、Video API 等会继续收敛在 `gateway/v1` 家族下统一管理，具体路径以上线公告和正式文档为准。",
+            "Future Images API, Video API, and other multimodal capabilities will continue to live under the unified `gateway/v1` family. Exact paths will be announced when they are released."
+          )}
+        />
       </section>
 
       <nav
@@ -720,12 +829,21 @@ console.log(await response.json());`,
           <h2>{text("能力与边界", "Capabilities and boundaries")}</h2>
           <div className="integration-support-list">
             <SupportRow
+              feature={text("地址体系已分层", "Layered endpoint design")}
+              status="available"
+              statusLabel={text("可用", "Available")}
+              detail={text(
+                "`http://www.itoken.group/v1` 用于 SDK Base URL；`http://www.itoken.group/gateway/v1/chat/completions` 用于当前聊天直连接口。",
+                "`http://www.itoken.group/v1` is for SDK Base URL usage, while `http://www.itoken.group/gateway/v1/chat/completions` is the current direct chat endpoint."
+              )}
+            />
+            <SupportRow
               feature={text("OpenAI 兼容 Chat Completions", "OpenAI-compatible Chat Completions")}
               status="available"
               statusLabel={text("可用", "Available")}
               detail={text(
-                "主入口为 `POST /v1/chat/completions`，支持通过 AppKey 直接调用。",
-                "The main entrypoint is `POST /v1/chat/completions`, callable directly with an AppKey."
+                "当前聊天能力支持通过 AppKey 直接调用，并兼容 OpenAI 风格客户端。",
+                "The current chat capability can be called directly with an AppKey and remains compatible with OpenAI-style clients."
               )}
             />
             <SupportRow
@@ -824,6 +942,15 @@ console.log(await response.json());`,
               </span>
             </li>
             <li>
+              <strong>{text("不要把两个地址混用", "Do not mix the two endpoint types")}</strong>
+              <span>
+                {text(
+                  "`http://www.itoken.group/v1` 是 SDK Base URL；如果你自己手写 HTTP 请求，请直接使用 `http://www.itoken.group/gateway/v1/chat/completions`。",
+                  "`http://www.itoken.group/v1` is the SDK Base URL; if you handcraft HTTP requests yourself, call `http://www.itoken.group/gateway/v1/chat/completions` directly."
+                )}
+              </span>
+            </li>
+            <li>
               <strong>{text("先做烟雾测试再上线", "Smoke test before shipping")}</strong>
               <span>
                 {text(
@@ -839,21 +966,53 @@ console.log(await response.json());`,
           <h2>{text("请求规范", "Request contract")}</h2>
           <div className="integration-spec-list">
             <SpecItem label={text("方法", "Method")} value="POST" />
-            <SpecItem label={text("主路径", "Primary path")} value="/v1/chat/completions" />
-            <SpecItem label={text("兼容路径", "Compatibility path")} value="/gateway/v1/chat/completions" />
+            <SpecItem label={text("SDK Base URL", "SDK Base URL")} value={sdkBaseUrl} />
+            <SpecItem label={text("Chat Completions API", "Chat Completions API")} value={chatEndpoint} />
             <SpecItem label={text("鉴权", "Auth")} value="Bearer AppKey" />
             <SpecItem label={text("内容类型", "Content-Type")} value="application/json" />
-            <SpecItem label={text("必填字段", "Required fields")} value="messages[]" />
+            <SpecItem
+              label={text("必填字段", "Required fields")}
+              value={text("messages[]（建议至少包含一条 user）", "messages[] (include at least one user message)")}
+            />
             <SpecItem
               label={text("model 字段", "model field")}
               value={text("可选（若 AppKey 已绑定模型）", "Optional when AppKey binds model(s)")}
             />
           </div>
+          <div className="integration-role-box">
+            <strong>{text("messages[].role 字段说明", "messages[].role guidance")}</strong>
+            <ul className="integration-bullet-list integration-bullet-list--tight">
+              <li>
+                {text(
+                  "`system`：定义模型角色、回答风格、格式要求和约束规则。",
+                  "`system`: defines the model role, response style, output format, and guardrails."
+                )}
+              </li>
+              <li>
+                {text(
+                  "`user`：用户真正的问题或任务，建议每次请求至少包含一条 `user` 消息。",
+                  "`user`: the actual user question or task. Each request should generally include at least one `user` message."
+                )}
+              </li>
+              <li>
+                {text(
+                  "`assistant`：模型历史回复，多轮上下文时才需要回传。",
+                  "`assistant`: previous model responses, only needed when you send back multi-turn conversation history."
+                )}
+              </li>
+              <li>
+                {text(
+                  "不要把“你是什么模型”这类问题写进 `system`；它应放在 `user` 里。",
+                  "Do not put questions like 'What model are you?' into `system`; they belong in `user`."
+                )}
+              </li>
+            </ul>
+          </div>
         </article>
 
         <article className="integration-card">
           <h2>{text("环境变量参考", "Environment variables")}</h2>
-          <pre className="integration-code-block">{`export TAAS_BASE_URL="${openAiBaseUrl}"
+          <pre className="integration-code-block">{`export TAAS_BASE_URL="${sdkBaseUrl}"
 export TAAS_CHAT_URL="${chatEndpoint}"
 export TAAS_APP_KEY="sk-your-app-key"
 export TAAS_MODEL="${exampleModel}" # optional when AppKey binds model(s)`}</pre>
@@ -963,6 +1122,12 @@ export TAAS_MODEL="${exampleModel}" # optional when AppKey binds model(s)`}</pre
                       "当前未读取到可用模型，示例里继续演示省略 model 的自动选模方式。",
                       "No available model could be loaded, so the example continues to demonstrate omitting model for AppKey-driven auto-selection."
                     )}
+              </p>
+              <p className="muted">
+                {text(
+                  "`system` 负责描述模型扮演的角色与回答规则，`user` 才是真正的问题输入。若只有 `system` 没有 `user`，不同上游模型可能表现不一致。",
+                  "`system` describes the role and answering rules, while `user` carries the actual question. If a request contains only `system` and no `user`, different upstream models may behave inconsistently."
+                )}
               </p>
             </div>
             <button

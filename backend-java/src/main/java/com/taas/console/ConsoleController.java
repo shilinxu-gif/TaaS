@@ -41,6 +41,11 @@ public class ConsoleController {
     return consoleService.availableAppKeyModels(principal());
   }
 
+  @GetMapping("/model-catalog")
+  public List<Map<String, Object>> modelCatalog() {
+    return consoleService.modelCatalog(principal());
+  }
+
   @PostMapping("/app-keys")
   @ResponseStatus(HttpStatus.CREATED)
   public Map<String, Object> createAppKey(

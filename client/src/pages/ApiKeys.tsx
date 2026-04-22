@@ -204,6 +204,9 @@ export function ApiKeys() {
           </p>
         </div>
         <div className="keys-header-actions">
+          <Link to="/model-hub" className="btn btn-ghost">
+            {text("查看模型广场", "Open model hub")}
+          </Link>
           <Link to="/integration-docs" className="btn btn-ghost">
             {text("查看 SDK 文档中心", "Open SDK docs")}
           </Link>

@@ -249,6 +249,27 @@ export type AppKeyAvailableModel = {
   supportsStreaming: boolean;
 };
 
+export type ModelCatalogRow = {
+  modelId: string;
+  displayName: string;
+  providerType: string;
+  providerName: string;
+  providerSlug: string;
+  priority: number;
+  supportsStreaming: boolean;
+  inputUsdPerMillion: string | null;
+  outputUsdPerMillion: string | null;
+  billingRuleSummary: string;
+  protocolFamily: string;
+  protocolLabel: string;
+  gatewayBaseUrl: string;
+  gatewayEndpoint: string;
+  upstreamEndpointPath: string;
+  integrationFormatNote: string;
+  capabilityTags: string[];
+  status: string;
+};
+
 /** @deprecated 使用 AppKeyListRow */
 export type AppKeyRow = AppKeyListRow;
 

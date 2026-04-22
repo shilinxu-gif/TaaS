@@ -95,14 +95,24 @@ export function Layout() {
         </div>
         <div className="desk-header-right">
           {platformRole !== "platform_admin" ? (
-            <NavLink
-              to="/integration-docs"
-              className={({ isActive }) =>
-                `desk-header-link${isActive ? " desk-header-link--active" : ""}`
-              }
-            >
-              {t("layout.tenantLinks.integrationDocs")}
-            </NavLink>
+            <>
+              <NavLink
+                to="/model-hub"
+                className={({ isActive }) =>
+                  `desk-header-link${isActive ? " desk-header-link--active" : ""}`
+                }
+              >
+                {t("layout.tenantLinks.modelHub")}
+              </NavLink>
+              <NavLink
+                to="/integration-docs"
+                className={({ isActive }) =>
+                  `desk-header-link${isActive ? " desk-header-link--active" : ""}`
+                }
+              >
+                {t("layout.tenantLinks.integrationDocs")}
+              </NavLink>
+            </>
           ) : null}
           <LanguageSwitcher compact />
           <span className="muted saas-tenant-pill">

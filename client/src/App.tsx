@@ -13,6 +13,7 @@ import { IntegrationDocs } from "./pages/IntegrationDocs";
 import { Invoices } from "./pages/Invoices";
 import { Recharge } from "./pages/Recharge";
 import { Login } from "./pages/Login";
+import { ModelHub } from "./pages/ModelHub";
 import { Optimization } from "./pages/Optimization";
 import { Ops } from "./pages/Ops";
 import { Register } from "./pages/Register";
@@ -59,6 +60,7 @@ export function App() {
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="dashboard" element={<Dashboard />} />
         <Route path="api-keys" element={<ApiKeys />} />
+        <Route path="model-hub" element={<ModelHub />} />
         <Route path="integration-docs" element={<IntegrationDocs />} />
         <Route path="usage" element={<Usage />} />
         <Route path="optimization" element={<Optimization />} />

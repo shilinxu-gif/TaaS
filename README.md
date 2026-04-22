@@ -8,11 +8,21 @@
 
 - 多租户控制台：注册即创建试用租户、默认预算、路由与缓存策略
 - AppKey 管理：哈希存储、环境隔离、作用域、QPS/日预算/月预算
-- OpenAI 兼容网关：`POST /v1/chat/completions`
+- OpenAI 兼容网关：SDK Base URL 为 `http://www.itoken.group/v1`，聊天直连接口为 `POST http://www.itoken.group/gateway/v1/chat/completions`
 - 真实上游适配：OpenAI、Anthropic、Google Gemini
 - 成本与账单：按输入/输出 Token 单价落账，保留计费快照
 - 运营能力：运营概览、供应商健康、审计日志
 - 财务流程：套餐、充值、开票生产占位链路
+
+## 线上接入地址
+
+- SDK / OpenAI 兼容客户端：`http://www.itoken.group/v1`
+- Chat Completions API：`POST http://www.itoken.group/gateway/v1/chat/completions`
+- 认证方式：`Authorization: Bearer <AppKey>`
+- 地址使用建议：
+  - 如果你使用 OpenAI Python / Node.js SDK，或任何需要配置 `baseURL` / `base_url` 的兼容客户端，请使用 `http://www.itoken.group/v1`
+  - 如果你使用 `curl`、`fetch`、`requests`、Java HttpClient 等原生 HTTP 方式，请直接调用 `http://www.itoken.group/gateway/v1/chat/completions`
+  - 后续 Images API、Video API 等多模态能力，会继续归在 `http://www.itoken.group/gateway/v1/...` 这一地址族下
 
 ## 本地启动
 

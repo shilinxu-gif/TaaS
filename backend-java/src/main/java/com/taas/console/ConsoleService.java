@@ -1,6 +1,7 @@
 package com.taas.console;
 
 import com.taas.auth.JwtPrincipal;
+import com.taas.gateway.ProviderCatalog;
 import com.taas.infra.api.ApiException;
 import com.taas.infra.security.CryptoUtils;
 import com.taas.infra.util.Ids;
@@ -53,6 +54,8 @@ public class ConsoleService {
           "cost", "优先经济性评分（越高越省），在可接受延迟内将流量引向低价模型组合；适合批量与成本敏感业务。",
           "quality", "优先成功率与延迟稳定性，必要时接受较高单价；适合对结果一致性要求高的生产链路。",
           "balance", "综合成功率、成本评分与延迟加权排序，适合作为大多数生产流量的默认策略。");
+  private static final String MODEL_HUB_GATEWAY_BASE_URL = "/v1";
+  private static final String MODEL_HUB_GATEWAY_ENDPOINT = "/v1/chat/completions";
 
   private final NamedParameterJdbcTemplate jdbcTemplate;
   private final Jsons jsons;
@@ -296,6 +299,67 @@ public class ConsoleService {
                     "providerType", providerType,
                     "priority", priority,
                     "supportsStreaming", booleanValue(item.get("supportsStreaming"), supportsStreaming)));
+          }
+          return null;
+        });
+    return new ArrayList<>(byModel.values());
+  }
+
+  public List<Map<String, Object>> modelCatalog(JwtPrincipal principal) {
+    requireTenant(principal.tenantId());
+    Map<String, Map<String, Object>> byModel = new LinkedHashMap<>();
+    jdbcTemplate.query(
+        """
+        select
+          name, slug, provider_type, priority, supports_streaming, model_catalog::text as model_catalog
+        from providers
+        where enabled = true
+          and status = 'active'
+          and base_url is not null
+          and nullif(trim(base_url), '') is not null
+          and api_key_ciphertext is not null
+          and nullif(trim(api_key_ciphertext), '') is not null
+        order by priority asc, name asc
+        """,
+        (rs, rowNum) -> {
+          String providerName = rs.getString("name");
+          String providerSlug = rs.getString("slug");
+          String providerType = rs.getString("provider_type");
+          boolean providerSupportsStreaming = rs.getBoolean("supports_streaming");
+          int priority = rs.getInt("priority");
+          for (Map<String, Object> item : jsons.readObjectList(rs.getString("model_catalog"))) {
+            String modelId = nullableTrim(item.get("model"));
+            if (modelId == null || byModel.containsKey(modelId)) {
+              continue;
+            }
+            String normalizedProviderType =
+                blankDefault(item.get("providerType"), providerType);
+            boolean supportsStreaming =
+                booleanValue(item.get("supportsStreaming"), providerSupportsStreaming);
+            ProviderCatalog.Entry pricing = ProviderCatalog.find(modelId);
+            byModel.put(
+                modelId,
+                orderedMap(
+                    "modelId", modelId,
+                    "displayName", modelId,
+                    "providerType", normalizedProviderType,
+                    "providerName", providerName,
+                    "providerSlug", providerSlug,
+                    "priority", priority,
+                    "supportsStreaming", supportsStreaming,
+                    "inputUsdPerMillion",
+                    pricing == null ? null : MoneyUtils.money(pricing.inputUsdPerMillion()),
+                    "outputUsdPerMillion",
+                    pricing == null ? null : MoneyUtils.money(pricing.outputUsdPerMillion()),
+                    "billingRuleSummary", billingRuleSummary(pricing),
+                    "protocolFamily", protocolFamily(normalizedProviderType),
+                    "protocolLabel", protocolLabel(normalizedProviderType),
+                    "gatewayBaseUrl", MODEL_HUB_GATEWAY_BASE_URL,
+                    "gatewayEndpoint", MODEL_HUB_GATEWAY_ENDPOINT,
+                    "upstreamEndpointPath", upstreamEndpointPath(normalizedProviderType, modelId),
+                    "integrationFormatNote", integrationFormatNote(normalizedProviderType),
+                    "capabilityTags", capabilityTags(supportsStreaming),
+                    "status", "available"));
           }
           return null;
         });
@@ -1928,6 +1992,61 @@ public class ConsoleService {
       return list.stream().map(String::valueOf).filter(item -> !item.isBlank()).toList();
     }
     return fallback;
+  }
+
+  private static String billingRuleSummary(ProviderCatalog.Entry pricing) {
+    if (pricing == null) {
+      return "按输入 Token 与输出 Token 分开计费；当前模型未命中公开目录价表，请以实际账单为准。";
+    }
+    return "按输入 Token 与输出 Token 分开计费；当前目录价为输入 $"
+        + MoneyUtils.money(pricing.inputUsdPerMillion())
+        + " / 百万 tokens，输出 $"
+        + MoneyUtils.money(pricing.outputUsdPerMillion())
+        + " / 百万 tokens。";
+  }
+
+  private static String protocolFamily(String providerType) {
+    return switch (providerType) {
+      case "anthropic" -> "anthropic_messages";
+      case "google" -> "google_generate_content";
+      default -> "openai_compatible";
+    };
+  }
+
+  private static String protocolLabel(String providerType) {
+    return switch (providerType) {
+      case "anthropic" -> "Anthropic Messages";
+      case "google" -> "Google GenerateContent";
+      default -> "OpenAI-compatible Chat Completions";
+    };
+  }
+
+  private static String upstreamEndpointPath(String providerType, String modelId) {
+    return switch (providerType) {
+      case "anthropic" -> "/messages";
+      case "google" -> "/models/" + modelId + ":generateContent";
+      default -> "/chat/completions";
+    };
+  }
+
+  private static String integrationFormatNote(String providerType) {
+    return switch (providerType) {
+      case "anthropic" ->
+          "原生上游通常使用 Messages 风格请求体（system 与 messages 分离）；通过 TaaS 调用时仍统一走 OpenAI-compatible chat completions 网关。";
+      case "google" ->
+          "原生上游通常使用 GenerateContent 风格请求体（contents / parts）；通过 TaaS 调用时仍统一走 OpenAI-compatible chat completions 网关。";
+      default ->
+          "原生上游与平台网关都兼容 Chat Completions 风格；通过 TaaS 调用时统一使用标准 chat completions 接口。";
+    };
+  }
+
+  private static List<String> capabilityTags(boolean supportsStreaming) {
+    ArrayList<String> tags = new ArrayList<>();
+    tags.add("chat");
+    if (supportsStreaming) {
+      tags.add("streaming");
+    }
+    return tags;
   }
 
   private void validateAllowedModelsConfigured(JwtPrincipal principal, Map<String, Object> body) {
