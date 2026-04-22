@@ -625,6 +625,7 @@ export type AdminUserRow = {
     tenantSlug: string;
     tenantStatus: string;
     role: string;
+    allowedModels: string[];
   }[];
 };
 

@@ -2,6 +2,51 @@
 
 ## Unreleased
 
+### 2026-04-22 20:35 管理员用户模型弹窗改为默认全选
+
+- 改动内容：调整管理员“配置用户可用模型”弹窗的默认行为；当用户当前未设置专属模型白名单时，弹窗会自动勾选全部模型，直观表达“默认全部支持”，管理员只需手动取消勾选想排除的模型即可。
+- 影响范围：`client/src/pages/AdminUsers.tsx`。
+- 验证情况：已完成前端交互代码检查；后续通过前端构建确认弹窗初始状态与保存逻辑正常。
+- 运维动作：仅需发布前端静态资源，无需执行 SQL、迁移、清缓存或重启后端。
+- 线上数据影响：无存量数据结构变化；仅调整弹窗默认展示与保存时“全选 = 全部支持”的前端映射逻辑，不影响历史成员模型配置结果。
+- 风险控制：后端仍沿用空数组表示“全部支持”的语义；前端仅在展示和提交时做等价映射，避免把“默认全部支持”误显示为“一个都没选”。
+
+### 2026-04-22 20:30 AppKey 创建改为继承管理员配置的用户模型范围
+
+- 改动内容：租户侧 `API 密钥` 创建弹窗移除“允许模型”选择项，新建 AppKey 时默认不再由用户手工勾选模型；后端会按当前用户在当前租户下的成员配置自动写入可用模型范围，未配置时默认支持全部模型。同时为平台管理员新增“按用户 / 租户成员关系配置可用模型”的后台入口。
+- 影响范围：`client/src/pages/ApiKeys.tsx`、`client/src/pages/AdminUsers.tsx`、`client/src/api.ts`、`backend-java/src/main/java/com/taas/console/ConsoleController.java`、`backend-java/src/main/java/com/taas/console/ConsoleService.java`、`backend-java/src/main/resources/db/migration/V20260422200000__tenant_member_allowed_models.sql`。
+- 验证情况：已执行前端 `npm run build` 通过；已执行 `mvn -f backend-java/pom.xml -Dtest=GatewayServiceTest test` 通过；最近改动文件无 linter 报错。
+- 运维动作：需要发布后端并重启 `taas-backend`，同时发布前端静态资源；数据库需执行新增迁移，为 `tenant_members` 增加 `allowed_models` 字段；无需额外补充环境变量或清缓存。
+- 线上数据影响：会为 `tenant_members` 新增 `allowed_models` 字段，默认值为空数组，表示不限制模型；不修改任何存量 `app_keys.allowed_models`、`api_request_logs`、`usage_records`、`billing_records` 历史数据，仅影响后续新创建 AppKey 的默认模型范围和租户页面可见模型列表。
+- 风险控制：迁移字段默认值为 `[]`，兼容现有成员关系；若管理员未配置用户模型白名单，系统继续按“全部模型可用”处理；后台配置入口仅对平台管理员开放，避免租户侧误改用户权限。
+
+### 2026-04-22 20:25 AppKey 创建默认授予全部权限
+
+- 改动内容：移除 `API 密钥` 创建弹窗中的“权限域”选择项，并从列表中隐藏该字段展示；后端创建 AppKey 时默认授予全部权限域（`chat:complete`、`usage:read`、`billing:read`、`admin:ops`），用户新建时无需手动勾选。
+- 影响范围：`client/src/pages/ApiKeys.tsx`、`backend-java/src/main/java/com/taas/console/ConsoleService.java`。
+- 验证情况：已完成前后端代码检查；后续通过前端构建与后端定向测试确认默认权限和页面展示正常。
+- 运维动作：需要发布后端并重启 `taas-backend`，同时发布前端静态资源；无需执行 SQL、迁移、清缓存或新增环境变量。
+- 线上数据影响：不修改任何存量 `app_keys.scopes` 数据；仅影响后续新创建的 AppKey 默认权限集合，历史已创建密钥保持原有权限不变。
+- 风险控制：仅简化新建流程并调整默认值，不改变已有 AppKey 的实际权限；后端仍保留 `scopes` 字段校验与更新能力，便于后续兼容管理端扩展。
+
+### 2026-04-22 20:15 API 密钥删除按钮改为垃圾桶图标
+
+- 改动内容：将 `API 密钥` 列表中的删除操作从文字按钮改为纯垃圾桶图标按钮，保留悬浮提示与无障碍标签，避免列表操作列视觉过重。
+- 影响范围：`client/src/pages/ApiKeys.tsx`、`client/src/icons.tsx`、`client/src/styles.css`。
+- 验证情况：已完成前端代码检查；后续通过 lint 与前端构建确认样式和交互正常。
+- 运维动作：仅需发布前端静态资源，无需执行 SQL、迁移、清缓存或重启后端。
+- 线上数据影响：无；仅调整前端展示，不改变删除接口、删除条件与历史数据保留策略。
+- 风险控制：删除弹窗、5 秒倒计时与后端删除接口保持不变，仅替换触发按钮样式；保留 `title` 与 `aria-label`，降低可用性回退风险。
+
+### 2026-04-22 20:05 API 密钥支持危险删除确认
+
+- 改动内容：在 `API 密钥` 列表中新增删除按钮，并增加二次确认弹窗；删除确认采用 5 秒倒计时后才允许点击，交互风格与删除供应商保持一致；后端同步新增 `DELETE /app-keys/{id}` 接口。
+- 影响范围：`client/src/pages/ApiKeys.tsx`、`backend-java/src/main/java/com/taas/console/ConsoleController.java`、`backend-java/src/main/java/com/taas/console/ConsoleService.java`。
+- 验证情况：已完成前后端代码联动检查；后续将通过前端构建与后端定向测试确认无回归。
+- 运维动作：需要发布后端并重启 `taas-backend`，同时发布前端静态资源；无需执行 SQL、迁移、清缓存或补充环境变量。
+- 线上数据影响：删除操作仅影响被删除的 `app_keys` 记录本身；不会删除历史 `api_request_logs`、`usage_records`、`billing_records` 等存量调用记录。
+- 风险控制：删除前加入 5 秒倒计时确认，降低误删风险；历史日志不跟随删除，方便审计与追溯；仅 `owner` / `admin` 等具备管理权限的租户角色可执行删除。
+
 ### 2026-04-22 15:05 控制台 JWT 默认有效期调整为 2 小时
 
 - 改动内容：将租户控制台登录 JWT 的默认有效期从 7 天调整为 2 小时，并在环境变量示例中补充 `JWT_EXPIRE_SECONDS=7200`；当前前端已保留 `401` 后清理登录态并回到登录页的处理，因此 token 过期后，用户在页面中再次发起操作时会被要求重新登录。

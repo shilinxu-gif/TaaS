@@ -1043,6 +1043,16 @@ tbody tr:hover td {
   color: #fff;
 }
 
+.keys-icon-danger-btn {
+  padding: 0.45rem;
+  min-width: 2.25rem;
+  min-height: 2.25rem;
+}
+
+.keys-icon-danger-btn svg {
+  display: block;
+}
+
 .btn-ghost {
   background: transparent;
   border-color: var(--crm-border);

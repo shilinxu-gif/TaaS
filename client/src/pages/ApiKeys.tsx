@@ -9,6 +9,7 @@ import {
   type AppKeyCreateResponse,
   type AppKeyListRow,
 } from "../api";
+import { IconTrash } from "../icons";
 import { formatDateTime } from "../i18n/format";
 import { pickText } from "../i18n/inline";
 import { copyText } from "../utils/clipboard";
@@ -39,12 +40,10 @@ export function ApiKeys() {
   const [formQps, setFormQps] = useState("");
   const [formBudget, setFormBudget] = useState("");
   const [formMonthlyBudget, setFormMonthlyBudget] = useState("");
-  const [formAllowedModels, setFormAllowedModels] = useState<string[]>([]);
   const [formStatus, setFormStatus] = useState<"active" | "disabled">("active");
   const [formEnvironment, setFormEnvironment] = useState<
     "production" | "staging" | "development" | "sandbox"
   >("production");
-  const [formScopes, setFormScopes] = useState<string[]>(["chat:complete"]);
 
   const [playKey, setPlayKey] = useState("");
   const [model, setModel] = useState("");
@@ -55,6 +54,9 @@ export function ApiKeys() {
   const [playResult, setPlayResult] = useState<string | null>(null);
   const [playErr, setPlayErr] = useState<string | null>(null);
   const [isPlaySubmitting, setIsPlaySubmitting] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteCountdown, setDeleteCountdown] = useState(5);
+  const [deleteTarget, setDeleteTarget] = useState<AppKeyListRow | null>(null);
   const [copyFeedback, setCopyFeedback] = useState<"idle" | "copied" | "failed">(
     "idle"
   );
@@ -67,6 +69,18 @@ export function ApiKeys() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [modalOpen]);
+
+  useEffect(() => {
+    if (!deleteOpen || !deleteTarget) {
+      setDeleteCountdown(5);
+      return;
+    }
+    setDeleteCountdown(5);
+    const timer = window.setInterval(() => {
+      setDeleteCountdown((prev) => (prev <= 1 ? 0 : prev - 1));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [deleteOpen, deleteTarget?.id]);
 
   const keysQuery = useQuery({
     queryKey: ["app-keys"],
@@ -105,10 +119,8 @@ export function ApiKeys() {
           qpsLimit,
           dailyBudgetUsd: budgetRaw === "" ? null : budgetRaw,
           monthlyBudgetUsd: formMonthlyBudget.trim() || null,
-          allowedModels: formAllowedModels,
           status: formStatus,
           environment: formEnvironment,
-          scopes: formScopes,
         }),
       });
     },
@@ -122,10 +134,8 @@ export function ApiKeys() {
       setFormQps("");
       setFormBudget("");
       setFormMonthlyBudget("");
-      setFormAllowedModels([]);
       setFormStatus("active");
       setFormEnvironment("production");
-      setFormScopes(["chat:complete"]);
     },
   });
 
@@ -136,6 +146,23 @@ export function ApiKeys() {
         body: JSON.stringify({ status }),
       }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["app-keys"] }),
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: async () => {
+      if (!deleteTarget) return;
+      return api<{ id: string; name: string; deleted: boolean }>(
+        `/app-keys/${deleteTarget.id}`,
+        {
+          method: "DELETE",
+        }
+      );
+    },
+    onSuccess: async () => {
+      setDeleteOpen(false);
+      setDeleteTarget(null);
+      await qc.invalidateQueries({ queryKey: ["app-keys"] });
+    },
   });
 
   async function runPlayground() {
@@ -181,6 +208,12 @@ export function ApiKeys() {
   function openCreateModal() {
     createMut.reset();
     setModalOpen(true);
+  }
+
+  function openDeleteModal(row: AppKeyListRow) {
+    deleteMut.reset();
+    setDeleteTarget(row);
+    setDeleteOpen(true);
   }
 
   function submitCreate(e: React.FormEvent) {
@@ -238,21 +271,23 @@ export function ApiKeys() {
                   <th>{text("日预算 (USD)", "Daily Budget (USD)")}</th>
                   <th>{text("月预算 (USD)", "Monthly Budget (USD)")}</th>
                   <th>{text("允许模型", "Allowed Models")}</th>
-                  <th>{text("权限域", "Scopes")}</th>
                   <th>{text("创建时间", "Created At")}</th>
                   <th>{text("最近来源", "Last Source")}</th>
                   <th>{text("启用", "Enabled")}</th>
+                  <th>{text("操作", "Actions")}</th>
               </tr>
             </thead>
             <tbody>
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={12} className="keys-table-empty muted">
+                  <td colSpan={13} className="keys-table-empty muted">
                     {text("暂无密钥，点击「创建密钥」新建", "No keys yet. Click “Create key” to add one.")}
                   </td>
                 </tr>
               ) : (
-                rows.map((row) => (
+                rows.map((row) => {
+                  const deleteLabel = text("删除 API 密钥", "Delete API key");
+                  return (
                   <tr key={row.id}>
                     <td className="keys-td-strong">{row.name}</td>
                     <td>
@@ -279,7 +314,6 @@ export function ApiKeys() {
                         </span>
                       )}
                     </td>
-                    <td>{row.scopes.join(", ")}</td>
                     <td className="keys-td-time">
                       {formatDateTime(row.createdAt, i18n.resolvedLanguage)}
                     </td>
@@ -304,8 +338,21 @@ export function ApiKeys() {
                         </label>
                       )}
                     </td>
+                    <td>
+                      <button
+                        type="button"
+                        className="btn btn-danger keys-icon-danger-btn"
+                        disabled={deleteMut.isPending}
+                        onClick={() => openDeleteModal(row)}
+                        aria-label={deleteLabel}
+                        title={deleteLabel}
+                      >
+                        <IconTrash />
+                      </button>
+                    </td>
                   </tr>
-                ))
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -381,6 +428,82 @@ export function ApiKeys() {
         {playErr ? <p className="error">{playErr}</p> : null}
         {playResult ? <pre className="keys-pre">{playResult}</pre> : null}
       </details>
+
+      {deleteOpen && deleteTarget ? (
+        <div
+          className="keys-modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="app-key-delete-title"
+        >
+          <div className="keys-modal keys-modal--narrow">
+            <div className="keys-modal-hd">
+              <h2 id="app-key-delete-title">{text("确认删除 API 密钥", "Confirm API key deletion")}</h2>
+              <button
+                type="button"
+                className="btn btn-header-ghost"
+                onClick={() => {
+                  setDeleteOpen(false);
+                  setDeleteTarget(null);
+                }}
+                disabled={deleteMut.isPending}
+              >
+                {text("关闭", "Close")}
+              </button>
+            </div>
+            <div className="keys-form">
+              <div className="provider-delete-warning">
+                <p className="provider-delete-title">
+                  {text(
+                    `你将删除 API 密钥「${deleteTarget.name}」`,
+                    `You are about to delete API key "${deleteTarget.name}"`
+                  )}
+                </p>
+                <p className="muted provider-delete-text">
+                  {text(
+                    "删除后该密钥将无法继续调用网关，且不能恢复；历史调用日志与账单记录不会被删除。",
+                    "After deletion, this key can no longer call the gateway and cannot be restored. Historical logs and billing records remain unchanged."
+                  )}
+                </p>
+                <p className="muted provider-delete-text">
+                  {text(
+                    `为避免误操作，确认按钮将在 ${deleteCountdown} 秒后可点击。`,
+                    `To avoid accidental deletion, the confirm button will be enabled in ${deleteCountdown} seconds.`
+                  )}
+                </p>
+              </div>
+              {deleteMut.error ? (
+                <p className="error">{(deleteMut.error as Error).message}</p>
+              ) : null}
+              <div className="keys-modal-actions">
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => {
+                    setDeleteOpen(false);
+                    setDeleteTarget(null);
+                  }}
+                  disabled={deleteMut.isPending}
+                >
+                  {text("取消", "Cancel")}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-danger"
+                  disabled={deleteMut.isPending || deleteCountdown > 0}
+                  onClick={() => deleteMut.mutate()}
+                >
+                  {deleteMut.isPending
+                    ? text("删除中...", "Deleting...")
+                    : deleteCountdown > 0
+                      ? text(`确认删除（${deleteCountdown}s）`, `Confirm delete (${deleteCountdown}s)`)
+                      : text("确认删除", "Confirm delete")}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {modalOpen ? (
         <div
@@ -485,62 +608,6 @@ export function ApiKeys() {
                 </label>
               </div>
               <label className="keys-field">
-                <span className="keys-label">{text("允许模型", "Allowed Models")}</span>
-                {availableModels.length === 0 ? (
-                  <div className="keys-models-empty muted">
-                    {text("当前没有已配置 URL 和 API Key 的模型可选，请先联系管理员完成供应商配置。", "No models with configured URL and API key are available. Please ask an administrator to finish provider setup first.")}
-                  </div>
-                ) : (
-                  <div className="keys-models-list">
-                    {availableModels.map((item) => (
-                      <label key={item.id} className="keys-model-option">
-                        <input
-                          type="checkbox"
-                          checked={formAllowedModels.includes(item.model)}
-                          onChange={(e) =>
-                            setFormAllowedModels((current) =>
-                              e.target.checked
-                                ? [...new Set([...current, item.model])]
-                                : current.filter((modelId) => modelId !== item.model)
-                            )
-                          }
-                        />
-                        <span className="keys-model-option-text">
-                          <strong>{item.providerName}</strong>
-                          <code className="keys-inline-code">{item.model}</code>
-                        </span>
-                      </label>
-                    ))}
-                  </div>
-                )}
-                <span className="muted">
-                  {text("仅展示已启用且已配置 URL、API Key 的模型；如果全部不勾选，表示该 AppKey 不限制模型。", "Only enabled models with configured URL and API key are shown. If none are selected, this AppKey has no model restriction.")}
-                </span>
-              </label>
-              <label className="keys-field">
-                <span className="keys-label">{text("权限域", "Scopes")}</span>
-                <div className="keys-play-row">
-                  {["chat:complete", "usage:read", "billing:read", "admin:ops"].map(
-                    (scope) => (
-                      <label key={scope} className="muted">
-                        <input
-                          type="checkbox"
-                          checked={formScopes.includes(scope)}
-                          onChange={(e) =>
-                            setFormScopes((current) =>
-                              e.target.checked
-                                ? [...new Set([...current, scope])]
-                                : current.filter((item) => item !== scope)
-                            )
-                          }
-                        />{" "}
-                        {scope}
-                      </label>
-                    )
-                  )}
-                </div>
-              </label>
-              <label className="keys-field">
                 <span className="keys-label">{text("状态", "Status")}</span>
                 <select
                   className="input-plain"
@@ -569,7 +636,7 @@ export function ApiKeys() {
                 <button
                   type="submit"
                   className="btn btn-primary"
-                  disabled={createMut.isPending || availableModelsQuery.isLoading}
+                  disabled={createMut.isPending}
                 >
                   {createMut.isPending ? text("创建中…", "Creating…") : text("创建", "Create")}
                 </button>

@@ -1,17 +1,54 @@
-import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { api, type AdminUserRow } from "../api";
+import { api, type AdminUserRow, type AppKeyAvailableModel } from "../api";
 import { formatDateTime, formatNumber } from "../i18n/format";
 import { pickText } from "../i18n/inline";
 
 export function AdminUsers() {
   const { i18n } = useTranslation();
   const text = (zhCN: string, enUS: string) => pickText(i18n.resolvedLanguage, zhCN, enUS);
+  const qc = useQueryClient();
   const [search, setSearch] = useState("");
+  const [configOpen, setConfigOpen] = useState(false);
+  const [selectedMembership, setSelectedMembership] = useState<{
+    userId: string;
+    userName: string;
+    tenantId: string;
+    tenantName: string;
+    allowedModels: string[];
+  } | null>(null);
+  const [modelSelection, setModelSelection] = useState<string[]>([]);
   const usersQuery = useQuery({
     queryKey: ["admin", "users"],
     queryFn: () => api<AdminUserRow[]>("/admin/users"),
+  });
+  const modelOptionsQuery = useQuery({
+    queryKey: ["admin", "users", "available-models"],
+    queryFn: () => api<AppKeyAvailableModel[]>("/admin/users/available-models"),
+  });
+
+  const saveMut = useMutation({
+    mutationFn: async () => {
+      if (!selectedMembership) return;
+      const allModels = modelOptions.map((item) => item.model);
+      const normalizedSelection =
+        allModels.length > 0 && modelSelection.length === allModels.length
+          ? []
+          : modelSelection;
+      return api<{ ok: boolean }>(
+        `/admin/users/${selectedMembership.userId}/tenants/${selectedMembership.tenantId}/allowed-models`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ allowedModels: normalizedSelection }),
+        }
+      );
+    },
+    onSuccess: async () => {
+      setConfigOpen(false);
+      setSelectedMembership(null);
+      await qc.invalidateQueries({ queryKey: ["admin", "users"] });
+    },
   });
 
   const list = useMemo(() => {
@@ -29,6 +66,34 @@ export function AdminUsers() {
       );
     });
   }, [search, usersQuery.data]);
+
+  const modelOptions = modelOptionsQuery.data ?? [];
+
+  useEffect(() => {
+    if (!configOpen || !selectedMembership) {
+      return;
+    }
+    if (selectedMembership.allowedModels.length > 0 || modelOptions.length === 0) {
+      return;
+    }
+    setModelSelection(modelOptions.map((item) => item.model));
+  }, [configOpen, modelOptions, selectedMembership]);
+
+  function openConfig(
+    user: Pick<AdminUserRow, "id" | "name">,
+    membership: AdminUserRow["memberships"][number]
+  ) {
+    setSelectedMembership({
+      userId: user.id,
+      userName: user.name,
+      tenantId: membership.tenantId,
+      tenantName: membership.tenantName,
+      allowedModels: membership.allowedModels,
+    });
+    setModelSelection(membership.allowedModels);
+    setConfigOpen(true);
+    saveMut.reset();
+  }
 
   if (usersQuery.isLoading) {
     return <p className="muted usage-page-pad">{text("加载中…", "Loading…")}</p>;
@@ -102,12 +167,38 @@ export function AdminUsers() {
                     <td>
                       {row.memberships.length === 0
                         ? text("—", "—")
-                        : row.memberships
-                            .map(
-                              (item) =>
-                                `${item.tenantName}（${item.role} / ${item.tenantStatus}）`,
-                            )
-                            .join("；")}
+                        : row.memberships.map((item) => (
+                            <div
+                              key={`${row.id}-${item.tenantId}`}
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "space-between",
+                                gap: "0.5rem",
+                                padding: "0.2rem 0",
+                              }}
+                            >
+                              <span>
+                                {`${item.tenantName}（${item.role} / ${item.tenantStatus}）`}
+                                {" · "}
+                                <span className="muted">
+                                  {item.allowedModels.length === 0
+                                    ? text("全部模型", "All models")
+                                    : text(
+                                        `${item.allowedModels.length} 个模型`,
+                                        `${item.allowedModels.length} models`
+                                      )}
+                                </span>
+                              </span>
+                              <button
+                                type="button"
+                                className="btn btn-ghost"
+                                onClick={() => openConfig(row, item)}
+                              >
+                                {text("配置模型", "Configure models")}
+                              </button>
+                            </div>
+                          ))}
                     </td>
                     <td>{row.requestCount}</td>
                     <td>{formatNumber(row.totalTokens, i18n.resolvedLanguage)}</td>
@@ -122,6 +213,107 @@ export function AdminUsers() {
           </table>
         </div>
       </section>
+
+      {configOpen && selectedMembership ? (
+        <div
+          className="keys-modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="admin-user-models-title"
+        >
+          <div className="keys-modal">
+            <div className="keys-modal-hd">
+              <h2 id="admin-user-models-title">
+                {text("配置用户可用模型", "Configure user model access")}
+              </h2>
+              <button
+                type="button"
+                className="btn btn-header-ghost"
+                onClick={() => {
+                  setConfigOpen(false);
+                  setSelectedMembership(null);
+                }}
+                disabled={saveMut.isPending}
+              >
+                {text("关闭", "Close")}
+              </button>
+            </div>
+            <div className="keys-form">
+              <div className="provider-delete-warning">
+                <p className="provider-delete-title">
+                  {text(
+                    `${selectedMembership.userName} / ${selectedMembership.tenantName}`,
+                    `${selectedMembership.userName} / ${selectedMembership.tenantName}`
+                  )}
+                </p>
+                <p className="muted provider-delete-text">
+                  {text(
+                    "弹窗会默认勾选全部模型，表示该用户在当前租户下默认可使用全部模型；如果你想排除某个模型，直接取消勾选即可。保存后，用户新建 AppKey 时会自动继承这里配置的模型范围。",
+                    "This dialog checks all models by default, which means the user can access all models in this tenant. If you want to exclude a model, simply uncheck it. New AppKeys created by this user will inherit this model scope automatically."
+                  )}
+                </p>
+              </div>
+
+              {modelOptionsQuery.isLoading ? (
+                <p className="muted">{text("模型列表加载中…", "Loading models…")}</p>
+              ) : modelOptions.length === 0 ? (
+                <div className="keys-models-empty muted">
+                  {text(
+                    "当前没有可配置的模型，请先完成供应商模型配置。",
+                    "No models are available to configure yet. Please finish provider model setup first."
+                  )}
+                </div>
+              ) : (
+                <div className="keys-models-list">
+                  {modelOptions.map((item) => (
+                    <label key={item.id} className="keys-model-option">
+                      <input
+                        type="checkbox"
+                        checked={modelSelection.includes(item.model)}
+                        onChange={(e) =>
+                          setModelSelection((current) =>
+                            e.target.checked
+                              ? [...new Set([...current, item.model])]
+                              : current.filter((modelId) => modelId !== item.model)
+                          )
+                        }
+                      />
+                      <span className="keys-model-option-text">
+                        <strong>{item.providerName}</strong>
+                        <code className="keys-inline-code">{item.model}</code>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              )}
+
+              {saveMut.error ? <p className="error">{(saveMut.error as Error).message}</p> : null}
+
+              <div className="keys-modal-actions">
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={() => {
+                    setConfigOpen(false);
+                    setSelectedMembership(null);
+                  }}
+                  disabled={saveMut.isPending}
+                >
+                  {text("取消", "Cancel")}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => saveMut.mutate()}
+                  disabled={saveMut.isPending || modelOptionsQuery.isLoading}
+                >
+                  {saveMut.isPending ? text("保存中…", "Saving…") : text("保存配置", "Save settings")}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

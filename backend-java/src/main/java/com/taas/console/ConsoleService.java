@@ -29,6 +29,8 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class ConsoleService {
+  private static final List<String> DEFAULT_APP_KEY_SCOPES =
+      List.of("chat:complete", "usage:read", "billing:read", "admin:ops");
   private static final Set<String> WRITE_ROLES = Set.of("owner", "admin", "developer");
   private static final Set<String> ADMIN_ROLES = Set.of("owner", "admin");
   private static final Set<String> OPS_ROLES = Set.of("owner", "admin", "billing");
@@ -262,6 +264,23 @@ public class ConsoleService {
 
   public List<Map<String, Object>> availableAppKeyModels(JwtPrincipal principal) {
     requireTenant(principal.tenantId());
+    List<String> allowedModels = memberAllowedModels(principal.tenantId(), principal.userId());
+    List<Map<String, Object>> rows = availableGatewayModels();
+    if (allowedModels.isEmpty()) {
+      return rows;
+    }
+    Set<String> allowedSet = Set.copyOf(allowedModels);
+    return rows.stream()
+        .filter(row -> allowedSet.contains(String.valueOf(row.get("model"))))
+        .toList();
+  }
+
+  public List<Map<String, Object>> adminUserAvailableModels(JwtPrincipal principal) {
+    requirePlatformAdmin(principal);
+    return availableGatewayModels();
+  }
+
+  private List<Map<String, Object>> availableGatewayModels() {
     Map<String, Map<String, Object>> byModel = new LinkedHashMap<>();
     jdbcTemplate.query(
         """
@@ -306,6 +325,8 @@ public class ConsoleService {
 
   public List<Map<String, Object>> modelCatalog(JwtPrincipal principal) {
     requireTenant(principal.tenantId());
+    List<String> allowedModels = memberAllowedModels(principal.tenantId(), principal.userId());
+    Set<String> allowedSet = allowedModels.isEmpty() ? Set.of() : Set.copyOf(allowedModels);
     Map<String, Map<String, Object>> byModel = new LinkedHashMap<>();
     jdbcTemplate.query(
         """
@@ -329,6 +350,9 @@ public class ConsoleService {
           for (Map<String, Object> item : jsons.readObjectList(rs.getString("model_catalog"))) {
             String modelId = nullableTrim(item.get("model"));
             if (modelId == null || byModel.containsKey(modelId)) {
+              continue;
+            }
+            if (!allowedSet.isEmpty() && !allowedSet.contains(modelId)) {
               continue;
             }
             String normalizedProviderType =
@@ -370,6 +394,7 @@ public class ConsoleService {
     requireRole(principal.role(), WRITE_ROLES);
     validateAppKeyBody(body, false);
     validateAllowedModelsConfigured(principal, body);
+    List<String> memberAllowedModels = memberAllowedModels(principal.tenantId(), principal.userId());
     String token = cryptoUtils.generateAppKeyToken();
     Instant now = Instant.now();
     String id = Ids.cuidLike("ak");
@@ -396,11 +421,16 @@ public class ConsoleService {
             .addValue("tokenPreview", cryptoUtils.buildAppKeyPreview(token))
             .addValue("status", blankDefault(body.get("status"), "active"))
             .addValue("environment", blankDefault(body.get("environment"), "production"))
-            .addValue("scopes", jsons.stringify(defaultStringList(body.get("scopes"), List.of("chat:complete"))))
+            .addValue(
+                "scopes",
+                jsons.stringify(defaultStringList(body.get("scopes"), DEFAULT_APP_KEY_SCOPES)))
             .addValue("qpsLimit", body.get("qpsLimit"))
             .addValue("dailyBudgetUsd", decimalOrNull(body.get("dailyBudgetUsd")))
             .addValue("monthlyBudgetUsd", decimalOrNull(body.get("monthlyBudgetUsd")))
-            .addValue("allowedModels", jsons.stringify(defaultStringList(body.get("allowedModels"), List.of())))
+            .addValue(
+                "allowedModels",
+                jsons.stringify(
+                    defaultStringList(body.get("allowedModels"), memberAllowedModels)))
             .addValue("createdAt", ts(now)));
 
     auditService.write(
@@ -414,7 +444,7 @@ public class ConsoleService {
         Map.of(
             "actorRole", principal.role(),
             "environment", blankDefault(body.get("environment"), "production"),
-            "scopes", defaultStringList(body.get("scopes"), List.of("chat:complete"))));
+            "scopes", defaultStringList(body.get("scopes"), DEFAULT_APP_KEY_SCOPES)));
 
     return jdbcTemplate.query(
             """
@@ -450,7 +480,9 @@ public class ConsoleService {
     patchSet(sets, params, "environment", body.get("environment"));
     if (body.containsKey("scopes")) {
       sets.add("scopes = cast(:scopes as jsonb)");
-      params.addValue("scopes", jsons.stringify(defaultStringList(body.get("scopes"), List.of("chat:complete"))));
+      params.addValue(
+          "scopes",
+          jsons.stringify(defaultStringList(body.get("scopes"), DEFAULT_APP_KEY_SCOPES)));
     }
     patchSet(sets, params, "qps_limit", body.get("qpsLimit"));
     patchSet(sets, params, "daily_budget_usd", decimalOrNull(body.get("dailyBudgetUsd")));
@@ -496,6 +528,28 @@ public class ConsoleService {
         ip,
         Map.of());
     return Map.of("ok", true);
+  }
+
+  public Map<String, Object> deleteAppKey(JwtPrincipal principal, String appKeyId, String ip) {
+    requireRole(principal.role(), ADMIN_ROLES);
+    Map<String, Object> existing = getAppKey(principal.tenantId(), appKeyId);
+    int deleted =
+        jdbcTemplate.update(
+            "delete from app_keys where id = :id and tenant_id = :tenantId",
+            Map.of("id", appKeyId, "tenantId", principal.tenantId()));
+    if (deleted == 0) {
+      throw new ApiException(404, "Not found");
+    }
+    auditService.write(
+        principal.tenantId(),
+        principal.userId(),
+        "user",
+        "app_key.delete",
+        "app_key",
+        appKeyId,
+        ip,
+        Map.of("actorRole", principal.role(), "name", String.valueOf(existing.get("name"))));
+    return Map.of("id", appKeyId, "name", String.valueOf(existing.get("name")), "deleted", true);
   }
 
   public List<Map<String, Object>> usage(JwtPrincipal principal) {
@@ -1130,7 +1184,8 @@ public class ConsoleService {
     jdbcTemplate.query(
         """
         select
-          tm.user_id, tm.role, t.id as tenant_id, t.name as tenant_name, t.slug as tenant_slug, t.status as tenant_status
+          tm.user_id, tm.role, tm.allowed_models::text as allowed_models,
+          t.id as tenant_id, t.name as tenant_name, t.slug as tenant_slug, t.status as tenant_status
         from tenant_members tm
         join tenants t on t.id = tm.tenant_id
         order by tm.id asc
@@ -1146,11 +1201,47 @@ public class ConsoleService {
                     "tenantName", rs.getString("tenant_name"),
                     "tenantSlug", rs.getString("tenant_slug"),
                     "tenantStatus", rs.getString("tenant_status"),
-                    "role", rs.getString("role")));
+                    "role", rs.getString("role"),
+                    "allowedModels", jsons.readStringList(rs.getString("allowed_models"))));
           }
           return null;
         });
     return users;
+  }
+
+  public Map<String, Object> updateAdminUserAllowedModels(
+      JwtPrincipal principal,
+      String userId,
+      String tenantId,
+      Map<String, Object> body,
+      String ip) {
+    requirePlatformAdmin(principal);
+    List<String> allowedModels = defaultStringList(body.get("allowedModels"), List.of());
+    validateAllowedModelsWithinAvailable(allowedModels, availableGatewayModelIds());
+    int updated =
+        jdbcTemplate.update(
+            """
+            update tenant_members
+            set allowed_models = cast(:allowedModels as jsonb)
+            where user_id = :userId and tenant_id = :tenantId
+            """,
+            new MapSqlParameterSource()
+                .addValue("userId", userId)
+                .addValue("tenantId", tenantId)
+                .addValue("allowedModels", jsons.stringify(allowedModels)));
+    if (updated == 0) {
+      throw new ApiException(404, "Not found");
+    }
+    auditService.write(
+        principal.tenantId(),
+        principal.userId(),
+        "user",
+        "tenant_member.allowed_models.update",
+        "tenant_member",
+        tenantId + ":" + userId,
+        ip,
+        Map.of("allowedModels", allowedModels));
+    return Map.of("ok", true, "userId", userId, "tenantId", tenantId, "allowedModels", allowedModels);
   }
 
   public Map<String, Object> adminUsageOverview(
@@ -2055,6 +2146,36 @@ public class ConsoleService {
     return tags;
   }
 
+  private List<String> memberAllowedModels(String tenantId, String userId) {
+    return jdbcTemplate.query(
+            """
+            select allowed_models::text
+            from tenant_members
+            where tenant_id = :tenantId and user_id = :userId
+            limit 1
+            """,
+            Map.of("tenantId", tenantId, "userId", userId),
+            (rs, rowNum) -> jsons.readStringList(rs.getString(1)))
+        .stream()
+        .findFirst()
+        .orElse(List.of());
+  }
+
+  private Set<String> availableGatewayModelIds() {
+    return availableGatewayModels().stream()
+        .map(row -> String.valueOf(row.get("model")))
+        .collect(java.util.stream.Collectors.toSet());
+  }
+
+  private void validateAllowedModelsWithinAvailable(
+      List<String> allowedModels, Set<String> availableModelIds) {
+    for (String model : allowedModels) {
+      if (!availableModelIds.contains(model)) {
+        throw new ApiException(400, "allowedModels contains unavailable model: " + model);
+      }
+    }
+  }
+
   private void validateAllowedModelsConfigured(JwtPrincipal principal, Map<String, Object> body) {
     if (!body.containsKey("allowedModels")) {
       return;
@@ -2063,15 +2184,11 @@ public class ConsoleService {
     if (requested.isEmpty()) {
       return;
     }
-    Set<String> available =
+    validateAllowedModelsWithinAvailable(
+        requested,
         availableAppKeyModels(principal).stream()
             .map(row -> String.valueOf(row.get("model")))
-            .collect(java.util.stream.Collectors.toSet());
-    for (String model : requested) {
-      if (!available.contains(model)) {
-        throw new ApiException(400, "allowedModels contains unavailable model: " + model);
-      }
-    }
+            .collect(java.util.stream.Collectors.toSet()));
   }
 
   private void validateAppKeyBody(Map<String, Object> body, boolean partial) {

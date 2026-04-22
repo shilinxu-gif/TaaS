@@ -69,6 +69,13 @@ public class ConsoleController {
     return consoleService.revokeAppKey(principal(), id, clientIp(forwardedFor));
   }
 
+  @DeleteMapping("/app-keys/{id}")
+  public Map<String, Object> deleteAppKey(
+      @PathVariable String id,
+      @RequestHeader(value = "X-Forwarded-For", required = false) String forwardedFor) {
+    return consoleService.deleteAppKey(principal(), id, clientIp(forwardedFor));
+  }
+
   @GetMapping("/usage")
   public List<Map<String, Object>> usage() {
     return consoleService.usage(principal());
@@ -163,6 +170,21 @@ public class ConsoleController {
   @GetMapping("/admin/users")
   public List<Map<String, Object>> adminUsers() {
     return consoleService.adminUsers(principal());
+  }
+
+  @GetMapping("/admin/users/available-models")
+  public List<Map<String, Object>> adminUserAvailableModels() {
+    return consoleService.adminUserAvailableModels(principal());
+  }
+
+  @PatchMapping("/admin/users/{userId}/tenants/{tenantId}/allowed-models")
+  public Map<String, Object> updateAdminUserAllowedModels(
+      @PathVariable String userId,
+      @PathVariable String tenantId,
+      @RequestBody Map<String, Object> body,
+      @RequestHeader(value = "X-Forwarded-For", required = false) String forwardedFor) {
+    return consoleService.updateAdminUserAllowedModels(
+        principal(), userId, tenantId, body, clientIp(forwardedFor));
   }
 
   @GetMapping("/admin/usage-overview")
