@@ -1,6 +1,7 @@
 package com.taas.gateway;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -15,6 +16,7 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
@@ -97,6 +99,73 @@ class GatewayServiceTest {
             "balance");
 
     assertEquals("gpt-4o-mini", invokeRecordAccessor(resolved, "model"));
+  }
+
+  @Test
+  @SuppressWarnings("unchecked")
+  void normalizeAnthropicMessagesRequestShouldConvertSystemAndContentBlocks() throws Exception {
+    Map<String, Object> normalized =
+        (Map<String, Object>)
+            invoke(
+                "normalizeAnthropicMessagesRequest",
+                Map.of(
+                    "model",
+                    "claude-3-5-sonnet",
+                    "system",
+                    List.of(Map.of("type", "text", "text", "Be concise")),
+                    "messages",
+                    List.of(
+                        Map.of(
+                            "role",
+                            "user",
+                            "content",
+                            List.of(Map.of("type", "text", "text", "Hello Claude"))),
+                        Map.of("role", "assistant", "content", "Hi there")),
+                    "max_tokens",
+                    256));
+
+    assertEquals("claude-3-5-sonnet", normalized.get("model"));
+    assertEquals(256, normalized.get("max_tokens"));
+    List<Map<String, Object>> messages =
+        assertInstanceOf(List.class, normalized.get("messages"));
+    assertEquals("system", messages.get(0).get("role"));
+    assertEquals("Be concise", messages.get(0).get("content"));
+    assertEquals("user", messages.get(1).get("role"));
+    assertEquals("Hello Claude", messages.get(1).get("content"));
+    assertEquals("assistant", messages.get(2).get("role"));
+  }
+
+  @Test
+  @SuppressWarnings("unchecked")
+  void normalizeAnthropicGatewayResponseShouldConvertChatPayloadShape() throws Exception {
+    Map<String, Object> normalized =
+        (Map<String, Object>)
+            invoke(
+                "normalizeAnthropicGatewayResponse",
+                Map.of(
+                    "id",
+                    "chatcmpl_123",
+                    "model",
+                    "claude-3-5-sonnet",
+                    "choices",
+                    List.of(
+                        Map.of(
+                            "message", Map.of("role", "assistant", "content", "Hello back"),
+                            "finish_reason", "stop")),
+                    "usage",
+                    Map.of("prompt_tokens", 12, "completion_tokens", 8, "total_tokens", 20)));
+
+    assertEquals("message", normalized.get("type"));
+    assertEquals("assistant", normalized.get("role"));
+    assertEquals("claude-3-5-sonnet", normalized.get("model"));
+    assertEquals("end_turn", normalized.get("stop_reason"));
+    List<Map<String, Object>> content =
+        assertInstanceOf(List.class, normalized.get("content"));
+    assertEquals("text", content.get(0).get("type"));
+    assertEquals("Hello back", content.get(0).get("text"));
+    Map<String, Object> usage = assertInstanceOf(Map.class, normalized.get("usage"));
+    assertEquals(12, usage.get("input_tokens"));
+    assertEquals(8, usage.get("output_tokens"));
   }
 
   private Object invoke(String methodName, Object... args) throws Exception {

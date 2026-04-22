@@ -156,6 +156,26 @@ public class GatewayService {
     return new GatewayResponse(HttpStatus.OK, payload, Map.of());
   }
 
+  public GatewayResponse anthropicMessages(
+      String authorizationHeader,
+      String xApiKey,
+      String idempotencyKey,
+      String requestIp,
+      Map<String, Object> requestBody) {
+    if ((authorizationHeader == null || authorizationHeader.isBlank())
+        && (xApiKey == null || xApiKey.isBlank())) {
+      throw new ApiException(401, "Missing AppKey");
+    }
+    GatewayResponse response =
+        chatCompletions(
+            resolveGatewayAuthorization(authorizationHeader, xApiKey),
+            idempotencyKey,
+            requestIp,
+            normalizeAnthropicMessagesRequest(requestBody));
+    return new GatewayResponse(
+        response.status(), normalizeAnthropicGatewayResponse(response.body()), response.headers());
+  }
+
   private ResolvedModelSelection resolveModelSelection(
       String requestedModel, List<String> allowedModels, String mode) {
     if (requestedModel != null) {
@@ -568,6 +588,68 @@ public class GatewayService {
     return out;
   }
 
+  private Map<String, Object> normalizeAnthropicMessagesRequest(Map<String, Object> requestBody) {
+    LinkedHashMap<String, Object> normalized = new LinkedHashMap<>();
+    String model = normalizeRequestedModel(requestBody.get("model"));
+    if (model != null) {
+      normalized.put("model", model);
+    }
+    if (requestBody.get("temperature") != null) {
+      normalized.put("temperature", requestBody.get("temperature"));
+    }
+    if (requestBody.get("max_tokens") != null) {
+      normalized.put("max_tokens", requestBody.get("max_tokens"));
+    }
+    if (requestBody.get("max_completion_tokens") != null) {
+      normalized.put("max_completion_tokens", requestBody.get("max_completion_tokens"));
+    }
+    ArrayList<Map<String, Object>> messages = new ArrayList<>();
+    String system = anthropicContentToText(requestBody.get("system"));
+    if (!system.isBlank()) {
+      messages.add(Map.of("role", "system", "content", system));
+    }
+    if (requestBody.get("messages") instanceof List<?> rawMessages) {
+      for (Object item : rawMessages) {
+        if (!(item instanceof Map<?, ?> map)) {
+          continue;
+        }
+        String role = stringValue(map.get("role"));
+        String normalizedRole =
+            "assistant".equals(role) ? "assistant" : "system".equals(role) ? "system" : "user";
+        messages.add(
+            Map.of(
+                "role",
+                normalizedRole,
+                "content",
+                anthropicContentToText(map.get("content"))));
+      }
+    }
+    normalized.put("messages", messages);
+    return normalized;
+  }
+
+  private Map<String, Object> normalizeAnthropicGatewayResponse(Map<String, Object> payload) {
+    LinkedHashMap<String, Object> normalized = new LinkedHashMap<>();
+    normalized.put("id", String.valueOf(payload.getOrDefault("id", "msg_" + Ids.shortHex(8))));
+    normalized.put("type", "message");
+    normalized.put("role", "assistant");
+    normalized.put(
+        "content",
+        List.of(Map.of("type", "text", "text", firstAssistantText(payload))));
+    normalized.put("model", stringValue(payload.get("model")));
+    normalized.put("stop_reason", anthropicStopReason(payload));
+    normalized.put("stop_sequence", null);
+    Map<String, Object> usage = nestedMap(payload.get("usage"));
+    normalized.put(
+        "usage",
+        Map.of(
+            "input_tokens",
+            intValue(usage.get("prompt_tokens"), 0),
+            "output_tokens",
+            intValue(usage.get("completion_tokens"), 0)));
+    return normalized;
+  }
+
   private Map<String, Object> normalizePayload(String model, Map<String, Object> payload, int promptTokens, int completionTokens, int totalTokens) {
     if (payload.containsKey("choices")) {
       return payload;
@@ -868,6 +950,76 @@ public class GatewayService {
       return jsons.stringify(rawContent);
     }
     return String.valueOf(rawContent);
+  }
+
+  private String anthropicContentToText(Object rawContent) {
+    if (rawContent == null) {
+      return "";
+    }
+    if (rawContent instanceof String text) {
+      return text;
+    }
+    if (rawContent instanceof List<?> blocks) {
+      StringBuilder builder = new StringBuilder();
+      for (Object block : blocks) {
+        if (block instanceof Map<?, ?> map) {
+          Object text = map.get("text");
+          if (text != null) {
+            if (builder.length() > 0) {
+              builder.append('\n');
+            }
+            builder.append(text);
+          }
+        }
+      }
+      if (builder.length() > 0) {
+        return builder.toString();
+      }
+    }
+    return stringifyMessageContent(rawContent);
+  }
+
+  private String firstAssistantText(Map<String, Object> payload) {
+    Object rawChoices = payload.get("choices");
+    if (!(rawChoices instanceof List<?> choices) || choices.isEmpty()) {
+      return "";
+    }
+    Object first = choices.get(0);
+    if (!(first instanceof Map<?, ?> firstChoice)) {
+      return "";
+    }
+    Map<String, Object> message = nestedMap(firstChoice.get("message"));
+    return stringifyMessageContent(message.get("content"));
+  }
+
+  private String anthropicStopReason(Map<String, Object> payload) {
+    Object rawChoices = payload.get("choices");
+    if (!(rawChoices instanceof List<?> choices) || choices.isEmpty()) {
+      return null;
+    }
+    Object first = choices.get(0);
+    if (!(first instanceof Map<?, ?> firstChoice)) {
+      return null;
+    }
+    String finishReason = stringValue(firstChoice.get("finish_reason"));
+    if (finishReason == null || finishReason.isBlank()) {
+      return null;
+    }
+    return switch (finishReason) {
+      case "stop" -> "end_turn";
+      case "length" -> "max_tokens";
+      default -> finishReason;
+    };
+  }
+
+  private String resolveGatewayAuthorization(String authorizationHeader, String xApiKey) {
+    if (authorizationHeader != null && authorizationHeader.startsWith("Bearer ")) {
+      return authorizationHeader;
+    }
+    if (xApiKey != null && !xApiKey.isBlank()) {
+      return "Bearer " + xApiKey.trim();
+    }
+    return authorizationHeader;
   }
 
   private static Map<String, Object> mergePayload(Map<String, Object> original, Map<String, Object> extra) {

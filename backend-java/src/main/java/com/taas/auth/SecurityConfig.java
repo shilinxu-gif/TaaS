@@ -39,7 +39,9 @@ public class SecurityConfig {
                         "/health",
                         "/health/**",
                         "/actuator/**",
+                        "/v1/messages",
                         "/v1/chat/completions",
+                        "/gateway/v1/messages",
                         "/gateway/v1/chat/completions")
                     .permitAll()
                     .anyRequest()

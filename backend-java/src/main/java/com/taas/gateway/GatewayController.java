@@ -28,6 +28,21 @@ public class GatewayController {
     return builder.body(response.body());
   }
 
+  @PostMapping({"/v1/messages", "/gateway/v1/messages"})
+  public ResponseEntity<Map<String, Object>> anthropicMessages(
+      @RequestHeader(value = "Authorization", required = false) String authorization,
+      @RequestHeader(value = "x-api-key", required = false) String xApiKey,
+      @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+      @RequestHeader(value = "X-Forwarded-For", required = false) String forwardedFor,
+      @RequestBody Map<String, Object> body) {
+    GatewayService.GatewayResponse response =
+        gatewayService.anthropicMessages(
+            authorization, xApiKey, idempotencyKey, clientIp(forwardedFor), body);
+    ResponseEntity.BodyBuilder builder = ResponseEntity.status(response.status());
+    response.headers().forEach(builder::header);
+    return builder.body(response.body());
+  }
+
   private String clientIp(String forwardedFor) {
     if (forwardedFor == null || forwardedFor.isBlank()) {
       return "127.0.0.1";

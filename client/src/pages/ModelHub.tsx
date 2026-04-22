@@ -82,6 +82,25 @@ export function ModelHub() {
   );
 
   function buildCurlSnippet(row: ModelCatalogRow) {
+    if (row.providerType === "anthropic") {
+      return `curl "${gatewayOrigin}${row.gatewayEndpoint}" \\
+  -X POST \\
+  -H "Content-Type: application/json" \\
+  -H "x-api-key: sk-your-app-key" \\
+  -H "anthropic-version: 2023-06-01" \\
+  -d '{
+  "model": "${row.modelId}",
+  "system": "You are a concise AI assistant.",
+  "messages": [
+    {
+      "role": "user",
+      "content": "${exampleUserPrompt}"
+    }
+  ],
+  "max_tokens": 256,
+  "temperature": 0.2
+}'`;
+    }
     return `curl "${gatewayOrigin}${row.gatewayEndpoint}" \\
   -X POST \\
   -H "Content-Type: application/json" \\
@@ -99,6 +118,26 @@ export function ModelHub() {
   }
 
   function buildSdkSnippet(row: ModelCatalogRow) {
+    if (row.providerType === "anthropic") {
+      return `from anthropic import Anthropic
+
+client = Anthropic(
+    api_key="sk-your-app-key",
+    base_url="${gatewayOrigin}${row.gatewayBaseUrl}",
+)
+
+resp = client.messages.create(
+    model="${row.modelId}",
+    system="You are a concise AI assistant.",
+    messages=[
+        {"role": "user", "content": "${exampleUserPrompt}"}
+    ],
+    max_tokens=256,
+    temperature=0.2,
+)
+
+print(resp.model_dump_json(indent=2))`;
+    }
     return `from openai import OpenAI
 
 client = OpenAI(
@@ -167,8 +206,8 @@ print(resp.model_dump_json(indent=2))`;
             <strong>{providerOptions.length}</strong>
           </article>
           <article className="model-hub-stat-card">
-            <span>{text("统一网关端点", "Gateway endpoint")}</span>
-            <code>/v1/chat/completions</code>
+            <span>{text("推荐接入形态", "Recommended protocol")}</span>
+            <code>{text("OpenAI / Claude 分开展示", "OpenAI / Claude shown separately")}</code>
           </article>
         </div>
       </section>
@@ -303,12 +342,16 @@ print(resp.model_dump_json(indent=2))`;
 
               <div className="model-hub-endpoint-grid">
                 <div className="model-hub-endpoint-card">
-                  <span className="model-hub-section-label">{text("平台统一入口", "Unified gateway")}</span>
+                  <span className="model-hub-section-label">{text("平台推荐入口", "Recommended gateway")}</span>
                   <code>{row.gatewayEndpoint}</code>
                   <p className="muted">
                     {text(
-                      "通过 TaaS 接入时统一走该接口；SDK Base URL 为 `/v1`。",
-                      "Use this endpoint when integrating through TaaS; the SDK Base URL is `/v1`."
+                      row.providerType === "anthropic"
+                        ? "Claude / Anthropic 模型建议直接走 `/v1/messages`；如果使用 SDK，Base URL 仍然配置为 `/v1`。"
+                        : "OpenAI 系模型继续使用 `/v1/chat/completions`；如果使用 SDK，Base URL 配置为 `/v1`。",
+                      row.providerType === "anthropic"
+                        ? "Claude / Anthropic models should use `/v1/messages`; if you use an SDK, keep the Base URL at `/v1`."
+                        : "OpenAI-family models continue to use `/v1/chat/completions`; if you use an SDK, set the Base URL to `/v1`."
                     )}
                   </p>
                 </div>
@@ -336,7 +379,9 @@ print(resp.model_dump_json(indent=2))`;
                 >
                   {copiedId === `sdk-${row.modelId}`
                     ? text("SDK 已复制", "SDK copied")
-                    : text("复制 OpenAI SDK", "Copy OpenAI SDK")}
+                    : row.providerType === "anthropic"
+                      ? text("复制 Anthropic SDK", "Copy Anthropic SDK")
+                      : text("复制 OpenAI SDK", "Copy OpenAI SDK")}
                 </button>
                 <Link to="/integration-docs" className="btn btn-ghost">
                   {text("查看接入文档", "View integration docs")}
@@ -352,8 +397,8 @@ print(resp.model_dump_json(indent=2))`;
           <h2>{text("如何理解协议差异", "How to interpret protocol differences")}</h2>
           <p>
             {text(
-              "OpenAI、Anthropic、Google 的原生上游接口格式并不相同，但通过 TaaS 平台接入时，你仍然可以统一使用 `/v1/chat/completions`。模型广场展示原生格式差异，主要是帮助团队理解底层供应商能力与未来扩展方向。",
-              "OpenAI, Anthropic, and Google use different native upstream formats, but through TaaS you can still integrate with a unified `/v1/chat/completions` entrypoint. The protocol notes here are meant to help your team understand the underlying provider differences and future extension paths."
+              "OpenAI、Anthropic、Google 的原生接口形态并不相同。现在模型广场会按协议分别展示推荐入口，其中 Claude 使用 `/v1/messages`，OpenAI 系继续使用 `/v1/chat/completions`，避免把不同协议混成同一种示例。",
+              "OpenAI, Anthropic, and Google do not share the same native request shape. This page now shows protocol-specific entrypoints, so Claude uses `/v1/messages` while OpenAI-family models continue to use `/v1/chat/completions`."
             )}
           </p>
         </article>

@@ -24,7 +24,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
           "/auth/register",
           "/health",
           "/actuator",
+          "/v1/messages",
           "/v1/chat/completions",
+          "/gateway/v1/messages",
           "/gateway/v1/chat/completions");
 
   private final JwtService jwtService;

@@ -55,7 +55,6 @@ public class ConsoleService {
           "quality", "优先成功率与延迟稳定性，必要时接受较高单价；适合对结果一致性要求高的生产链路。",
           "balance", "综合成功率、成本评分与延迟加权排序，适合作为大多数生产流量的默认策略。");
   private static final String MODEL_HUB_GATEWAY_BASE_URL = "/v1";
-  private static final String MODEL_HUB_GATEWAY_ENDPOINT = "/v1/chat/completions";
 
   private final NamedParameterJdbcTemplate jdbcTemplate;
   private final Jsons jsons;
@@ -355,7 +354,7 @@ public class ConsoleService {
                     "protocolFamily", protocolFamily(normalizedProviderType),
                     "protocolLabel", protocolLabel(normalizedProviderType),
                     "gatewayBaseUrl", MODEL_HUB_GATEWAY_BASE_URL,
-                    "gatewayEndpoint", MODEL_HUB_GATEWAY_ENDPOINT,
+                    "gatewayEndpoint", gatewayEndpoint(normalizedProviderType),
                     "upstreamEndpointPath", upstreamEndpointPath(normalizedProviderType, modelId),
                     "integrationFormatNote", integrationFormatNote(normalizedProviderType),
                     "capabilityTags", capabilityTags(supportsStreaming),
@@ -2021,6 +2020,13 @@ public class ConsoleService {
     };
   }
 
+  private static String gatewayEndpoint(String providerType) {
+    return switch (providerType) {
+      case "anthropic" -> "/v1/messages";
+      default -> "/v1/chat/completions";
+    };
+  }
+
   private static String upstreamEndpointPath(String providerType, String modelId) {
     return switch (providerType) {
       case "anthropic" -> "/messages";
@@ -2032,11 +2038,11 @@ public class ConsoleService {
   private static String integrationFormatNote(String providerType) {
     return switch (providerType) {
       case "anthropic" ->
-          "原生上游通常使用 Messages 风格请求体（system 与 messages 分离）；通过 TaaS 调用时仍统一走 OpenAI-compatible chat completions 网关。";
+          "Claude / Anthropic 模型建议直接使用 `/v1/messages`，请求体保持 Messages 形态（system 与 messages 分离），无需再套 OpenAI 的 chat completions 格式。";
       case "google" ->
           "原生上游通常使用 GenerateContent 风格请求体（contents / parts）；通过 TaaS 调用时仍统一走 OpenAI-compatible chat completions 网关。";
       default ->
-          "原生上游与平台网关都兼容 Chat Completions 风格；通过 TaaS 调用时统一使用标准 chat completions 接口。";
+          "OpenAI 系模型继续使用标准 Chat Completions 形态，通过 TaaS 调用时推荐 `/v1/chat/completions`。";
     };
   }
 

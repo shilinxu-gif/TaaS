@@ -54,6 +54,7 @@ export function ApiKeys() {
   );
   const [playResult, setPlayResult] = useState<string | null>(null);
   const [playErr, setPlayErr] = useState<string | null>(null);
+  const [isPlaySubmitting, setIsPlaySubmitting] = useState(false);
   const [copyFeedback, setCopyFeedback] = useState<"idle" | "copied" | "failed">(
     "idle"
   );
@@ -138,6 +139,9 @@ export function ApiKeys() {
   });
 
   async function runPlayground() {
+    if (isPlaySubmitting) {
+      return;
+    }
     setPlayErr(null);
     setPlayResult(null);
     const message = playMessage.trim();
@@ -145,6 +149,7 @@ export function ApiKeys() {
       setPlayErr(text("请输入要发送给模型的消息", "Please enter a message to send to the model"));
       return;
     }
+    setIsPlaySubmitting(true);
     try {
       const payload: {
         model?: string;
@@ -168,6 +173,8 @@ export function ApiKeys() {
       void keysQuery.refetch();
     } catch (e) {
       setPlayErr(e instanceof Error ? e.message : text("调用失败", "Request failed"));
+    } finally {
+      setIsPlaySubmitting(false);
     }
   }
 
@@ -200,7 +207,8 @@ export function ApiKeys() {
           <p className="keys-subtitle muted">
             {text("使用 AppKey 调用", "Use AppKey with")}{" "}
             <code className="keys-inline-code">POST /v1/chat/completions</code>{" "}
-           {text("（OpenAI 兼容，多供应商真实网关）", "(OpenAI-compatible, real multi-provider gateway)")}
+            / <code className="keys-inline-code">POST /v1/messages</code>{" "}
+           {text("（按模型协议自动区分）", "(split by model protocol)")}
           </p>
         </div>
         <div className="keys-header-actions">
@@ -361,10 +369,12 @@ export function ApiKeys() {
             <button
               type="button"
               className="btn btn-ghost"
-              disabled={!playKey.trim()}
+              disabled={!playKey.trim() || isPlaySubmitting}
               onClick={() => void runPlayground()}
             >
-              {text("发送请求", "Send request")}
+              {isPlaySubmitting
+                ? text("请求中…", "Requesting…")
+                : text("发送请求", "Send request")}
             </button>
           </div>
         </div>

@@ -9,9 +9,11 @@ import { copyText } from "../utils/clipboard";
 type SdkTabId =
   | "openai-python"
   | "openai-node"
+  | "anthropic-python"
   | "java-http"
   | "python-requests"
   | "node-fetch"
+  | "anthropic-curl"
   | "curl";
 
 type SupportStatus = "available" | "limited" | "planned";
@@ -198,11 +200,17 @@ export function IntegrationDocs() {
     queryFn: () => api<AppKeyAvailableModel[]>("/app-keys/available-models"),
   });
 
-  const exampleModel = modelsQuery.data?.[0]?.model ?? "gpt-4o-mini";
   const modelList = modelsQuery.data ?? [];
+  const exampleModel = modelList[0]?.model ?? "gpt-4o-mini";
+  const openAiExampleModel =
+    modelList.find((item) => !item.model.toLowerCase().includes("claude"))?.model ?? "gpt-4o-mini";
+  const anthropicExampleModel =
+    modelList.find((item) => item.model.toLowerCase().includes("claude"))?.model ??
+    "claude-3-5-sonnet";
   const publicGatewayOrigin = "http://www.itoken.group";
   const sdkBaseUrl = `${publicGatewayOrigin}/v1`;
   const chatEndpoint = `${publicGatewayOrigin}/gateway/v1/chat/completions`;
+  const messagesEndpoint = `${publicGatewayOrigin}/gateway/v1/messages`;
   const futureApiFamily = `${publicGatewayOrigin}/gateway/v1/{images|video|audio|...}`;
   const systemPrompt = text(
     "你是一个企业 AI 助手，请简洁回答。",
@@ -320,7 +328,7 @@ client = OpenAI(
 )
 
 resp = client.chat.completions.create(
-    model="${exampleModel}",
+    model="${openAiExampleModel}",
     messages=[
         {"role": "system", "content": "${systemPrompt}"},
         {"role": "user", "content": "${userPrompt}"}
@@ -346,7 +354,7 @@ const client = new OpenAI({
 });
 
 const completion = await client.chat.completions.create({
-  model: "${exampleModel}",
+  model: "${openAiExampleModel}",
   messages: [
     { role: "system", content: "${systemPrompt}" },
     { role: "user", content: "${userPrompt}" },
@@ -355,6 +363,33 @@ const completion = await client.chat.completions.create({
 });
 
 console.log(JSON.stringify(completion, null, 2));`,
+      },
+      "anthropic-python": {
+        label: "Anthropic Python",
+        title: text("Anthropic Python SDK", "Anthropic Python SDK"),
+        summary: text(
+          "如果你接入的是 Claude / Anthropic 模型，请直接使用 Messages 形态，不要再套 OpenAI 的 `chat.completions`。",
+          "If you integrate Claude / Anthropic models, use the Messages shape directly instead of wrapping it in OpenAI `chat.completions`."
+        ),
+        install: "pip install anthropic",
+        code: `from anthropic import Anthropic
+
+client = Anthropic(
+    api_key="sk-your-app-key",
+    base_url="${sdkBaseUrl}",
+)
+
+resp = client.messages.create(
+    model="${anthropicExampleModel}",
+    system="${systemPrompt}",
+    messages=[
+        {"role": "user", "content": "${userPrompt}"}
+    ],
+    max_tokens=256,
+    temperature=0.2,
+)
+
+print(resp.model_dump_json(indent=2))`,
       },
       "java-http": {
         label: "Java HttpClient",
@@ -451,6 +486,34 @@ if (!response.ok) {
 
 console.log(await response.json());`,
       },
+      "anthropic-curl": {
+        label: "Claude cURL",
+        title: text("Claude Messages 快速联调", "Claude Messages quick smoke test"),
+        summary: text(
+          "如果你要按 Claude 原生格式联调，请直接调用 `/v1/messages`，并使用 `x-api-key` 与 `anthropic-version` 请求头。",
+          "To test Claude in its native shape, call `/v1/messages` directly and use `x-api-key` plus the `anthropic-version` header."
+        ),
+        install: null,
+        code: `curl "${messagesEndpoint}" \\
+  -X POST \\
+  -H "Content-Type: application/json" \\
+  -H "x-api-key: sk-your-app-key" \\
+  -H "anthropic-version: 2023-06-01" \\
+  -H "Accept-Language: ${language ?? "zh-CN"}" \\
+  -H "Idempotency-Key: ${idempotencyValue}" \\
+  -d '{
+  "model": "${anthropicExampleModel}",
+  "system": "${systemPrompt.replace(/"/g, '\\"')}",
+  "messages": [
+    {
+      "role": "user",
+      "content": "${userPrompt.replace(/"/g, '\\"')}"
+    }
+  ],
+  "max_tokens": 256,
+  "temperature": 0.2
+}'`,
+      },
       curl: {
         label: "cURL",
         title: text("cURL 快速联调", "cURL quick smoke test"),
@@ -470,9 +533,12 @@ console.log(await response.json());`,
     }),
     [
       chatEndpoint,
+      anthropicExampleModel,
       exampleModel,
       idempotencyValue,
       language,
+      messagesEndpoint,
+      openAiExampleModel,
       sdkBaseUrl,
       payloadJson,
       systemPrompt,
@@ -567,8 +633,8 @@ console.log(await response.json());`,
         "Why do I still need an AppKey if I already have a console login?"
       ),
       answer: text(
-        "因为当前控制台 JWT 和网关调用是两套认证边界。JWT 用于控制台管理接口；AppKey 用于 SDK Base URL `http://www.itoken.group/v1` 或聊天直连接口 `http://www.itoken.group/gateway/v1/chat/completions`。",
-        "Because console JWT and gateway calls are separate auth boundaries. JWT is for console management APIs, while AppKeys are for the SDK Base URL `http://www.itoken.group/v1` or the direct chat endpoint `http://www.itoken.group/gateway/v1/chat/completions`."
+        "因为当前控制台 JWT 和网关调用是两套认证边界。JWT 用于控制台管理接口；AppKey 用于 SDK Base URL `http://www.itoken.group/v1`，以及 OpenAI 的 `.../gateway/v1/chat/completions` / Claude 的 `.../gateway/v1/messages` 网关接口。",
+        "Because console JWT and gateway calls are separate auth boundaries. JWT is for console management APIs, while AppKeys are used for the SDK Base URL `http://www.itoken.group/v1` plus the OpenAI `.../gateway/v1/chat/completions` and Claude `.../gateway/v1/messages` gateway endpoints."
       ),
     },
     {
@@ -607,8 +673,8 @@ console.log(await response.json());`,
         "Which endpoint should end users actually use?"
       ),
       answer: text(
-        "如果你接的是 OpenAI Python / Node.js SDK，或者任何需要配置 `baseURL` / `base_url` 的兼容客户端，就用 `http://www.itoken.group/v1`。如果你是自己发 HTTP 请求，比如 `curl`、`fetch`、`requests` 或 Java HttpClient，就直接调用 `http://www.itoken.group/gateway/v1/chat/completions`。后续 Images、Video 等能力会继续放在 `http://www.itoken.group/gateway/v1/...` 下面。",
-        "If you use OpenAI Python / Node.js SDKs or any compatible client that expects `baseURL` / `base_url`, use `http://www.itoken.group/v1`. If you send HTTP requests yourself with `curl`, `fetch`, `requests`, or Java HttpClient, call `http://www.itoken.group/gateway/v1/chat/completions` directly. Future Images, Video, and similar APIs will continue under `http://www.itoken.group/gateway/v1/...`."
+        "如果你接的是 OpenAI SDK 或 Anthropic SDK，就统一把 Base URL 配成 `http://www.itoken.group/v1`。如果你自己发 HTTP 请求，OpenAI 模型调用 `http://www.itoken.group/gateway/v1/chat/completions`，Claude 模型调用 `http://www.itoken.group/gateway/v1/messages`。后续 Images、Video 等能力会继续放在 `http://www.itoken.group/gateway/v1/...` 下面。",
+        "If you use the OpenAI or Anthropic SDK, point the Base URL to `http://www.itoken.group/v1`. If you send HTTP yourself, OpenAI models should call `http://www.itoken.group/gateway/v1/chat/completions`, while Claude models should call `http://www.itoken.group/gateway/v1/messages`. Future Images, Video, and similar APIs will continue under `http://www.itoken.group/gateway/v1/...`."
       ),
     },
     {
@@ -639,9 +705,9 @@ console.log(await response.json());`,
       date: "2026-04-20",
       summary: text("重构文档中的地址体系展示", "Redesigned endpoint architecture guidance"),
       items: [
-        text("明确区分 SDK Base URL、Chat Completions 直连接口，以及未来多模态 API 家族。", "Clearly separated SDK Base URL, the direct Chat Completions endpoint, and the future multimodal API family."),
-        text("新增地址体系卡片与 FAQ，避免终端用户混淆 `base_url` 和具体 POST 地址。", "Added endpoint cards and FAQ guidance so end users do not confuse `base_url` with the concrete POST endpoint."),
-        text("所有示例继续保持 OpenAI SDK 与原生 HTTP 两种接入视角。", "All examples continue to cover both OpenAI SDK integration and raw HTTP integration."),
+        text("明确区分 SDK Base URL、OpenAI `chat/completions` 直连接口、Claude `messages` 直连接口，以及未来多模态 API 家族。", "Clearly separated the SDK Base URL, the direct OpenAI `chat/completions` endpoint, the direct Claude `messages` endpoint, and the future multimodal API family."),
+        text("新增 Claude 协议说明与地址卡片，避免把 Anthropic 的 Messages 误写成 OpenAI 格式。", "Added Claude protocol guidance and endpoint cards so Anthropic Messages are no longer documented as an OpenAI format."),
+        text("示例同时覆盖 OpenAI SDK、Anthropic SDK 与两类原生 HTTP 接入。", "Examples now cover OpenAI SDK, Anthropic SDK, and both raw HTTP styles."),
       ],
     },
     {
@@ -661,7 +727,7 @@ console.log(await response.json());`,
       items: [
         text("新增错误码表、限流策略、FAQ 与版本更新记录。", "Added error code table, rate limit policy, FAQ, and changelog."),
         text("新增 Java HttpClient 示例，并补充安装命令与顶部入口。", "Added a Java HttpClient example plus install commands and a top-level entrypoint."),
-        text("明确当前正式支持为非流式 chat completions。", "Clarified that the current GA capability is non-streaming chat completions."),
+        text("明确当前正式支持为非流式对话接口，按协议分为 Chat Completions 与 Claude Messages。", "Clarified that the current GA capability is non-streaming chat, split between Chat Completions and Claude Messages by protocol."),
       ],
     },
     {
@@ -702,8 +768,8 @@ console.log(await response.json());`,
           <h1>{text("SDK 文档中心", "SDK Docs Center")}</h1>
           <p>
             {text(
-              "这是给租户开发者的一站式正式接入中心。当前版本主打 OpenAI 兼容的非流式 `chat completions` 网关，适合用已有 SDK、原生 HTTP 或服务端封装快速上线。",
-              "This is the official one-stop integration hub for tenant developers. The current version focuses on a non-streaming OpenAI-compatible `chat completions` gateway that is easy to ship with existing SDKs, raw HTTP, or your own backend wrapper."
+              "这是给租户开发者的一站式正式接入中心。当前版本同时支持 OpenAI 的 `chat completions` 与 Claude 的 `messages` 两种主流接入形态，示例会按协议分别展示，不再混用。",
+              "This is the official one-stop integration hub for tenant developers. The current version supports both OpenAI `chat completions` and Claude `messages`, and the examples are now separated by protocol instead of mixing them together."
             )}
           </p>
           <div className="integration-hero-actions">
@@ -719,8 +785,8 @@ console.log(await response.json());`,
               onClick={() => void handleCopy("endpoint", chatEndpoint)}
             >
               {copiedId === "endpoint"
-                ? text("Chat 地址已复制", "Chat API copied")
-                : text("复制 Chat API", "Copy Chat API")}
+                ? text("OpenAI 地址已复制", "OpenAI API copied")
+                : text("复制 OpenAI API", "Copy OpenAI API")}
             </button>
           </div>
         </div>
@@ -730,8 +796,12 @@ console.log(await response.json());`,
             <code>{sdkBaseUrl}</code>
           </div>
           <div className="integration-mini-card">
-            <span>{text("Completions API", "Completions API")}</span>
+            <span>{text("OpenAI Chat API", "OpenAI Chat API")}</span>
             <code>{chatEndpoint}</code>
+          </div>
+          <div className="integration-mini-card">
+            <span>{text("Claude Messages API", "Claude Messages API")}</span>
+            <code>{messagesEndpoint}</code>
           </div>
           <div className="integration-mini-card">
             <span>{text("未来 API 家族", "Future API family")}</span>
@@ -739,14 +809,14 @@ console.log(await response.json());`,
           </div>
           <div className="integration-mini-card">
             <span>{text("认证方式", "Authentication")}</span>
-            <code>Authorization: Bearer sk-...</code>
+            <code>{text("Bearer 或 x-api-key", "Bearer or x-api-key")}</code>
           </div>
         </div>
       </section>
 
       <section id="endpoints" className="integration-endpoint-grid">
         <EndpointCard
-          title={text("SDK / OpenAI 兼容客户端入口", "SDK / OpenAI-compatible client entry")}
+          title={text("SDK Base URL", "SDK Base URL")}
           badge={text("推荐给 SDK", "For SDKs")}
           endpoint={sdkBaseUrl}
           copyLabel={text("复制 Base URL", "Copy Base URL")}
@@ -754,21 +824,34 @@ console.log(await response.json());`,
           isCopied={copiedId === "sdk-base-url"}
           onCopy={() => void handleCopy("sdk-base-url", sdkBaseUrl)}
           note={text(
-            "用于 OpenAI Python / Node.js SDK，以及任何只需要配置 `baseURL` / `base_url` 的兼容客户端。",
-            "Use this for OpenAI Python / Node.js SDKs and any compatible client that only needs a `baseURL` / `base_url`."
+            "用于 OpenAI SDK 与 Anthropic SDK 的基础地址。SDK 会在这个 Base URL 后自动拼接各自的协议路径，例如 OpenAI 走 `/chat/completions`，Claude 走 `/messages`。",
+            "Use this as the base URL for both OpenAI and Anthropic SDKs. Each SDK appends its own protocol path automatically, such as `/chat/completions` for OpenAI and `/messages` for Claude."
           )}
         />
         <EndpointCard
-          title={text("Chat Completions 直连接口", "Direct Chat Completions endpoint")}
-          badge={text("推荐给原生 HTTP", "For raw HTTP")}
+          title={text("OpenAI Chat Completions 直连接口", "Direct OpenAI Chat Completions endpoint")}
+          badge={text("OpenAI / 原生 HTTP", "OpenAI / raw HTTP")}
           endpoint={chatEndpoint}
           copyLabel={text("复制 Chat API", "Copy Chat API")}
           copiedLabel={text("已复制", "Copied")}
           isCopied={copiedId === "chat-api-url"}
           onCopy={() => void handleCopy("chat-api-url", chatEndpoint)}
           note={text(
-            "用于 `fetch`、`requests`、`curl`、Java HttpClient 等直接发 POST 请求的场景。这是当前聊天能力最明确的接口地址。",
-            "Use this for direct POST calls via `fetch`, `requests`, `curl`, Java HttpClient, and similar clients. This is the clearest current endpoint for chat capabilities."
+            "用于 OpenAI 风格的原生 HTTP 调用，如 `fetch`、`requests`、`curl`、Java HttpClient 等。",
+            "Use this for OpenAI-style raw HTTP calls such as `fetch`, `requests`, `curl`, or Java HttpClient."
+          )}
+        />
+        <EndpointCard
+          title={text("Claude Messages 直连接口", "Direct Claude Messages endpoint")}
+          badge={text("Claude / 原生 HTTP", "Claude / raw HTTP")}
+          endpoint={messagesEndpoint}
+          copyLabel={text("复制 Claude API", "Copy Claude API")}
+          copiedLabel={text("已复制", "Copied")}
+          isCopied={copiedId === "messages-api-url"}
+          onCopy={() => void handleCopy("messages-api-url", messagesEndpoint)}
+          note={text(
+            "用于 Claude / Anthropic 风格的原生 HTTP 调用。请求头建议使用 `x-api-key` 与 `anthropic-version`，请求体保持 Messages 结构。",
+            "Use this for Claude / Anthropic-style raw HTTP calls. Prefer `x-api-key` plus `anthropic-version` headers and keep the Messages payload shape."
           )}
         />
         <EndpointCard
@@ -800,10 +883,10 @@ console.log(await response.json());`,
       <section className="integration-capability-grid">
         <CapabilityCard
           title={text("协议兼容", "Protocol")}
-          value={text("OpenAI 兼容", "OpenAI Compatible")}
+          value={text("OpenAI + Claude", "OpenAI + Claude")}
           note={text(
-            "优先复用现有 OpenAI SDK 与调用链路，降低迁移成本。",
-            "Reuse existing OpenAI SDKs and call flows to keep migration costs low."
+            "同时支持 Chat Completions 与 Messages 两种主流协议，按模型类型分别接入。",
+            "Supports both Chat Completions and Messages so you can integrate by model family."
           )}
         />
         <CapabilityCard
@@ -818,8 +901,8 @@ console.log(await response.json());`,
           title={text("当前交付形态", "Delivery mode")}
           value={text("非流式 Chat", "Non-streaming Chat")}
           note={text(
-            "当前版本以同步 `chat completions` 为主，流式能力请以后续版本公告为准。",
-            "The current version focuses on synchronous `chat completions`; streaming support should be considered future roadmap unless announced otherwise."
+            "当前版本支持同步的 OpenAI `chat completions` 与 Claude `messages`；流式能力请以后续版本公告为准。",
+            "The current version supports synchronous OpenAI `chat completions` and Claude `messages`; streaming support remains future roadmap unless announced otherwise."
           )}
         />
       </section>
@@ -833,17 +916,26 @@ console.log(await response.json());`,
               status="available"
               statusLabel={text("可用", "Available")}
               detail={text(
-                "`http://www.itoken.group/v1` 用于 SDK Base URL；`http://www.itoken.group/gateway/v1/chat/completions` 用于当前聊天直连接口。",
-                "`http://www.itoken.group/v1` is for SDK Base URL usage, while `http://www.itoken.group/gateway/v1/chat/completions` is the current direct chat endpoint."
+                "`http://www.itoken.group/v1` 用于 SDK Base URL；OpenAI 原生 HTTP 走 `.../gateway/v1/chat/completions`，Claude 原生 HTTP 走 `.../gateway/v1/messages`。",
+                "`http://www.itoken.group/v1` is the SDK Base URL; OpenAI raw HTTP uses `.../gateway/v1/chat/completions`, while Claude raw HTTP uses `.../gateway/v1/messages`."
               )}
             />
             <SupportRow
-              feature={text("OpenAI 兼容 Chat Completions", "OpenAI-compatible Chat Completions")}
+              feature={text("OpenAI Chat Completions", "OpenAI Chat Completions")}
               status="available"
               statusLabel={text("可用", "Available")}
               detail={text(
-                "当前聊天能力支持通过 AppKey 直接调用，并兼容 OpenAI 风格客户端。",
-                "The current chat capability can be called directly with an AppKey and remains compatible with OpenAI-style clients."
+                "OpenAI 系模型继续使用 `chat completions` 形态，适合现有 OpenAI SDK 与兼容客户端。",
+                "OpenAI-family models continue to use the `chat completions` shape, ideal for existing OpenAI SDKs and compatible clients."
+              )}
+            />
+            <SupportRow
+              feature={text("Claude Messages", "Claude Messages")}
+              status="available"
+              statusLabel={text("可用", "Available")}
+              detail={text(
+                "Claude / Anthropic 模型现在支持独立的 `/v1/messages` 入口，不再共用 OpenAI 的请求格式。",
+                "Claude / Anthropic models now expose a dedicated `/v1/messages` entrypoint instead of sharing the OpenAI request shape."
               )}
             />
             <SupportRow
@@ -887,8 +979,8 @@ console.log(await response.json());`,
               status="planned"
               statusLabel={text("规划中", "Planned")}
               detail={text(
-                "当前正式文档请按非流式 `chat completions` 接入，避免把规划能力当成已上线能力使用。",
-                "For now, integrate against non-streaming `chat completions` and avoid treating roadmap capabilities as GA."
+                "当前正式文档请按非流式能力接入：OpenAI 走 `chat completions`，Claude 走 `messages`。",
+                "For now, integrate against non-streaming capabilities only: `chat completions` for OpenAI and `messages` for Claude."
               )}
             />
           </div>
@@ -899,8 +991,8 @@ console.log(await response.json());`,
           <ul className="integration-bullet-list">
             <li>
               {text(
-                "必须传 `Authorization: Bearer <AppKey>`，否则会返回 401。",
-                "You must send `Authorization: Bearer <AppKey>` or the gateway returns 401."
+                "OpenAI 风格请求使用 `Authorization: Bearer <AppKey>`；Claude 风格请求推荐使用 `x-api-key: <AppKey>`。",
+                "Use `Authorization: Bearer <AppKey>` for OpenAI-style requests; for Claude-style requests, prefer `x-api-key: <AppKey>`."
               )}
             </li>
             <li>
@@ -936,8 +1028,8 @@ console.log(await response.json());`,
               <strong>{text("优先走现有 SDK", "Prefer your existing SDK")}</strong>
               <span>
                 {text(
-                  "如果你已使用 OpenAI SDK，通常只需切换 `base_url` / `baseURL` 与 `apiKey`。如果走原生 HTTP，请求里的 model 在 AppKey 已绑定模型时可以省略。",
-                  "If you already use an OpenAI SDK, you usually only need to update `base_url` / `baseURL` and `apiKey`. If you use raw HTTP, model can be omitted when the AppKey already binds model(s)."
+                  "如果你已使用 OpenAI SDK 或 Anthropic SDK，通常只需切换 Base URL 与 AppKey；如果走原生 HTTP，请按模型协议选择 `chat/completions` 或 `messages`。",
+                  "If you already use the OpenAI or Anthropic SDK, you usually only need to change the Base URL and AppKey; for raw HTTP, choose `chat/completions` or `messages` based on the model protocol."
                 )}
               </span>
             </li>
@@ -945,8 +1037,8 @@ console.log(await response.json());`,
               <strong>{text("不要把两个地址混用", "Do not mix the two endpoint types")}</strong>
               <span>
                 {text(
-                  "`http://www.itoken.group/v1` 是 SDK Base URL；如果你自己手写 HTTP 请求，请直接使用 `http://www.itoken.group/gateway/v1/chat/completions`。",
-                  "`http://www.itoken.group/v1` is the SDK Base URL; if you handcraft HTTP requests yourself, call `http://www.itoken.group/gateway/v1/chat/completions` directly."
+                  "`http://www.itoken.group/v1` 是 SDK Base URL；如果你自己手写 HTTP 请求，OpenAI 模型走 `.../gateway/v1/chat/completions`，Claude 模型走 `.../gateway/v1/messages`。",
+                  "`http://www.itoken.group/v1` is the SDK Base URL; for handcrafted HTTP calls, use `.../gateway/v1/chat/completions` for OpenAI models and `.../gateway/v1/messages` for Claude models."
                 )}
               </span>
             </li>
@@ -968,7 +1060,8 @@ console.log(await response.json());`,
             <SpecItem label={text("方法", "Method")} value="POST" />
             <SpecItem label={text("SDK Base URL", "SDK Base URL")} value={sdkBaseUrl} />
             <SpecItem label={text("Chat Completions API", "Chat Completions API")} value={chatEndpoint} />
-            <SpecItem label={text("鉴权", "Auth")} value="Bearer AppKey" />
+            <SpecItem label={text("Claude Messages API", "Claude Messages API")} value={messagesEndpoint} />
+            <SpecItem label={text("鉴权", "Auth")} value={text("Bearer AppKey 或 x-api-key", "Bearer AppKey or x-api-key")} />
             <SpecItem label={text("内容类型", "Content-Type")} value="application/json" />
             <SpecItem
               label={text("必填字段", "Required fields")}
@@ -1014,6 +1107,7 @@ console.log(await response.json());`,
           <h2>{text("环境变量参考", "Environment variables")}</h2>
           <pre className="integration-code-block">{`export TAAS_BASE_URL="${sdkBaseUrl}"
 export TAAS_CHAT_URL="${chatEndpoint}"
+export TAAS_MESSAGES_URL="${messagesEndpoint}"
 export TAAS_APP_KEY="sk-your-app-key"
 export TAAS_MODEL="${exampleModel}" # optional when AppKey binds model(s)`}</pre>
         </article>
@@ -1025,8 +1119,8 @@ export TAAS_MODEL="${exampleModel}" # optional when AppKey binds model(s)`}</pre
             <h2>{text("SDK 示例中心", "SDK examples center")}</h2>
             <p className="muted">
               {text(
-                "按你的技术栈直接复制可运行示例。OpenAI SDK 最适合快速迁移，原生 HTTP 更适合底层封装与排查。",
-                "Copy a working snippet for your stack. OpenAI SDKs are best for fast migration, while raw HTTP is ideal for low-level wrappers and debugging."
+                "按你的技术栈直接复制可运行示例。OpenAI 和 Claude 现在分别提供独立协议示例，原生 HTTP 也按接口族拆开。",
+                "Copy a working snippet for your stack. OpenAI and Claude now have separate protocol examples, and raw HTTP samples are split by endpoint family as well."
               )}
             </p>
           </div>
@@ -1073,7 +1167,10 @@ export TAAS_MODEL="${exampleModel}" # optional when AppKey binds model(s)`}</pre
               </div>
               <div className="integration-sdk-badges">
                 <span className="integration-chip">
-                  {text("示例模型", "Example model")}: {exampleModel}
+                  {text("示例模型", "Example model")}:{" "}
+                  {activeTab === "anthropic-python" || activeTab === "anthropic-curl"
+                    ? anthropicExampleModel
+                    : openAiExampleModel}
                 </span>
                 <span className="integration-chip">
                   {text("调用方式", "Mode")}: {text("非流式", "Non-streaming")}
@@ -1122,6 +1219,12 @@ export TAAS_MODEL="${exampleModel}" # optional when AppKey binds model(s)`}</pre
                       "当前未读取到可用模型，示例里继续演示省略 model 的自动选模方式。",
                       "No available model could be loaded, so the example continues to demonstrate omitting model for AppKey-driven auto-selection."
                     )}
+              </p>
+              <p className="muted">
+                {text(
+                  "下面这一段展示的是 OpenAI `chat completions` 请求体；如果你接的是 Claude，请直接看上面的 Anthropic SDK / Claude cURL 示例，使用 `/v1/messages`。",
+                  "The payload below shows the OpenAI `chat completions` shape. If you integrate Claude, use the Anthropic SDK / Claude cURL examples above and call `/v1/messages`."
+                )}
               </p>
               <p className="muted">
                 {text(

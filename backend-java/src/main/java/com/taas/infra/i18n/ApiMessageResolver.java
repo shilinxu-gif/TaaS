@@ -85,7 +85,7 @@ public class ApiMessageResolver {
     LinkedHashMap<String, String> mapping = new LinkedHashMap<>();
     mapping.put("Unauthorized", "error.unauthorized");
     mapping.put(
-        "Use JWT for console API; AppKey is only for POST /v1/chat/completions",
+        "Use JWT for console API; AppKey is only for POST /v1/chat/completions or POST /v1/messages",
         "error.consoleJwtRequired");
     mapping.put("参数无效", "error.invalidArguments");
     mapping.put("生产模式下已禁用模拟充值动作，请通过真实支付回调或财务流程更新订单状态", "error.rechargeSimulationDisabled");
@@ -109,6 +109,7 @@ public class ApiMessageResolver {
     mapping.put("Tenant not found", "error.tenantNotFound");
     mapping.put("enabled is required", "error.enabledRequired");
     mapping.put("Missing Bearer AppKey", "error.missingBearerAppKey");
+    mapping.put("Missing AppKey", "error.missingAppKey");
     mapping.put(
         "This AppKey does not have chat:complete scope",
         "error.missingChatCompleteScope");
