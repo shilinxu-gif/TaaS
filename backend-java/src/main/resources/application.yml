@@ -46,7 +46,7 @@ taas:
   auth:
     jwt-secret: ${JWT_SECRET:}
     issuer: taas-java
-    expire-seconds: ${JWT_EXPIRE_SECONDS:604800}
+    expire-seconds: ${JWT_EXPIRE_SECONDS:7200}
   security:
     provider-config-secret: ${PROVIDER_CONFIG_SECRET:}
     app-key-pepper: ${APP_KEY_PEPPER:}

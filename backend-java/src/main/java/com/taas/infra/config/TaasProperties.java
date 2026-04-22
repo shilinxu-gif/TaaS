@@ -33,7 +33,7 @@ public class TaasProperties {
   public static class Auth {
     private String jwtSecret = "";
     private String issuer = "taas-java";
-    private long expireSeconds = 604800;
+    private long expireSeconds = 7200;
 
     public String getJwtSecret() {
       return jwtSecret;
