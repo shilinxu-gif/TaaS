@@ -110,6 +110,49 @@ function compareUserModelRows(
   return left.model.localeCompare(right.model, undefined, { sensitivity: "base" });
 }
 
+function UserModelSortTh({
+  field,
+  label,
+  sort,
+  onToggle,
+}: {
+  field: UserModelSortField;
+  label: string;
+  sort: { field: UserModelSortField; dir: UserModelSortDir };
+  onToggle: (field: UserModelSortField) => void;
+}) {
+  const active = sort.field === field;
+  return (
+    <button
+      type="button"
+      className="admin-usage-sort-control"
+      onClick={() => onToggle(field)}
+    >
+      <span className="admin-usage-sort-label">{label}</span>
+      <span className="admin-usage-sort-arrows" aria-hidden>
+        <span
+          className={
+            active && sort.dir === "asc"
+              ? "admin-usage-sort-arrow admin-usage-sort-arrow--active"
+              : "admin-usage-sort-arrow"
+          }
+        >
+          ↑
+        </span>
+        <span
+          className={
+            active && sort.dir === "desc"
+              ? "admin-usage-sort-arrow admin-usage-sort-arrow--active"
+              : "admin-usage-sort-arrow"
+          }
+        >
+          ↓
+        </span>
+      </span>
+    </button>
+  );
+}
+
 export function AdminUsage() {
   const { i18n } = useTranslation();
   const text = (zhCN: string, enUS: string) => pickText(i18n.resolvedLanguage, zhCN, enUS);
@@ -196,13 +239,6 @@ export function AdminUsage() {
       compareUserModelRows(left, right, userModelSort.field, userModelSort.dir),
     );
   }, [filtered.userModels, userModelSort.dir, userModelSort.field]);
-
-  const userModelSortMark = (field: UserModelSortField) => {
-    if (userModelSort.field !== field) {
-      return "";
-    }
-    return userModelSort.dir === "desc" ? "↓" : "↑";
-  };
 
   const toggleUserModelSort = (field: UserModelSortField) => {
     setUserModelSort((prev) => {
@@ -527,33 +563,57 @@ export function AdminUsage() {
                 <th>用户</th>
                 <th>邮箱</th>
                 <th>模型</th>
-                <th>
-                  <button
-                    className="btn btn-ghost admin-usage-sort-th"
-                    onClick={() => toggleUserModelSort("requestCount")}
-                    type="button"
-                  >
-                    请求数{userModelSortMark("requestCount")}
-                  </button>
+                <th
+                  {...(userModelSort.field === "requestCount"
+                    ? {
+                        "aria-sort":
+                          userModelSort.dir === "asc"
+                            ? ("ascending" as const)
+                            : ("descending" as const),
+                      }
+                    : {})}
+                >
+                  <UserModelSortTh
+                    field="requestCount"
+                    label="请求数"
+                    sort={userModelSort}
+                    onToggle={toggleUserModelSort}
+                  />
                 </th>
-                <th>
-                  <button
-                    className="btn btn-ghost admin-usage-sort-th"
-                    onClick={() => toggleUserModelSort("totalTokens")}
-                    type="button"
-                  >
-                    总 Token{userModelSortMark("totalTokens")}
-                  </button>
+                <th
+                  {...(userModelSort.field === "totalTokens"
+                    ? {
+                        "aria-sort":
+                          userModelSort.dir === "asc"
+                            ? ("ascending" as const)
+                            : ("descending" as const),
+                      }
+                    : {})}
+                >
+                  <UserModelSortTh
+                    field="totalTokens"
+                    label="总 Token"
+                    sort={userModelSort}
+                    onToggle={toggleUserModelSort}
+                  />
                 </th>
                 <th>费用(USD)</th>
-                <th>
-                  <button
-                    className="btn btn-ghost admin-usage-sort-th"
-                    onClick={() => toggleUserModelSort("lastCalledAt")}
-                    type="button"
-                  >
-                    最近调用{userModelSortMark("lastCalledAt")}
-                  </button>
+                <th
+                  {...(userModelSort.field === "lastCalledAt"
+                    ? {
+                        "aria-sort":
+                          userModelSort.dir === "asc"
+                            ? ("ascending" as const)
+                            : ("descending" as const),
+                      }
+                    : {})}
+                >
+                  <UserModelSortTh
+                    field="lastCalledAt"
+                    label="最近调用"
+                    sort={userModelSort}
+                    onToggle={toggleUserModelSort}
+                  />
                 </th>
               </tr>
             </thead>

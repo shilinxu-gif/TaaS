@@ -2820,26 +2820,56 @@ ul.saas-chart {
   gap: 0.5rem;
 }
 
-.admin-usage-sort-th {
-  width: 100%;
-  justify-content: flex-start;
-  padding-left: 0;
-  padding-right: 0;
+/* 用户模型表头：不用 .btn，避免边框/hover 造成「跳一下」；列名旁固定 ↑↓，仅当前排序方向高亮 */
+.admin-usage-sort-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font: inherit;
   font-weight: 600;
+  color: inherit;
+  cursor: pointer;
   white-space: nowrap;
+  vertical-align: baseline;
+  text-align: left;
 }
 
-/* 表头排序为 <button>，点击后会保留焦点，浏览器默认焦点环会像「蓝框」；去掉以免干扰阅读 */
-.admin-usage-sort-th:focus,
-.admin-usage-sort-th:focus-visible {
+.admin-usage-sort-control:hover .admin-usage-sort-label {
+  color: var(--crm-text);
+}
+
+.admin-usage-sort-control:focus,
+.admin-usage-sort-control:focus-visible {
   outline: none;
-  box-shadow: none;
 }
 
-.admin-usage-sort-th:focus-visible {
-  text-decoration: underline;
-  text-decoration-color: var(--crm-blue-light);
-  text-underline-offset: 0.2em;
+.admin-usage-sort-label {
+  color: #64748b;
+}
+
+.admin-usage-sort-arrows {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  gap: 0;
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  user-select: none;
+}
+
+.admin-usage-sort-arrow {
+  color: #cbd5e1;
+}
+
+.admin-usage-sort-arrow--active {
+  color: var(--crm-blue);
 }
 
 .admin-usage-subtle {
