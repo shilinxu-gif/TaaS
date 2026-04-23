@@ -207,8 +207,8 @@ export function IntegrationDocs() {
   const anthropicExampleModel =
     modelList.find((item) => item.model.toLowerCase().includes("claude"))?.model ??
     "claude-3-5-sonnet";
-  const publicGatewayOrigin = "http://www.itoken.group";
-  const sdkBaseUrl = `${publicGatewayOrigin}/v1`;
+  const publicGatewayOrigin = "https://www.itoken.group";
+  const sdkBaseUrl = publicGatewayOrigin;
   const chatEndpoint = `${publicGatewayOrigin}/gateway/v1/chat/completions`;
   const messagesEndpoint = `${publicGatewayOrigin}/gateway/v1/messages`;
   const futureApiFamily = `${publicGatewayOrigin}/gateway/v1/{images|video|audio|...}`;
@@ -633,8 +633,8 @@ console.log(await response.json());`,
         "Why do I still need an AppKey if I already have a console login?"
       ),
       answer: text(
-        "因为当前控制台 JWT 和网关调用是两套认证边界。JWT 用于控制台管理接口；AppKey 用于 SDK Base URL `http://www.itoken.group/v1`，以及 OpenAI 的 `.../gateway/v1/chat/completions` / Claude 的 `.../gateway/v1/messages` 网关接口。",
-        "Because console JWT and gateway calls are separate auth boundaries. JWT is for console management APIs, while AppKeys are used for the SDK Base URL `http://www.itoken.group/v1` plus the OpenAI `.../gateway/v1/chat/completions` and Claude `.../gateway/v1/messages` gateway endpoints."
+        "因为当前控制台 JWT 和网关调用是两套认证边界。JWT 用于控制台管理接口；AppKey 用于 SDK Base URL `https://www.itoken.group`，以及 OpenAI 的 `.../gateway/v1/chat/completions` / Claude 的 `.../gateway/v1/messages` 网关接口。",
+        "Because console JWT and gateway calls are separate auth boundaries. JWT is for console management APIs, while AppKeys are used for the SDK Base URL `https://www.itoken.group` plus the OpenAI `.../gateway/v1/chat/completions` and Claude `.../gateway/v1/messages` gateway endpoints."
       ),
     },
     {
@@ -673,8 +673,8 @@ console.log(await response.json());`,
         "Which endpoint should end users actually use?"
       ),
       answer: text(
-        "如果你接的是 OpenAI SDK 或 Anthropic SDK，就统一把 Base URL 配成 `http://www.itoken.group/v1`。如果你自己发 HTTP 请求，OpenAI 模型调用 `http://www.itoken.group/gateway/v1/chat/completions`，Claude 模型调用 `http://www.itoken.group/gateway/v1/messages`。后续 Images、Video 等能力会继续放在 `http://www.itoken.group/gateway/v1/...` 下面。",
-        "If you use the OpenAI or Anthropic SDK, point the Base URL to `http://www.itoken.group/v1`. If you send HTTP yourself, OpenAI models should call `http://www.itoken.group/gateway/v1/chat/completions`, while Claude models should call `http://www.itoken.group/gateway/v1/messages`. Future Images, Video, and similar APIs will continue under `http://www.itoken.group/gateway/v1/...`."
+        "如果你接的是 OpenAI SDK 或 Anthropic SDK，就统一把 Base URL 配成 `https://www.itoken.group`。如果你自己发 HTTP 请求，OpenAI 模型调用 `https://www.itoken.group/gateway/v1/chat/completions`，Claude 模型调用 `https://www.itoken.group/gateway/v1/messages`。后续 Images、Video 等能力会继续放在 `https://www.itoken.group/gateway/v1/...` 下面。",
+        "If you use the OpenAI or Anthropic SDK, point the Base URL to `https://www.itoken.group`. If you send HTTP yourself, OpenAI models should call `https://www.itoken.group/gateway/v1/chat/completions`, while Claude models should call `https://www.itoken.group/gateway/v1/messages`. Future Images, Video, and similar APIs will continue under `https://www.itoken.group/gateway/v1/...`."
       ),
     },
     {
@@ -824,8 +824,8 @@ console.log(await response.json());`,
           isCopied={copiedId === "sdk-base-url"}
           onCopy={() => void handleCopy("sdk-base-url", sdkBaseUrl)}
           note={text(
-            "用于 OpenAI SDK 与 Anthropic SDK 的基础地址。SDK 会在这个 Base URL 后自动拼接各自的协议路径，例如 OpenAI 走 `/chat/completions`，Claude 走 `/messages`。",
-            "Use this as the base URL for both OpenAI and Anthropic SDKs. Each SDK appends its own protocol path automatically, such as `/chat/completions` for OpenAI and `/messages` for Claude."
+            "用于 OpenAI SDK 与 Anthropic SDK 的基础地址。当前统一填写根域名 `https://www.itoken.group`；如果你自己直接发 HTTP，请继续使用下面列出的网关完整路径。",
+            "Use the root origin `https://www.itoken.group` as the base URL for both OpenAI and Anthropic SDKs. For raw HTTP requests, continue using the full gateway paths listed below."
           )}
         />
         <EndpointCard
@@ -916,8 +916,8 @@ console.log(await response.json());`,
               status="available"
               statusLabel={text("可用", "Available")}
               detail={text(
-                "`http://www.itoken.group/v1` 用于 SDK Base URL；OpenAI 原生 HTTP 走 `.../gateway/v1/chat/completions`，Claude 原生 HTTP 走 `.../gateway/v1/messages`。",
-                "`http://www.itoken.group/v1` is the SDK Base URL; OpenAI raw HTTP uses `.../gateway/v1/chat/completions`, while Claude raw HTTP uses `.../gateway/v1/messages`."
+                "`https://www.itoken.group` 用于 SDK Base URL；OpenAI 原生 HTTP 走 `.../gateway/v1/chat/completions`，Claude 原生 HTTP 走 `.../gateway/v1/messages`。",
+                "`https://www.itoken.group` is the SDK Base URL; OpenAI raw HTTP uses `.../gateway/v1/chat/completions`, while Claude raw HTTP uses `.../gateway/v1/messages`."
               )}
             />
             <SupportRow
@@ -1037,8 +1037,8 @@ console.log(await response.json());`,
               <strong>{text("不要把两个地址混用", "Do not mix the two endpoint types")}</strong>
               <span>
                 {text(
-                  "`http://www.itoken.group/v1` 是 SDK Base URL；如果你自己手写 HTTP 请求，OpenAI 模型走 `.../gateway/v1/chat/completions`，Claude 模型走 `.../gateway/v1/messages`。",
-                  "`http://www.itoken.group/v1` is the SDK Base URL; for handcrafted HTTP calls, use `.../gateway/v1/chat/completions` for OpenAI models and `.../gateway/v1/messages` for Claude models."
+                  "`https://www.itoken.group` 是 SDK Base URL；如果你自己手写 HTTP 请求，OpenAI 模型走 `.../gateway/v1/chat/completions`，Claude 模型走 `.../gateway/v1/messages`。",
+                  "`https://www.itoken.group` is the SDK Base URL; for handcrafted HTTP calls, use `.../gateway/v1/chat/completions` for OpenAI models and `.../gateway/v1/messages` for Claude models."
                 )}
               </span>
             </li>

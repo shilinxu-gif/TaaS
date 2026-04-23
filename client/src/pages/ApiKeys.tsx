@@ -270,9 +270,7 @@ export function ApiKeys() {
                   <th>{text("QPS 限制", "QPS Limit")}</th>
                   <th>{text("日预算 (USD)", "Daily Budget (USD)")}</th>
                   <th>{text("月预算 (USD)", "Monthly Budget (USD)")}</th>
-                  <th>{text("允许模型", "Allowed Models")}</th>
                   <th>{text("创建时间", "Created At")}</th>
-                  <th>{text("最近来源", "Last Source")}</th>
                   <th>{text("启用", "Enabled")}</th>
                   <th>{text("操作", "Actions")}</th>
               </tr>
@@ -280,7 +278,7 @@ export function ApiKeys() {
             <tbody>
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={13} className="keys-table-empty muted">
+                  <td colSpan={11} className="keys-table-empty muted">
                     {text("暂无密钥，点击「创建密钥」新建", "No keys yet. Click “Create key” to add one.")}
                   </td>
                 </tr>
@@ -305,19 +303,9 @@ export function ApiKeys() {
                     <td className="tabular-nums">
                       {row.monthlyBudgetUsd != null ? row.monthlyBudgetUsd : text("—", "—")}
                     </td>
-                    <td className="keys-td-models">
-                      {row.allowedModels.length === 0 ? (
-                        <span className="muted">{text("全部", "All")}</span>
-                      ) : (
-                        <span title={row.allowedModels.join(", ")}>
-                          {text(`${row.allowedModels.length} 个`, `${row.allowedModels.length}`)}
-                        </span>
-                      )}
-                    </td>
                     <td className="keys-td-time">
                       {formatDateTime(row.createdAt, i18n.resolvedLanguage)}
                     </td>
-                    <td>{row.lastUsedIp ?? text("—", "—")}</td>
                     <td>
                       {row.status === "revoked" ? (
                         <span className="muted">{text("—", "—")}</span>

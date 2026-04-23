@@ -2,6 +2,78 @@
 
 ## Unreleased
 
+### 2026-04-23 12:15 升级为真实 chunk 透传低延迟流式网关
+
+- 改动内容：将前一版“由完整响应合成 SSE 事件”的流式兼容升级为真实的上游 chunk 透传模式；网关现在会在保持现有鉴权、限流、预算、模型选路、计费与幂等缓存逻辑的前提下，直接消费上游 OpenAI / Anthropic SSE 并边收边转发，同时在结束后再落请求日志、用量记录与账单。
+- 影响范围：`backend-java/src/main/java/com/taas/gateway/GatewayService.java`、`backend-java/src/main/java/com/taas/gateway/GatewayController.java`、`backend-java/src/test/java/com/taas/gateway/GatewayServiceTest.java`、`backend-java/src/test/java/com/taas/gateway/GatewayControllerTest.java`、`CHANGELOG.md`。
+- 验证情况：已通过 `mvn test -Dtest=GatewayServiceTest,GatewayControllerTest` 验证网关控制器与流式协议转换单测；同时通过 `mvn -q -DskipTests compile` 确认后端可完整编译。
+- 运维动作：本地联调环境需重启后端开发服务以加载新的实时流式代理逻辑；线上发布时仅需正常部署后端，无需执行 SQL、迁移、缓存清理或额外配置变更。
+- 线上数据影响：无；本次仅升级网关流式传输实现，不修改数据库结构、租户配置、余额策略、密钥表或历史请求数据。
+- 风险控制：对于 OpenAI / Anthropic 上游已实现真实流式透传；对于当前非 SSE 上游仍保留合成流作为兜底，避免因为单个提供商不支持流式而使整个网关能力退化。
+
+### 2026-04-23 12:03 补齐 Messages 与 Chat Completions 流式兼容
+
+- 改动内容：为网关补充 `stream: true` 的 SSE 响应能力，覆盖 `POST /v1/chat/completions` 与 `POST /v1/messages` 两条入口；对外分别输出 OpenAI 与 Anthropic 兼容的流式事件序列，支持文本回复、工具调用、工具结果相关结构在流式场景下继续保持协议一致。
+- 影响范围：`backend-java/src/main/java/com/taas/gateway/GatewayController.java`、`backend-java/src/main/java/com/taas/gateway/GatewayService.java`、`backend-java/src/test/java/com/taas/gateway/GatewayServiceTest.java`、`backend-java/src/test/java/com/taas/gateway/GatewayControllerTest.java`、`CHANGELOG.md`。
+- 验证情况：已通过 `mvn test -Dtest=GatewayServiceTest,GatewayControllerTest` 验证控制器与网关兼容层；新增覆盖 OpenAI SSE 事件输出、Anthropic `message_start/content_block_delta/message_stop` 生命周期输出，以及控制器返回类型适配。
+- 运维动作：本地联调环境需重启后端开发服务以加载最新网关逻辑；线上发布时仅需正常发布后端，无需执行 SQL、迁移或缓存清理。
+- 线上数据影响：无；本次仅新增流式响应协议兼容逻辑与测试，不修改数据库结构、租户配置、余额、密钥或历史调用数据。
+- 风险控制：流式分支复用现有非流式鉴权、限流、预算、模型路由、计费与兼容转换逻辑，避免为流式单独复制一套网关主流程，从而降低行为偏差和回归风险。
+
+### 2026-04-23 11:58 增强 Anthropic Messages 协议兼容层
+
+- 改动内容：增强网关 `POST /v1/messages` 的 Anthropic 兼容处理，补齐 `tools`、`tool_choice`、`tool_use`、`tool_result` 等关键结构在 Anthropic 与 OpenAI/Anthropic 上游之间的双向转换；同时让 Anthropic 上游返回的 `tool_use` 能正确回映为兼容响应，避免工具调用在网关内被静默降级为普通文本。
+- 影响范围：`backend-java/src/main/java/com/taas/gateway/GatewayService.java`、`backend-java/src/test/java/com/taas/gateway/GatewayServiceTest.java`、`CHANGELOG.md`。
+- 验证情况：已通过 `mvn test -Dtest=GatewayServiceTest` 与 `mvn -q -DskipTests compile` 验证后端编译和新增协议转换单测；新增覆盖 Anthropic 工具请求转 OpenAI `tool_calls` 以及 OpenAI `tool_calls` 回转 Anthropic `tool_use` 的场景。
+- 运维动作：本地联调环境需重启后端开发服务以加载最新网关逻辑；线上发布时仅需正常部署后端，无需执行 SQL、迁移或缓存清理。
+- 线上数据影响：无；本次仅调整网关协议转换逻辑与测试，不改动数据库表结构、租户配置、余额、密钥或历史账单数据。
+- 风险控制：本次保持现有 `/v1/chat/completions` 路径不变，仅增强 `/v1/messages` 兼容转换；同时保留原有基础文本消息行为，降低对已可用 Anthropic/OpenAI 兼容调用的回归风险。
+
+### 2026-04-23 11:05 SDK 文档中心修正 Base URL 与协议口径
+
+- 改动内容：修正 `SDK 文档中心` 中的接入口径，将 SDK `Base URL` 统一改为根域名 `https://www.itoken.group`，不再展示为 `http://www.itoken.group/v1`；同步将文档中心中的域名示例统一切换到 HTTPS，并更新 OpenAI / Anthropic SDK 代码示例、FAQ、能力边界说明、请求规范与环境变量示例，确保文档中心内所有相关说明一致。
+- 影响范围：`client/src/pages/IntegrationDocs.tsx`、`CHANGELOG.md`。
+- 验证情况：待执行前端构建与最近改动文件 linter 检查，确认页面展示、复制按钮与代码示例均使用新的 HTTPS Base URL。
+- 运维动作：仅需发布前端静态资源；根据项目本地规则，开发联调环境会在修改后重启前后端服务。线上无需执行 SQL、迁移、清缓存或重启后端。
+- 线上数据影响：无；仅调整前端文档展示与复制内容，不修改任何业务表、配置表或历史调用记录。
+- 风险控制：本次仅修正文档中心口径，不改动网关后端路由实现与模型广场数据结构，避免引入接口兼容性回归；原生 HTTP 直连接口说明继续保留 `.../gateway/v1/...` 路径，减少用户混淆。
+
+### 2026-04-23 10:45 API 密钥列表隐藏允许模型与最近来源列
+
+- 改动内容：精简租户侧 `API 密钥` 列表展示，移除“允许模型”和“最近来源”两列，仅保留创建时间、预算、状态、启停与删除等高频管理信息；同步调整空状态表格的列跨度，避免表格布局错位。
+- 影响范围：`client/src/pages/ApiKeys.tsx`、`CHANGELOG.md`。
+- 验证情况：待执行前端构建与最近改动文件 linter 检查，确认列表表头、空状态和行数据列数一致。
+- 运维动作：仅需发布前端静态资源；根据项目本地规则，开发联调环境会在修改后重启前后端服务。线上无需执行 SQL、迁移、清缓存或重启后端。
+- 线上数据影响：无；仅调整前端展示，不修改任何 `app_keys`、`api_request_logs`、`usage_records` 或其他业务表数据。
+- 风险控制：只移除列表展示列，不改动后端接口返回结构，避免影响其他页面或后续扩展；保留现有创建、启停、删除与网关试用功能不变。
+
+### 2026-04-23 10:30 SSL 文档示例替换为真实域名
+
+- 改动内容：将 `SSL / HTTPS` 部署文档中的通用占位示例替换为当前实际站点信息，统一改为 `www.itoken.group`，证书路径改为 `/etc/nginx/ssl/www.itoken.group.pem`，并在文档中补充“私钥默认示例为 `/etc/nginx/ssl/www.itoken.group.key`，如实际文件名不同仅替换该行”的说明。
+- 影响范围：`docs/SSL_HTTPS_DEPLOYMENT.md`、`CHANGELOG.md`。
+- 验证情况：已检查 `nslookup`、`curl`、`openssl`、`certbot`、`Nginx server_name` 等命令示例均已替换为统一域名，文档内部示例口径一致。
+- 运维动作：无直接系统变更；仅更新部署文档示例，实际执行时仍需运维按服务器上的真实私钥文件路径调整 `ssl_certificate_key`。
+- 线上数据影响：无；本次仅更新文档示例，不修改数据库、缓存、环境变量或运行时代码。
+- 风险控制：文档仍保留私钥路径可替换说明，避免因示例路径与服务器实际文件名不一致导致 `nginx -t` 失败。
+
+### 2026-04-23 10:20 SSL 文档补充阿里云下载链接用法
+
+- 改动内容：补充 `SSL / HTTPS` 部署文档，新增“使用阿里云证书临时下载链接直接在服务器拉取证书包”的操作步骤，包含 `curl` 下载、`unzip` 解压、查找 `.pem` / `.key`、复制到 `/etc/nginx/ssl/` 的过程；同时明确不应把带签名和临时 token 的原始下载链接写入仓库或长期文档。
+- 影响范围：`docs/SSL_HTTPS_DEPLOYMENT.md`、`CHANGELOG.md`。
+- 验证情况：已校正文档中证书目录命令的小笔误，并确认新增步骤与现有 Nginx 证书路径和 Linux 运维流程一致。
+- 运维动作：无直接系统变更；实际执行时由运维在服务器终端临时使用下载链接拉取证书，然后按文档继续完成 Nginx 配置与 reload。
+- 线上数据影响：无；本次仅更新运维文档，不修改数据库、缓存、环境变量或运行时代码。
+- 风险控制：文档明确要求不要把带签名和 `security-token` 的下载链接提交进 Git，避免凭证泄露和链接过期失效；同时保留手动上传证书文件的原始方案，便于回退。
+
+### 2026-04-23 10:10 新增 SSL / HTTPS 部署文档
+
+- 改动内容：新增一份独立的 `SSL / HTTPS` 部署文档，面向当前 `TaaS` 项目的阿里云 Linux + Nginx 部署结构，补充了证书签发前置条件、域名解析、证书上传、Nginx HTTPS 配置、`80 -> 443` 跳转、验证方法、常见问题排查以及 `Certbot` 备选方案。
+- 影响范围：`docs/SSL_HTTPS_DEPLOYMENT.md`、`CHANGELOG.md`。
+- 验证情况：已对照现有 `docs/ALIBABA_CLOUD_LINUX_DEPLOYMENT.md` 中的 Nginx 目录、前端静态目录与后端反向代理路径进行校对；文档命令与项目当前 `Nginx + /srv/taas/frontend/current + 127.0.0.1:3001` 部署结构保持一致。
+- 运维动作：无直接系统变更；该文档为运维执行指南，实际上线 HTTPS 时仍需由运维在服务器上上传证书、修改 Nginx 配置并 reload 服务。
+- 线上数据影响：无；本次仅新增文档，不修改任何数据库表、缓存、环境变量或运行时代码。
+- 风险控制：文档明确提示“证书未签发完成前不要部署”，并要求先执行 `nginx -t` 再重载，降低因证书文件错误、域名不匹配或 Nginx 语法错误导致的服务中断风险。
+
 ### 2026-04-22 21:35 新增代码修改后自动重启前后端规则
 
 - 改动内容：在项目规则中新增“代码修改后自动重启前后端开发服务”约束，要求 AI 在本次会话存在实际代码或运行配置变更时，结束前自动重启前后端；同时要求先检查现有终端、优先复用已有服务实例，避免重复启动。

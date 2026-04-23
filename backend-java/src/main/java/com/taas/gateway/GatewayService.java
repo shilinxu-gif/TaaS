@@ -7,8 +7,11 @@ import com.taas.infra.util.Ids;
 import com.taas.infra.util.Jsons;
 import com.taas.infra.util.MoneyUtils;
 import com.taas.ops.AuditService;
+import java.io.IOException;
+import java.io.OutputStream;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.nio.charset.StandardCharsets;
 import java.sql.Timestamp;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -23,15 +26,20 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.UUID;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
+import reactor.core.publisher.Flux;
 
 @Service
 public class GatewayService {
@@ -174,6 +182,506 @@ public class GatewayService {
             normalizeAnthropicMessagesRequest(requestBody));
     return new GatewayResponse(
         response.status(), normalizeAnthropicGatewayResponse(response.body()), response.headers());
+  }
+
+  public GatewayStreamResponse chatCompletionsStream(
+      String authorizationHeader,
+      String idempotencyKey,
+      String requestIp,
+      Map<String, Object> requestBody) {
+    if (authorizationHeader == null || !authorizationHeader.startsWith("Bearer ")) {
+      throw new ApiException(401, "Missing Bearer AppKey");
+    }
+    String rawKey = authorizationHeader.substring("Bearer ".length()).trim();
+    AppKeyRow appKey = requireAppKey(rawKey);
+    List<String> scopes = jsons.readStringList(appKey.scopesJson());
+    if (!scopes.contains("chat:complete")) {
+      throw new ApiException(403, "This AppKey does not have chat:complete scope");
+    }
+    List<String> allowedModels = jsons.readStringList(appKey.allowedModelsJson());
+    String requestedModel = normalizeRequestedModel(requestBody.get("model"));
+    if (requestedModel != null && !allowedModels.isEmpty() && !allowedModels.contains(requestedModel)) {
+      return new GatewayStreamResponse(
+          HttpStatus.FORBIDDEN,
+          Map.of("error", "此 AppKey 未授权使用该 model", "allowedModels", allowedModels),
+          null,
+          Map.of());
+    }
+    if (!cacheService.checkRateLimit("appkey:" + appKey.id(), appKey.qpsLimit())) {
+      return new GatewayStreamResponse(
+          HttpStatus.TOO_MANY_REQUESTS,
+          Map.of("error", "QPS limit exceeded"),
+          null,
+          Map.of("Retry-After", "1"));
+    }
+    String idemKey =
+        idempotencyKey == null || idempotencyKey.isBlank()
+            ? null
+            : appKey.id() + ":" + idempotencyKey.trim();
+    if (idemKey != null) {
+      Map<String, Object> cached = cacheService.getIdempotentResponse(idemKey);
+      if (cached != null) {
+        recordCacheHit(
+            appKey,
+            firstNonBlank(requestedModel, stringValue(cached.get("model"))),
+            requestIp,
+            idempotencyKey,
+            cached);
+        return new GatewayStreamResponse(
+            HttpStatus.OK,
+            null,
+            staticStreamBody(buildOpenAiStreamEvents(cached, includeOpenAiUsageInStream(requestBody))),
+            Map.of());
+      }
+    }
+    enforceBudgets(appKey);
+    RoutingConfig routingConfig = routingConfig(appKey.tenantId());
+    ResolvedModelSelection resolvedModel =
+        resolveModelSelection(requestedModel, allowedModels, routingConfig.mode());
+    StreamingResponseBody streamBody =
+        outputStream ->
+            streamOpenAiCompatibleRequest(
+                appKey,
+                idempotencyKey,
+                idemKey,
+                requestIp,
+                requestBody,
+                resolvedModel.model(),
+                resolvedModel.selection(),
+                routingConfig,
+                false,
+                includeOpenAiUsageInStream(requestBody),
+                outputStream);
+    return new GatewayStreamResponse(HttpStatus.OK, null, streamBody, Map.of());
+  }
+
+  public GatewayStreamResponse anthropicMessagesStream(
+      String authorizationHeader,
+      String xApiKey,
+      String idempotencyKey,
+      String requestIp,
+      Map<String, Object> requestBody) {
+    if ((authorizationHeader == null || authorizationHeader.isBlank())
+        && (xApiKey == null || xApiKey.isBlank())) {
+      throw new ApiException(401, "Missing AppKey");
+    }
+    String resolvedAuthorization = resolveGatewayAuthorization(authorizationHeader, xApiKey);
+    Map<String, Object> normalizedRequest = normalizeAnthropicMessagesRequest(requestBody);
+    if (resolvedAuthorization == null || !resolvedAuthorization.startsWith("Bearer ")) {
+      throw new ApiException(401, "Missing Bearer AppKey");
+    }
+    String rawKey = resolvedAuthorization.substring("Bearer ".length()).trim();
+    AppKeyRow appKey = requireAppKey(rawKey);
+    List<String> scopes = jsons.readStringList(appKey.scopesJson());
+    if (!scopes.contains("chat:complete")) {
+      throw new ApiException(403, "This AppKey does not have chat:complete scope");
+    }
+    List<String> allowedModels = jsons.readStringList(appKey.allowedModelsJson());
+    String requestedModel = normalizeRequestedModel(normalizedRequest.get("model"));
+    if (requestedModel != null && !allowedModels.isEmpty() && !allowedModels.contains(requestedModel)) {
+      return new GatewayStreamResponse(
+          HttpStatus.FORBIDDEN,
+          Map.of("error", "此 AppKey 未授权使用该 model", "allowedModels", allowedModels),
+          null,
+          Map.of());
+    }
+    if (!cacheService.checkRateLimit("appkey:" + appKey.id(), appKey.qpsLimit())) {
+      return new GatewayStreamResponse(
+          HttpStatus.TOO_MANY_REQUESTS,
+          Map.of("error", "QPS limit exceeded"),
+          null,
+          Map.of("Retry-After", "1"));
+    }
+    String idemKey =
+        idempotencyKey == null || idempotencyKey.isBlank()
+            ? null
+            : appKey.id() + ":" + idempotencyKey.trim();
+    if (idemKey != null) {
+      Map<String, Object> cached = cacheService.getIdempotentResponse(idemKey);
+      if (cached != null) {
+        recordCacheHit(
+            appKey,
+            firstNonBlank(requestedModel, stringValue(cached.get("model"))),
+            requestIp,
+            idempotencyKey,
+            cached);
+        return new GatewayStreamResponse(
+            HttpStatus.OK,
+            null,
+            staticStreamBody(buildAnthropicStreamEvents(normalizeAnthropicGatewayResponse(cached))),
+            Map.of());
+      }
+    }
+    enforceBudgets(appKey);
+    RoutingConfig routingConfig = routingConfig(appKey.tenantId());
+    ResolvedModelSelection resolvedModel =
+        resolveModelSelection(requestedModel, allowedModels, routingConfig.mode());
+    StreamingResponseBody streamBody =
+        outputStream ->
+            streamOpenAiCompatibleRequest(
+                appKey,
+                idempotencyKey,
+                idemKey,
+                requestIp,
+                normalizedRequest,
+                resolvedModel.model(),
+                resolvedModel.selection(),
+                routingConfig,
+                true,
+                false,
+                outputStream);
+    return new GatewayStreamResponse(HttpStatus.OK, null, streamBody, Map.of());
+  }
+
+  private void streamOpenAiCompatibleRequest(
+      AppKeyRow appKey,
+      String idempotencyKey,
+      String idemKey,
+      String requestIp,
+      Map<String, Object> requestBody,
+      String model,
+      ProviderSelection selection,
+      RoutingConfig routingConfig,
+      boolean outwardAnthropic,
+      boolean includeOpenAiUsage,
+      OutputStream outputStream)
+      throws IOException {
+    List<String> errors = new ArrayList<>();
+    StreamWriteContext writeContext = new StreamWriteContext(outputStream);
+    List<ProviderRow> candidates = selection.candidates();
+    for (int i = 0; i < candidates.size(); i++) {
+      ProviderRow provider = candidates.get(i);
+      boolean wroteBefore = writeContext.started();
+      try {
+        ProviderExecution execution =
+            streamProvider(
+                provider,
+                model,
+                requestBody,
+                outwardAnthropic,
+                includeOpenAiUsage,
+                i + 1,
+                writeContext);
+        BigDecimal inputPrice =
+            execution.catalog() == null ? BigDecimal.ZERO : execution.catalog().inputUsdPerMillion();
+        BigDecimal outputPrice =
+            execution.catalog() == null ? BigDecimal.ZERO : execution.catalog().outputUsdPerMillion();
+        BigDecimal subtotal =
+            BigDecimal.valueOf(execution.promptTokens())
+                .divide(BigDecimal.valueOf(1_000_000), 6, RoundingMode.HALF_UP)
+                .multiply(inputPrice)
+                .add(
+                    BigDecimal.valueOf(execution.completionTokens())
+                        .divide(BigDecimal.valueOf(1_000_000), 6, RoundingMode.HALF_UP)
+                        .multiply(outputPrice));
+        if (appKey.balanceTokens().compareTo(BigDecimal.valueOf(execution.totalTokens())) < 0) {
+          throw new ApiException(402, "Insufficient token balance");
+        }
+        persistGatewaySuccess(
+            appKey,
+            execution,
+            execution.payload(),
+            requestIp,
+            idempotencyKey,
+            model,
+            subtotal,
+            inputPrice,
+            outputPrice,
+            routingConfig);
+        if (idemKey != null) {
+          cacheService.setIdempotentResponse(idemKey, execution.payload());
+        }
+        return;
+      } catch (ApiException exception) {
+        if (writeContext.started() != wroteBefore) {
+          throw exception;
+        }
+        errors.add(
+            provider.slug()
+                + ":"
+                + (exception.getCode() == null ? exception.getMessage() : exception.getCode()));
+      }
+    }
+    throw new ApiException(
+        502,
+        "All providers failed: " + String.join(", ", errors),
+        "all_providers_failed");
+  }
+
+  private ProviderExecution streamProvider(
+      ProviderRow provider,
+      String model,
+      Map<String, Object> requestBody,
+      boolean outwardAnthropic,
+      boolean includeOpenAiUsage,
+      int attempts,
+      StreamWriteContext writeContext) {
+    long startedAt = System.nanoTime();
+    String apiKey = resolveProviderApiKey(provider);
+    if (apiKey == null || apiKey.isBlank()) {
+      throw new ApiException(503, "Provider is not configured", "provider_not_configured");
+    }
+    if ("anthropic".equals(provider.providerType())) {
+      return streamAnthropicProvider(
+          provider,
+          model,
+          requestBody,
+          apiKey,
+          outwardAnthropic,
+          includeOpenAiUsage,
+          attempts,
+          writeContext,
+          startedAt);
+    }
+    if ("openai".equals(provider.providerType())) {
+      return streamOpenAiProvider(
+          provider,
+          model,
+          requestBody,
+          apiKey,
+          outwardAnthropic,
+          includeOpenAiUsage,
+          attempts,
+          writeContext,
+          startedAt);
+    }
+    ProviderExecution execution = callProvider(provider, model, disableStreamFlag(requestBody), attempts);
+    List<String> events =
+        outwardAnthropic
+            ? buildAnthropicStreamEvents(normalizeAnthropicGatewayResponse(execution.payload()))
+            : buildOpenAiStreamEvents(execution.payload(), includeOpenAiUsage);
+    for (String event : events) {
+      writeUnchecked(writeContext, event);
+    }
+    return execution;
+  }
+
+  private ProviderExecution streamOpenAiProvider(
+      ProviderRow provider,
+      String model,
+      Map<String, Object> requestBody,
+      String apiKey,
+      boolean outwardAnthropic,
+      boolean includeOpenAiUsage,
+      int attempts,
+      StreamWriteContext writeContext,
+      long startedAt) {
+    String url = trimBaseUrl(provider.baseUrl()) + "/chat/completions";
+    OpenAiStreamAccumulator accumulator =
+        new OpenAiStreamAccumulator(model, estimatePromptTokens(requestBody.get("messages")));
+    OpenAiToAnthropicStreamState outwardState =
+        outwardAnthropic ? new OpenAiToAnthropicStreamState() : null;
+    try (var stream =
+        postSse(
+                url,
+                Map.of(HttpHeaders.AUTHORIZATION, "Bearer " + apiKey),
+                mergePayload(requestBody, Map.of("model", model, "stream", true)),
+                "openai_request_failed",
+                provider.timeoutMs())
+            .toStream()) {
+      stream.forEach(
+          event -> {
+            String data = event.data();
+            if (data == null || data.isBlank()) {
+              return;
+            }
+            if ("[DONE]".equals(data)) {
+              if (!outwardAnthropic) {
+                writeUnchecked(writeContext, "data: [DONE]\n\n");
+              }
+              return;
+            }
+            Map<String, Object> chunk = readBodyAsMap(data);
+            accumulator.applyChunk(chunk);
+            if (outwardAnthropic) {
+              for (String mapped :
+                  outwardState.toAnthropicEvents(chunk, accumulator.promptTokens(), accumulator.completionTokens())) {
+                writeUnchecked(writeContext, mapped);
+              }
+            } else {
+              writeUnchecked(writeContext, serializeSseEvent(event.event(), data));
+            }
+          });
+    }
+    if (outwardAnthropic) {
+      for (String mapped :
+          outwardState.finish(accumulator.promptTokens(), accumulator.completionTokens())) {
+        writeUnchecked(writeContext, mapped);
+      }
+    }
+    Map<String, Object> payload = accumulator.toPayload();
+    ProviderCatalog.Entry catalog = ProviderCatalog.find(model);
+    int latencyMs = Math.max(1, (int) ((System.nanoTime() - startedAt) / 1_000_000));
+    return new ProviderExecution(
+        provider,
+        payload,
+        attempts,
+        accumulator.promptTokens(),
+        accumulator.completionTokens(),
+        accumulator.totalTokens(),
+        catalog,
+        200,
+        null,
+        latencyMs);
+  }
+
+  private ProviderExecution streamAnthropicProvider(
+      ProviderRow provider,
+      String model,
+      Map<String, Object> requestBody,
+      String apiKey,
+      boolean outwardAnthropic,
+      boolean includeOpenAiUsage,
+      int attempts,
+      StreamWriteContext writeContext,
+      long startedAt) {
+    String url = trimBaseUrl(provider.baseUrl()) + "/messages";
+    LinkedHashMap<String, Object> body = new LinkedHashMap<>();
+    body.put("model", model);
+    body.put("messages", normalizeMessages(requestBody.get("messages"), true));
+    body.put(
+        "max_tokens",
+        intValue(requestBody.get("max_completion_tokens"), intValue(requestBody.get("max_tokens"), 512)));
+    body.put("stream", true);
+    if (requestBody.get("temperature") != null) {
+      body.put("temperature", requestBody.get("temperature"));
+    }
+    if (requestBody.get("top_p") != null) {
+      body.put("top_p", requestBody.get("top_p"));
+    }
+    Object system = extractSystem(requestBody.get("messages"));
+    if (system != null) {
+      body.put("system", system);
+    }
+    List<Map<String, Object>> anthropicTools = openAiToolsToAnthropic(requestBody.get("tools"));
+    if (!anthropicTools.isEmpty()) {
+      body.put("tools", anthropicTools);
+    }
+    Object anthropicToolChoice = openAiToolChoiceToAnthropic(requestBody.get("tool_choice"));
+    if (anthropicToolChoice != null) {
+      body.put("tool_choice", anthropicToolChoice);
+    }
+    AnthropicStreamAccumulator accumulator =
+        new AnthropicStreamAccumulator(model, estimatePromptTokens(requestBody.get("messages")));
+    try (var stream =
+        postSse(
+                url,
+                Map.of("x-api-key", apiKey, "anthropic-version", "2023-06-01"),
+                body,
+                "anthropic_request_failed",
+                provider.timeoutMs())
+            .toStream()) {
+      stream.forEach(
+          event -> {
+            String eventName = firstNonBlank(event.event(), "message");
+            String data = event.data();
+            if (data == null || data.isBlank()) {
+              return;
+            }
+            Map<String, Object> payload = readBodyAsMap(data);
+            accumulator.apply(eventName, payload);
+            if (outwardAnthropic) {
+              writeUnchecked(writeContext, serializeSseEvent(event.event(), data));
+            } else {
+              for (String mapped :
+                  accumulator.toOpenAiEvents(eventName, payload, includeOpenAiUsage)) {
+                writeUnchecked(writeContext, mapped);
+              }
+            }
+          });
+    }
+    if (!outwardAnthropic) {
+      for (String mapped : accumulator.finishOpenAi(includeOpenAiUsage)) {
+        writeUnchecked(writeContext, mapped);
+      }
+    }
+    Map<String, Object> payload = accumulator.toPayload();
+    ProviderCatalog.Entry catalog = ProviderCatalog.find(model);
+    int latencyMs = Math.max(1, (int) ((System.nanoTime() - startedAt) / 1_000_000));
+    return new ProviderExecution(
+        provider,
+        payload,
+        attempts,
+        accumulator.promptTokens(),
+        accumulator.completionTokens(),
+        accumulator.totalTokens(),
+        catalog,
+        200,
+        null,
+        latencyMs);
+  }
+
+  private Flux<ServerSentEvent<String>> postSse(
+      String url,
+      Map<String, String> headers,
+      Object body,
+      String fallbackProviderErrorCode,
+      int timeoutMs) {
+    return webClient
+        .post()
+        .uri(url)
+        .headers(httpHeaders -> headers.forEach(httpHeaders::set))
+        .contentType(MediaType.APPLICATION_JSON)
+        .accept(MediaType.TEXT_EVENT_STREAM)
+        .bodyValue(body)
+        .exchangeToFlux(
+            response -> {
+              if (response.statusCode().isError()) {
+                return response
+                    .toEntity(String.class)
+                    .flatMapMany(
+                        entity -> {
+                          try {
+                            toProviderHttpResponse(entity, fallbackProviderErrorCode);
+                            return Flux.empty();
+                          } catch (ApiException exception) {
+                            return Flux.error(exception);
+                          }
+                        });
+              }
+              return response.bodyToFlux(new ParameterizedTypeReference<ServerSentEvent<String>>() {});
+            })
+        .timeout(Duration.ofMillis(Math.max(timeoutMs, 1000)))
+        .onErrorMap(
+            java.util.concurrent.TimeoutException.class,
+            error ->
+                new ApiException(
+                    504,
+                    providerNameFromErrorCode(fallbackProviderErrorCode) + " request timed out",
+                    "timeout"))
+        .onErrorMap(
+            error -> !(error instanceof ApiException),
+            error ->
+                new ApiException(
+                    502,
+                    error.getMessage() == null
+                        ? providerNameFromErrorCode(fallbackProviderErrorCode) + " request failed"
+                        : error.getMessage(),
+                    "network_error"));
+  }
+
+  private StreamingResponseBody staticStreamBody(List<String> events) {
+    return outputStream -> {
+      for (String event : events) {
+        outputStream.write(event.getBytes(StandardCharsets.UTF_8));
+        outputStream.flush();
+      }
+    };
+  }
+
+  private String serializeSseEvent(String event, String data) {
+    if (event == null || event.isBlank()) {
+      return "data: " + data + "\n\n";
+    }
+    return "event: " + event + "\n" + "data: " + data + "\n\n";
+  }
+
+  private void writeUnchecked(StreamWriteContext writeContext, String value) {
+    try {
+      writeContext.write(value);
+    } catch (IOException exception) {
+      throw new IllegalStateException(exception);
+    }
   }
 
   private ResolvedModelSelection resolveModelSelection(
@@ -420,18 +928,29 @@ public class GatewayService {
       ProviderRow provider, String model, Map<String, Object> requestBody, String apiKey) {
     String url = trimBaseUrl(provider.baseUrl()) + "/messages";
     List<Map<String, Object>> normalizedMessages = normalizeMessages(requestBody.get("messages"), true);
-    Map<String, Object> body =
-        new LinkedHashMap<>(
-            Map.of(
-                "model", model,
-                "messages", normalizedMessages,
-                "max_tokens", intValue(requestBody.get("max_completion_tokens"), intValue(requestBody.get("max_tokens"), 512))));
+    LinkedHashMap<String, Object> body = new LinkedHashMap<>();
+    body.put("model", model);
+    body.put("messages", normalizedMessages);
+    body.put(
+        "max_tokens",
+        intValue(requestBody.get("max_completion_tokens"), intValue(requestBody.get("max_tokens"), 512)));
     if (requestBody.get("temperature") != null) {
       body.put("temperature", requestBody.get("temperature"));
+    }
+    if (requestBody.get("top_p") != null) {
+      body.put("top_p", requestBody.get("top_p"));
     }
     Object system = extractSystem(requestBody.get("messages"));
     if (system != null) {
       body.put("system", system);
+    }
+    List<Map<String, Object>> anthropicTools = openAiToolsToAnthropic(requestBody.get("tools"));
+    if (!anthropicTools.isEmpty()) {
+      body.put("tools", anthropicTools);
+    }
+    Object anthropicToolChoice = openAiToolChoiceToAnthropic(requestBody.get("tool_choice"));
+    if (anthropicToolChoice != null) {
+      body.put("tool_choice", anthropicToolChoice);
     }
     ProviderHttpResponse upstream =
         postJson(
@@ -441,13 +960,18 @@ public class GatewayService {
             "anthropic_request_failed",
             provider.timeoutMs());
     Map<String, Object> raw = upstream.payload();
-    String text =
-        ((List<?>) raw.getOrDefault("content", List.of())).stream()
-            .filter(Map.class::isInstance)
-            .map(Map.class::cast)
-            .map(item -> String.valueOf(item.getOrDefault("text", "")))
-            .reduce("", String::concat);
+    AnthropicAssistantPayload assistantPayload = extractAnthropicAssistantPayload(raw.get("content"));
     Map<String, Object> usage = (Map<String, Object>) raw.getOrDefault("usage", Map.of());
+    LinkedHashMap<String, Object> assistantMessage = new LinkedHashMap<>();
+    assistantMessage.put("role", "assistant");
+    assistantMessage.put("content", assistantPayload.text());
+    if (!assistantPayload.toolCalls().isEmpty()) {
+      assistantMessage.put("tool_calls", assistantPayload.toolCalls());
+    }
+    LinkedHashMap<String, Object> choice = new LinkedHashMap<>();
+    choice.put("index", 0);
+    choice.put("message", assistantMessage);
+    choice.put("finish_reason", openAiFinishReasonFromAnthropic(raw));
     return new ProviderHttpResponse(
         upstream.statusCode(),
         Map.of(
@@ -459,15 +983,7 @@ public class GatewayService {
             Instant.now().getEpochSecond(),
             "model",
             model,
-            "choices",
-            List.of(
-                Map.of(
-                    "index",
-                    0,
-                    "message",
-                    Map.of("role", "assistant", "content", text),
-                    "finish_reason",
-                    "stop")),
+            "choices", List.of(choice),
             "usage",
             Map.of(
                 "prompt_tokens",
@@ -579,11 +1095,57 @@ public class GatewayService {
       if ("system".equals(role)) {
         continue;
       }
+      if (anthropic) {
+        if ("tool".equals(role)) {
+          String toolUseId = stringValue(map.get("tool_call_id"));
+          String text = stringifyMessageContent(map.get("content"));
+          if (toolUseId == null || toolUseId.isBlank()) {
+            out.add(Map.of("role", "user", "content", text));
+          } else {
+            out.add(
+                Map.of(
+                    "role",
+                    "user",
+                    "content",
+                    List.of(
+                        Map.of(
+                            "type", "tool_result",
+                            "tool_use_id", toolUseId,
+                            "content", text))));
+          }
+          continue;
+        }
+        if ("assistant".equals(role)) {
+          ArrayList<Map<String, Object>> blocks = new ArrayList<>();
+          String text = stringifyMessageContent(map.get("content"));
+          if (!text.isBlank()) {
+            blocks.add(Map.of("type", "text", "text", text));
+          }
+          if (map.get("tool_calls") instanceof List<?> toolCalls) {
+            for (Object toolCall : toolCalls) {
+              Map<String, Object> normalizedToolUse = openAiToolCallToAnthropic(toolCall);
+              if (!normalizedToolUse.isEmpty()) {
+                blocks.add(normalizedToolUse);
+              }
+            }
+          }
+          if (blocks.isEmpty()) {
+            out.add(Map.of("role", "assistant", "content", ""));
+          } else if (blocks.size() == 1 && "text".equals(String.valueOf(blocks.get(0).get("type")))) {
+            out.add(Map.of("role", "assistant", "content", blocks.get(0).get("text")));
+          } else {
+            out.add(Map.of("role", "assistant", "content", blocks));
+          }
+          continue;
+        }
+        out.add(Map.of("role", "user", "content", stringifyMessageContent(map.get("content"))));
+        continue;
+      }
       String text = stringifyMessageContent(map.get("content"));
       out.add(
-          anthropic
-              ? Map.of("role", "assistant".equals(role) ? "assistant" : "user", "content", text)
-              : Map.of("role", "assistant".equals(role) ? "model" : "user", "parts", List.of(Map.of("text", text))));
+          Map.of(
+              "role", "assistant".equals(role) ? "model" : "user",
+              "parts", List.of(Map.of("text", text))));
     }
     return out;
   }
@@ -603,28 +1165,18 @@ public class GatewayService {
     if (requestBody.get("max_completion_tokens") != null) {
       normalized.put("max_completion_tokens", requestBody.get("max_completion_tokens"));
     }
-    ArrayList<Map<String, Object>> messages = new ArrayList<>();
-    String system = anthropicContentToText(requestBody.get("system"));
-    if (!system.isBlank()) {
-      messages.add(Map.of("role", "system", "content", system));
+    if (requestBody.get("top_p") != null) {
+      normalized.put("top_p", requestBody.get("top_p"));
     }
-    if (requestBody.get("messages") instanceof List<?> rawMessages) {
-      for (Object item : rawMessages) {
-        if (!(item instanceof Map<?, ?> map)) {
-          continue;
-        }
-        String role = stringValue(map.get("role"));
-        String normalizedRole =
-            "assistant".equals(role) ? "assistant" : "system".equals(role) ? "system" : "user";
-        messages.add(
-            Map.of(
-                "role",
-                normalizedRole,
-                "content",
-                anthropicContentToText(map.get("content"))));
-      }
+    List<Map<String, Object>> tools = anthropicToolsToOpenAi(requestBody.get("tools"));
+    if (!tools.isEmpty()) {
+      normalized.put("tools", tools);
     }
-    normalized.put("messages", messages);
+    Object toolChoice = anthropicToolChoiceToOpenAi(requestBody.get("tool_choice"));
+    if (toolChoice != null) {
+      normalized.put("tool_choice", toolChoice);
+    }
+    normalized.put("messages", anthropicMessagesToOpenAiMessages(requestBody));
     return normalized;
   }
 
@@ -633,9 +1185,7 @@ public class GatewayService {
     normalized.put("id", String.valueOf(payload.getOrDefault("id", "msg_" + Ids.shortHex(8))));
     normalized.put("type", "message");
     normalized.put("role", "assistant");
-    normalized.put(
-        "content",
-        List.of(Map.of("type", "text", "text", firstAssistantText(payload))));
+    normalized.put("content", anthropicResponseContent(payload));
     normalized.put("model", stringValue(payload.get("model")));
     normalized.put("stop_reason", anthropicStopReason(payload));
     normalized.put("stop_sequence", null);
@@ -979,20 +1529,620 @@ public class GatewayService {
     return stringifyMessageContent(rawContent);
   }
 
-  private String firstAssistantText(Map<String, Object> payload) {
+  private Map<String, Object> disableStreamFlag(Map<String, Object> requestBody) {
+    LinkedHashMap<String, Object> normalized = new LinkedHashMap<>(requestBody);
+    normalized.put("stream", false);
+    return normalized;
+  }
+
+  private boolean includeOpenAiUsageInStream(Map<String, Object> requestBody) {
+    Map<String, Object> streamOptions = nestedMap(requestBody.get("stream_options"));
+    Object includeUsage = streamOptions.get("include_usage");
+    if (includeUsage instanceof Boolean bool) {
+      return bool;
+    }
+    return includeUsage != null && "true".equalsIgnoreCase(String.valueOf(includeUsage));
+  }
+
+  private List<String> buildOpenAiStreamEvents(
+      Map<String, Object> payload, boolean includeUsage) {
+    ArrayList<String> events = new ArrayList<>();
+    String id = firstNonBlank(stringValue(payload.get("id")), "chatcmpl-proxy-" + Ids.shortHex(8));
+    long created = longValue(payload.get("created"), Instant.now().getEpochSecond());
+    String model = firstNonBlank(stringValue(payload.get("model")), "");
+    Map<String, Object> message = firstChoiceMessage(payload);
+    events.add(sseData(openAiStreamChunk(id, created, model, Map.of("role", "assistant"), null)));
+
+    String content = stringValue(message.get("content"));
+    if (content != null && !content.isBlank()) {
+      events.add(sseData(openAiStreamChunk(id, created, model, Map.of("content", content), null)));
+    }
+
+    if (message.get("tool_calls") instanceof List<?> toolCalls) {
+      for (int i = 0; i < toolCalls.size(); i++) {
+        Map<String, Object> toolCall = nestedMap(toolCalls.get(i));
+        if (toolCall.isEmpty()) {
+          continue;
+        }
+        events.add(
+            sseData(
+                openAiStreamChunk(
+                    id,
+                    created,
+                    model,
+                    Map.of(
+                        "tool_calls",
+                        List.of(
+                            Map.of(
+                                "index", i,
+                                "id", firstNonBlank(stringValue(toolCall.get("id")), "call_" + Ids.shortHex(8)),
+                                "type", firstNonBlank(stringValue(toolCall.get("type")), "function"),
+                                "function", nestedMap(toolCall.get("function"))))),
+                    null)));
+      }
+    }
+
+    String finishReason = openAiFinishReason(payload);
+    events.add(sseData(openAiStreamChunk(id, created, model, Map.of(), finishReason)));
+
+    if (includeUsage) {
+      Map<String, Object> usage = nestedMap(payload.get("usage"));
+      if (!usage.isEmpty()) {
+        events.add(
+            sseData(
+                Map.of(
+                    "id", id,
+                    "object", "chat.completion.chunk",
+                    "created", created,
+                    "model", model,
+                    "choices", List.of(),
+                    "usage", usage)));
+      }
+    }
+    events.add("data: [DONE]\n\n");
+    return events;
+  }
+
+  private List<String> buildAnthropicStreamEvents(Map<String, Object> payload) {
+    ArrayList<String> events = new ArrayList<>();
+    String id = firstNonBlank(stringValue(payload.get("id")), "msg_" + Ids.shortHex(8));
+    String model = firstNonBlank(stringValue(payload.get("model")), "");
+    Map<String, Object> usage = nestedMap(payload.get("usage"));
+    List<Map<String, Object>> contentBlocks = contentBlocks(payload.get("content"));
+
+    LinkedHashMap<String, Object> message = new LinkedHashMap<>();
+    message.put("id", id);
+    message.put("type", "message");
+    message.put("role", "assistant");
+    message.put("content", List.of());
+    message.put("model", model);
+    message.put("stop_reason", null);
+    message.put("stop_sequence", null);
+    message.put(
+        "usage",
+        Map.of(
+            "input_tokens", intValue(usage.get("input_tokens"), 0),
+            "output_tokens", 0));
+    events.add(sseEvent("message_start", Map.of("type", "message_start", "message", message)));
+
+    for (int i = 0; i < contentBlocks.size(); i++) {
+      Map<String, Object> block = contentBlocks.get(i);
+      String type = stringValue(block.get("type"));
+      if ("tool_use".equals(type)) {
+        events.add(
+            sseEvent(
+                "content_block_start",
+                Map.of(
+                    "type", "content_block_start",
+                    "index", i,
+                    "content_block",
+                    Map.of(
+                        "type", "tool_use",
+                        "id", firstNonBlank(stringValue(block.get("id")), "toolu_" + Ids.shortHex(8)),
+                        "name", firstNonBlank(stringValue(block.get("name")), "tool"),
+                        "input", Map.of()))));
+        events.add(
+            sseEvent(
+                "content_block_delta",
+                Map.of(
+                    "type", "content_block_delta",
+                    "index", i,
+                    "delta",
+                    Map.of(
+                        "type", "input_json_delta",
+                        "partial_json", jsons.stringify(nestedMap(block.get("input")))))));
+        events.add(
+            sseEvent(
+                "content_block_stop",
+                Map.of("type", "content_block_stop", "index", i)));
+        continue;
+      }
+      events.add(
+          sseEvent(
+              "content_block_start",
+              Map.of(
+                  "type", "content_block_start",
+                  "index", i,
+                  "content_block", Map.of("type", "text", "text", ""))));
+      events.add(
+          sseEvent(
+              "content_block_delta",
+              Map.of(
+                  "type", "content_block_delta",
+                  "index", i,
+                  "delta",
+                  Map.of("type", "text_delta", "text", firstNonBlank(stringValue(block.get("text")), "")))));
+      events.add(
+          sseEvent(
+              "content_block_stop",
+              Map.of("type", "content_block_stop", "index", i)));
+    }
+
+    events.add(
+        sseEvent(
+            "message_delta",
+            anthropicMessageDeltaEvent(
+                payload.get("stop_reason"),
+                payload.get("stop_sequence"),
+                intValue(usage.get("output_tokens"), 0))));
+    events.add(sseEvent("message_stop", Map.of("type", "message_stop")));
+    return events;
+  }
+
+  private Map<String, Object> openAiStreamChunk(
+      String id,
+      long created,
+      String model,
+      Map<String, Object> delta,
+      String finishReason) {
+    LinkedHashMap<String, Object> choice = new LinkedHashMap<>();
+    choice.put("index", 0);
+    choice.put("delta", delta);
+    choice.put("finish_reason", finishReason);
+    LinkedHashMap<String, Object> chunk = new LinkedHashMap<>();
+    chunk.put("id", id);
+    chunk.put("object", "chat.completion.chunk");
+    chunk.put("created", created);
+    chunk.put("model", model);
+    chunk.put("choices", List.of(choice));
+    return chunk;
+  }
+
+  private Map<String, Object> anthropicMessageDeltaEvent(
+      Object stopReason, Object stopSequence, int outputTokens) {
+    LinkedHashMap<String, Object> delta = new LinkedHashMap<>();
+    delta.put("stop_reason", stopReason);
+    delta.put("stop_sequence", stopSequence);
+    LinkedHashMap<String, Object> event = new LinkedHashMap<>();
+    event.put("type", "message_delta");
+    event.put("delta", delta);
+    event.put("usage", Map.of("output_tokens", outputTokens));
+    return event;
+  }
+
+  private List<Map<String, Object>> contentBlocks(Object rawContent) {
+    if (!(rawContent instanceof List<?> blocks)) {
+      return List.of(Map.of("type", "text", "text", anthropicContentToText(rawContent)));
+    }
+    ArrayList<Map<String, Object>> normalized = new ArrayList<>();
+    for (Object block : blocks) {
+      Map<String, Object> map = nestedMap(block);
+      if (!map.isEmpty()) {
+        normalized.add(map);
+      }
+    }
+    return normalized;
+  }
+
+  private String openAiFinishReason(Map<String, Object> payload) {
     Object rawChoices = payload.get("choices");
     if (!(rawChoices instanceof List<?> choices) || choices.isEmpty()) {
-      return "";
+      return "stop";
     }
     Object first = choices.get(0);
     if (!(first instanceof Map<?, ?> firstChoice)) {
-      return "";
+      return "stop";
     }
-    Map<String, Object> message = nestedMap(firstChoice.get("message"));
+    return firstNonBlank(stringValue(firstChoice.get("finish_reason")), "stop");
+  }
+
+  private String sseData(Object data) {
+    return "data: " + jsons.stringify(data) + "\n\n";
+  }
+
+  private String sseEvent(String event, Object data) {
+    return "event: " + event + "\n" + "data: " + jsons.stringify(data) + "\n\n";
+  }
+
+  private List<Map<String, Object>> anthropicMessagesToOpenAiMessages(Map<String, Object> requestBody) {
+    ArrayList<Map<String, Object>> messages = new ArrayList<>();
+    String system = anthropicContentToText(requestBody.get("system"));
+    if (!system.isBlank()) {
+      messages.add(Map.of("role", "system", "content", system));
+    }
+    if (!(requestBody.get("messages") instanceof List<?> rawMessages)) {
+      return messages;
+    }
+    for (Object item : rawMessages) {
+      if (!(item instanceof Map<?, ?> map)) {
+        continue;
+      }
+      String role = stringValue(map.get("role"));
+      if ("system".equals(role)) {
+        String systemText = anthropicContentToText(map.get("content"));
+        if (!systemText.isBlank()) {
+          messages.add(Map.of("role", "system", "content", systemText));
+        }
+        continue;
+      }
+      if ("assistant".equals(role)) {
+        LinkedHashMap<String, Object> assistantMessage = new LinkedHashMap<>();
+        assistantMessage.put("role", "assistant");
+        String text = anthropicTextBlocksToString(map.get("content"));
+        if (!text.isBlank()) {
+          assistantMessage.put("content", text);
+        }
+        List<Map<String, Object>> toolCalls = anthropicToolUseBlocksToOpenAi(map.get("content"));
+        if (!toolCalls.isEmpty()) {
+          assistantMessage.put("tool_calls", toolCalls);
+        }
+        if (!assistantMessage.containsKey("content")) {
+          assistantMessage.put("content", "");
+        }
+        messages.add(assistantMessage);
+        continue;
+      }
+      appendAnthropicUserContent(messages, map.get("content"));
+    }
+    return messages;
+  }
+
+  private void appendAnthropicUserContent(List<Map<String, Object>> messages, Object rawContent) {
+    if (rawContent instanceof String text) {
+      if (!text.isBlank()) {
+        messages.add(Map.of("role", "user", "content", text));
+      }
+      return;
+    }
+    if (!(rawContent instanceof List<?> blocks)) {
+      String text = anthropicContentToText(rawContent);
+      if (!text.isBlank()) {
+        messages.add(Map.of("role", "user", "content", text));
+      }
+      return;
+    }
+    StringBuilder textBuilder = new StringBuilder();
+    for (Object block : blocks) {
+      if (!(block instanceof Map<?, ?> map)) {
+        continue;
+      }
+      String type = stringValue(map.get("type"));
+      if ("tool_result".equals(type)) {
+        if (textBuilder.length() > 0) {
+          messages.add(Map.of("role", "user", "content", textBuilder.toString()));
+          textBuilder.setLength(0);
+        }
+        String toolUseId = stringValue(map.get("tool_use_id"));
+        String content = anthropicContentToText(map.get("content"));
+        if (toolUseId != null && !toolUseId.isBlank()) {
+          messages.add(
+              Map.of(
+                  "role", "tool",
+                  "tool_call_id", toolUseId,
+                  "content", content));
+        } else if (!content.isBlank()) {
+          messages.add(Map.of("role", "user", "content", content));
+        }
+        continue;
+      }
+      String text = anthropicContentToText(List.of(map));
+      if (!text.isBlank()) {
+        if (textBuilder.length() > 0) {
+          textBuilder.append('\n');
+        }
+        textBuilder.append(text);
+      }
+    }
+    if (textBuilder.length() > 0) {
+      messages.add(Map.of("role", "user", "content", textBuilder.toString()));
+    }
+  }
+
+  private String anthropicTextBlocksToString(Object rawContent) {
+    if (rawContent instanceof String text) {
+      return text;
+    }
+    if (!(rawContent instanceof List<?> blocks)) {
+      return anthropicContentToText(rawContent);
+    }
+    StringBuilder builder = new StringBuilder();
+    for (Object block : blocks) {
+      if (!(block instanceof Map<?, ?> map)) {
+        continue;
+      }
+      String type = stringValue(map.get("type"));
+      if (!"text".equals(type)) {
+        continue;
+      }
+      String text = stringValue(map.get("text"));
+      if (text == null || text.isBlank()) {
+        continue;
+      }
+      if (builder.length() > 0) {
+        builder.append('\n');
+      }
+      builder.append(text);
+    }
+    return builder.toString();
+  }
+
+  private List<Map<String, Object>> anthropicToolUseBlocksToOpenAi(Object rawContent) {
+    if (!(rawContent instanceof List<?> blocks)) {
+      return List.of();
+    }
+    ArrayList<Map<String, Object>> toolCalls = new ArrayList<>();
+    for (Object block : blocks) {
+      if (!(block instanceof Map<?, ?> map)) {
+        continue;
+      }
+      if (!"tool_use".equals(stringValue(map.get("type")))) {
+        continue;
+      }
+      String id = firstNonBlank(stringValue(map.get("id")), "call_" + Ids.shortHex(8));
+      String name = stringValue(map.get("name"));
+      LinkedHashMap<String, Object> function = new LinkedHashMap<>();
+      function.put("name", name == null ? "tool" : name);
+      Object input = map.containsKey("input") ? map.get("input") : Map.of();
+      function.put("arguments", jsons.stringify(input));
+      LinkedHashMap<String, Object> toolCall = new LinkedHashMap<>();
+      toolCall.put("id", id);
+      toolCall.put("type", "function");
+      toolCall.put("function", function);
+      toolCalls.add(toolCall);
+    }
+    return toolCalls;
+  }
+
+  private List<Map<String, Object>> anthropicToolsToOpenAi(Object rawTools) {
+    if (!(rawTools instanceof List<?> tools)) {
+      return List.of();
+    }
+    ArrayList<Map<String, Object>> normalized = new ArrayList<>();
+    for (Object item : tools) {
+      if (!(item instanceof Map<?, ?> map)) {
+        continue;
+      }
+      String name = stringValue(map.get("name"));
+      if (name == null || name.isBlank()) {
+        continue;
+      }
+      LinkedHashMap<String, Object> function = new LinkedHashMap<>();
+      function.put("name", name);
+      if (map.get("description") != null) {
+        function.put("description", map.get("description"));
+      }
+      function.put("parameters", nestedMap(map.get("input_schema")));
+      normalized.add(Map.of("type", "function", "function", function));
+    }
+    return normalized;
+  }
+
+  private Object anthropicToolChoiceToOpenAi(Object rawToolChoice) {
+    if (rawToolChoice == null) {
+      return null;
+    }
+    if (rawToolChoice instanceof String text) {
+      return text;
+    }
+    Map<String, Object> choice = nestedMap(rawToolChoice);
+    String type = stringValue(choice.get("type"));
+    if (type == null || type.isBlank()) {
+      return null;
+    }
+    return switch (type) {
+      case "auto" -> "auto";
+      case "none" -> "none";
+      case "any" -> "required";
+      case "tool" -> {
+        String name = stringValue(choice.get("name"));
+        if (name == null || name.isBlank()) {
+          yield "required";
+        }
+        yield Map.of("type", "function", "function", Map.of("name", name));
+      }
+      default -> null;
+    };
+  }
+
+  private List<Map<String, Object>> anthropicResponseContent(Map<String, Object> payload) {
+    Map<String, Object> message = firstChoiceMessage(payload);
+    if (message.isEmpty()) {
+      return List.of(Map.of("type", "text", "text", ""));
+    }
+    ArrayList<Map<String, Object>> content = new ArrayList<>();
+    Object rawContent = message.get("content");
+    if (rawContent instanceof List<?> blocks) {
+      for (Object block : blocks) {
+        if (block instanceof Map<?, ?> map && "text".equals(stringValue(map.get("type")))) {
+          String text = stringValue(map.get("text"));
+          if (text != null && !text.isBlank()) {
+            content.add(Map.of("type", "text", "text", text));
+          }
+        }
+      }
+    } else {
+      String text = stringifyMessageContent(rawContent);
+      if (!text.isBlank()) {
+        content.add(Map.of("type", "text", "text", text));
+      }
+    }
+    if (message.get("tool_calls") instanceof List<?> toolCalls) {
+      for (Object toolCall : toolCalls) {
+        Map<String, Object> toolUse = openAiToolCallToAnthropic(toolCall);
+        if (!toolUse.isEmpty()) {
+          content.add(toolUse);
+        }
+      }
+    }
+    if (content.isEmpty()) {
+      content.add(Map.of("type", "text", "text", ""));
+    }
+    return content;
+  }
+
+  private Map<String, Object> firstChoiceMessage(Map<String, Object> payload) {
+    Object rawChoices = payload.get("choices");
+    if (!(rawChoices instanceof List<?> choices) || choices.isEmpty()) {
+      return Map.of();
+    }
+    Object first = choices.get(0);
+    if (!(first instanceof Map<?, ?> firstChoice)) {
+      return Map.of();
+    }
+    return nestedMap(firstChoice.get("message"));
+  }
+
+  private Map<String, Object> openAiToolCallToAnthropic(Object rawToolCall) {
+    Map<String, Object> toolCall = nestedMap(rawToolCall);
+    if (toolCall.isEmpty()) {
+      return Map.of();
+    }
+    Map<String, Object> function = nestedMap(toolCall.get("function"));
+    String name = stringValue(function.get("name"));
+    if (name == null || name.isBlank()) {
+      return Map.of();
+    }
+    LinkedHashMap<String, Object> normalized = new LinkedHashMap<>();
+    normalized.put("type", "tool_use");
+    normalized.put("id", firstNonBlank(stringValue(toolCall.get("id")), "toolu_" + Ids.shortHex(8)));
+    normalized.put("name", name);
+    normalized.put("input", parseJsonObject(function.get("arguments")));
+    return normalized;
+  }
+
+  private List<Map<String, Object>> openAiToolsToAnthropic(Object rawTools) {
+    if (!(rawTools instanceof List<?> tools)) {
+      return List.of();
+    }
+    ArrayList<Map<String, Object>> normalized = new ArrayList<>();
+    for (Object item : tools) {
+      Map<String, Object> tool = nestedMap(item);
+      if (tool.isEmpty()) {
+        continue;
+      }
+      Map<String, Object> function = nestedMap(tool.get("function"));
+      String name = stringValue(function.get("name"));
+      if (name == null || name.isBlank()) {
+        continue;
+      }
+      LinkedHashMap<String, Object> anthropicTool = new LinkedHashMap<>();
+      anthropicTool.put("name", name);
+      if (function.get("description") != null) {
+        anthropicTool.put("description", function.get("description"));
+      }
+      anthropicTool.put("input_schema", nestedMap(function.get("parameters")));
+      normalized.add(anthropicTool);
+    }
+    return normalized;
+  }
+
+  private Object openAiToolChoiceToAnthropic(Object rawToolChoice) {
+    if (rawToolChoice == null) {
+      return null;
+    }
+    if (rawToolChoice instanceof String text) {
+      return switch (text) {
+        case "auto" -> Map.of("type", "auto");
+        case "required" -> Map.of("type", "any");
+        case "none" -> Map.of("type", "none");
+        default -> null;
+      };
+    }
+    Map<String, Object> choice = nestedMap(rawToolChoice);
+    Map<String, Object> function = nestedMap(choice.get("function"));
+    String name = stringValue(function.get("name"));
+    if (name == null || name.isBlank()) {
+      return null;
+    }
+    return Map.of("type", "tool", "name", name);
+  }
+
+  private AnthropicAssistantPayload extractAnthropicAssistantPayload(Object rawContent) {
+    ArrayList<Map<String, Object>> toolCalls = new ArrayList<>();
+    StringBuilder text = new StringBuilder();
+    if (rawContent instanceof List<?> blocks) {
+      for (Object block : blocks) {
+        if (!(block instanceof Map<?, ?> map)) {
+          continue;
+        }
+        String type = stringValue(map.get("type"));
+        if ("tool_use".equals(type)) {
+          Map<String, Object> toolCall = anthropicToolUseBlocksToOpenAi(List.of(map)).stream().findFirst().orElse(Map.of());
+          if (!toolCall.isEmpty()) {
+            toolCalls.add(toolCall);
+          }
+          continue;
+        }
+        if (!"text".equals(type)) {
+          continue;
+        }
+        String blockText = stringValue(map.get("text"));
+        if (blockText == null || blockText.isBlank()) {
+          continue;
+        }
+        if (text.length() > 0) {
+          text.append('\n');
+        }
+        text.append(blockText);
+      }
+      return new AnthropicAssistantPayload(text.toString(), toolCalls);
+    }
+    return new AnthropicAssistantPayload(stringifyMessageContent(rawContent), toolCalls);
+  }
+
+  private String openAiFinishReasonFromAnthropic(Map<String, Object> payload) {
+    String stopReason = stringValue(payload.get("stop_reason"));
+    if (stopReason == null || stopReason.isBlank()) {
+      return "stop";
+    }
+    return switch (stopReason) {
+      case "tool_use" -> "tool_calls";
+      case "max_tokens" -> "length";
+      default -> "stop";
+    };
+  }
+
+  private Map<String, Object> parseJsonObject(Object raw) {
+    if (raw instanceof Map<?, ?> map) {
+      return nestedMap(map);
+    }
+    if (raw == null) {
+      return Map.of();
+    }
+    String text = String.valueOf(raw).trim();
+    if (text.isBlank()) {
+      return Map.of();
+    }
+    try {
+      return jsons.readObject(text);
+    } catch (Exception ignored) {
+      return Map.of("_raw", text);
+    }
+  }
+
+  private String firstAssistantText(Map<String, Object> payload) {
+    Map<String, Object> message = firstChoiceMessage(payload);
     return stringifyMessageContent(message.get("content"));
   }
 
   private String anthropicStopReason(Map<String, Object> payload) {
+    Map<String, Object> message = firstChoiceMessage(payload);
+    if (message.isEmpty()) {
+      return null;
+    }
+    if (message.get("tool_calls") instanceof List<?> toolCalls && !toolCalls.isEmpty()) {
+      return "tool_use";
+    }
     Object rawChoices = payload.get("choices");
     if (!(rawChoices instanceof List<?> choices) || choices.isEmpty()) {
       return null;
@@ -1008,6 +2158,7 @@ public class GatewayService {
     return switch (finishReason) {
       case "stop" -> "end_turn";
       case "length" -> "max_tokens";
+      case "tool_calls" -> "tool_use";
       default -> finishReason;
     };
   }
@@ -1040,6 +2191,13 @@ public class GatewayService {
     return Integer.parseInt(String.valueOf(value));
   }
 
+  private static long longValue(Object value, long fallback) {
+    if (value == null || "null".equals(String.valueOf(value))) {
+      return fallback;
+    }
+    return Long.parseLong(String.valueOf(value));
+  }
+
   @SuppressWarnings("unchecked")
   private static int readInt(Map<String, Object> payload, String path, int fallback) {
     String[] parts = path.split("\\.");
@@ -1053,12 +2211,42 @@ public class GatewayService {
     return intValue(current, fallback);
   }
 
+  private String mapOpenAiFinishReasonToAnthropic(String finishReason) {
+    if (finishReason == null || finishReason.isBlank()) {
+      return null;
+    }
+    return switch (finishReason) {
+      case "tool_calls" -> "tool_use";
+      case "length" -> "max_tokens";
+      case "stop" -> "end_turn";
+      default -> finishReason;
+    };
+  }
+
+  private String openAiFinishReasonFromAnthropicStop(String stopReason) {
+    if (stopReason == null || stopReason.isBlank()) {
+      return "stop";
+    }
+    return switch (stopReason) {
+      case "tool_use" -> "tool_calls";
+      case "max_tokens" -> "length";
+      default -> "stop";
+    };
+  }
+
   private static Timestamp ts(Instant instant) {
     return Timestamp.from(instant);
   }
 
   public record GatewayResponse(
       HttpStatus status, Map<String, Object> body, Map<String, String> headers) {
+  }
+
+  public record GatewayStreamResponse(
+      HttpStatus status,
+      Map<String, Object> body,
+      StreamingResponseBody streamBody,
+      Map<String, String> headers) {
   }
 
   private record AppKeyRow(
@@ -1114,6 +2302,576 @@ public class GatewayService {
 
   private record ProviderHttpResponse(
       int statusCode, Map<String, Object> payload, String providerErrorCode) {
+  }
+
+  private record AnthropicAssistantPayload(
+      String text, List<Map<String, Object>> toolCalls) {
+  }
+
+  private static final class StreamWriteContext {
+    private final OutputStream outputStream;
+    private boolean started;
+
+    private StreamWriteContext(OutputStream outputStream) {
+      this.outputStream = outputStream;
+    }
+
+    private boolean started() {
+      return started;
+    }
+
+    private void write(String value) throws IOException {
+      started = true;
+      outputStream.write(value.getBytes(StandardCharsets.UTF_8));
+      outputStream.flush();
+    }
+  }
+
+  private final class OpenAiToolCallAccumulator {
+    private String id;
+    private String type = "function";
+    private String name;
+    private final StringBuilder arguments = new StringBuilder();
+
+    private void applyChunk(Map<String, Object> item) {
+      String nextId = stringValue(item.get("id"));
+      if (nextId != null && !nextId.isBlank()) {
+        this.id = nextId;
+      }
+      String nextType = stringValue(item.get("type"));
+      if (nextType != null && !nextType.isBlank()) {
+        this.type = nextType;
+      }
+      Map<String, Object> function = nestedMap(item.get("function"));
+      String nextName = stringValue(function.get("name"));
+      if (nextName != null && !nextName.isBlank()) {
+        this.name = nextName;
+      }
+      String nextArguments = stringValue(function.get("arguments"));
+      if (nextArguments != null && !nextArguments.isBlank()) {
+        this.arguments.append(nextArguments);
+      }
+    }
+
+    private void initialize(String toolId, String toolName) {
+      if (toolId != null && !toolId.isBlank()) {
+        this.id = toolId;
+      }
+      if (toolName != null && !toolName.isBlank()) {
+        this.name = toolName;
+      }
+    }
+
+    private void appendArguments(String partialArguments) {
+      if (partialArguments != null && !partialArguments.isBlank()) {
+        this.arguments.append(partialArguments);
+      }
+    }
+
+    private Map<String, Object> toMap() {
+      LinkedHashMap<String, Object> function = new LinkedHashMap<>();
+      function.put("name", firstNonBlank(name, "tool"));
+      function.put("arguments", arguments.toString());
+      LinkedHashMap<String, Object> out = new LinkedHashMap<>();
+      out.put("id", firstNonBlank(id, "call_" + Ids.shortHex(8)));
+      out.put("type", firstNonBlank(type, "function"));
+      out.put("function", function);
+      return out;
+    }
+  }
+
+  private final class OpenAiStreamAccumulator {
+    private final String fallbackModel;
+    private final int estimatedPromptTokens;
+    private String id;
+    private String model;
+    private long created;
+    private String role = "assistant";
+    private final StringBuilder content = new StringBuilder();
+    private final ArrayList<OpenAiToolCallAccumulator> toolCalls = new ArrayList<>();
+    private String finishReason = "stop";
+    private int promptTokens;
+    private int completionTokens;
+    private int totalTokens;
+
+    private OpenAiStreamAccumulator(String fallbackModel, int estimatedPromptTokens) {
+      this.fallbackModel = fallbackModel;
+      this.estimatedPromptTokens = estimatedPromptTokens;
+      this.promptTokens = estimatedPromptTokens;
+    }
+
+    private void applyChunk(Map<String, Object> chunk) {
+      this.id = firstNonBlank(stringValue(chunk.get("id")), this.id);
+      this.model = firstNonBlank(stringValue(chunk.get("model")), this.model, fallbackModel);
+      this.created = longValue(chunk.get("created"), this.created == 0 ? Instant.now().getEpochSecond() : this.created);
+      Map<String, Object> usage = nestedMap(chunk.get("usage"));
+      if (!usage.isEmpty()) {
+        this.promptTokens = intValue(usage.get("prompt_tokens"), promptTokens);
+        this.completionTokens = intValue(usage.get("completion_tokens"), completionTokens);
+        this.totalTokens = intValue(usage.get("total_tokens"), promptTokens + completionTokens);
+      }
+      Object rawChoices = chunk.get("choices");
+      if (!(rawChoices instanceof List<?> choices) || choices.isEmpty()) {
+        return;
+      }
+      Map<String, Object> firstChoice = nestedMap(choices.get(0));
+      String nextFinishReason = stringValue(firstChoice.get("finish_reason"));
+      if (nextFinishReason != null && !nextFinishReason.isBlank()) {
+        this.finishReason = nextFinishReason;
+      }
+      Map<String, Object> delta = nestedMap(firstChoice.get("delta"));
+      String nextRole = stringValue(delta.get("role"));
+      if (nextRole != null && !nextRole.isBlank()) {
+        this.role = nextRole;
+      }
+      String nextContent = stringValue(delta.get("content"));
+      if (nextContent != null && !nextContent.isBlank()) {
+        this.content.append(nextContent);
+      }
+      if (delta.get("tool_calls") instanceof List<?> rawToolCalls) {
+        for (Object rawToolCall : rawToolCalls) {
+          Map<String, Object> toolCall = nestedMap(rawToolCall);
+          int index = intValue(toolCall.get("index"), toolCalls.size());
+          while (toolCalls.size() <= index) {
+            toolCalls.add(new OpenAiToolCallAccumulator());
+          }
+          toolCalls.get(index).applyChunk(toolCall);
+        }
+      }
+    }
+
+    private int promptTokens() {
+      return promptTokens <= 0 ? estimatedPromptTokens : promptTokens;
+    }
+
+    private int completionTokens() {
+      if (completionTokens > 0) {
+        return completionTokens;
+      }
+      return Math.max(1, content.length() / 4);
+    }
+
+    private int totalTokens() {
+      return totalTokens > 0 ? totalTokens : promptTokens() + completionTokens();
+    }
+
+    private Map<String, Object> toPayload() {
+      LinkedHashMap<String, Object> message = new LinkedHashMap<>();
+      message.put("role", firstNonBlank(role, "assistant"));
+      message.put("content", content.toString());
+      if (!toolCalls.isEmpty()) {
+        message.put(
+            "tool_calls",
+            toolCalls.stream().map(OpenAiToolCallAccumulator::toMap).toList());
+      }
+      LinkedHashMap<String, Object> choice = new LinkedHashMap<>();
+      choice.put("index", 0);
+      choice.put("message", message);
+      choice.put("finish_reason", firstNonBlank(finishReason, "stop"));
+      return Map.of(
+          "id", firstNonBlank(id, "chatcmpl-proxy-" + Ids.shortHex(8)),
+          "object", "chat.completion",
+          "created", created == 0 ? Instant.now().getEpochSecond() : created,
+          "model", firstNonBlank(model, fallbackModel, ""),
+          "choices", List.of(choice),
+          "usage",
+          Map.of(
+              "prompt_tokens", promptTokens(),
+              "completion_tokens", completionTokens(),
+              "total_tokens", totalTokens()));
+    }
+  }
+
+  private final class OpenAiToAnthropicStreamState {
+    private boolean messageStarted;
+    private boolean messageStopped;
+    private Integer textBlockIndex;
+    private int nextBlockIndex;
+    private int promptTokens;
+    private int outputTokens;
+    private final LinkedHashMap<Integer, Integer> toolBlockIndexes = new LinkedHashMap<>();
+    private String messageId;
+    private String model;
+
+    private List<String> toAnthropicEvents(
+        Map<String, Object> chunk, int latestPromptTokens, int latestOutputTokens) {
+      ArrayList<String> out = new ArrayList<>();
+      this.promptTokens = latestPromptTokens;
+      this.outputTokens = latestOutputTokens;
+      this.messageId = firstNonBlank(stringValue(chunk.get("id")), this.messageId, "msg_" + Ids.shortHex(8));
+      this.model = firstNonBlank(stringValue(chunk.get("model")), this.model, "");
+      if (!messageStarted) {
+        LinkedHashMap<String, Object> message = new LinkedHashMap<>();
+        message.put("id", messageId);
+        message.put("type", "message");
+        message.put("role", "assistant");
+        message.put("content", List.of());
+        message.put("model", model);
+        message.put("stop_reason", null);
+        message.put("stop_sequence", null);
+        message.put("usage", Map.of("input_tokens", promptTokens, "output_tokens", 0));
+        out.add(sseEvent("message_start", Map.of("type", "message_start", "message", message)));
+        messageStarted = true;
+      }
+      Object rawChoices = chunk.get("choices");
+      if (!(rawChoices instanceof List<?> choices) || choices.isEmpty()) {
+        return out;
+      }
+      Map<String, Object> firstChoice = nestedMap(choices.get(0));
+      Map<String, Object> delta = nestedMap(firstChoice.get("delta"));
+      String text = stringValue(delta.get("content"));
+      if (text != null && !text.isBlank()) {
+        if (textBlockIndex == null) {
+          textBlockIndex = nextBlockIndex++;
+          out.add(
+              sseEvent(
+                  "content_block_start",
+                  Map.of(
+                      "type", "content_block_start",
+                      "index", textBlockIndex,
+                      "content_block", Map.of("type", "text", "text", ""))));
+        }
+        out.add(
+            sseEvent(
+                "content_block_delta",
+                Map.of(
+                    "type", "content_block_delta",
+                    "index", textBlockIndex,
+                    "delta", Map.of("type", "text_delta", "text", text))));
+      }
+      if (delta.get("tool_calls") instanceof List<?> rawToolCalls) {
+        for (Object rawToolCall : rawToolCalls) {
+          Map<String, Object> toolCall = nestedMap(rawToolCall);
+          int openAiIndex = intValue(toolCall.get("index"), toolBlockIndexes.size());
+          Integer blockIndex = toolBlockIndexes.get(openAiIndex);
+          Map<String, Object> function = nestedMap(toolCall.get("function"));
+          if (blockIndex == null) {
+            blockIndex = nextBlockIndex++;
+            toolBlockIndexes.put(openAiIndex, blockIndex);
+            out.add(
+                sseEvent(
+                    "content_block_start",
+                    Map.of(
+                        "type", "content_block_start",
+                        "index", blockIndex,
+                        "content_block",
+                        Map.of(
+                            "type", "tool_use",
+                            "id", firstNonBlank(stringValue(toolCall.get("id")), "toolu_" + Ids.shortHex(8)),
+                            "name", firstNonBlank(stringValue(function.get("name")), "tool"),
+                            "input", Map.of()))));
+          }
+          String partialArguments = stringValue(function.get("arguments"));
+          if (partialArguments != null && !partialArguments.isBlank()) {
+            out.add(
+                sseEvent(
+                    "content_block_delta",
+                    Map.of(
+                        "type", "content_block_delta",
+                        "index", blockIndex,
+                        "delta",
+                        Map.of("type", "input_json_delta", "partial_json", partialArguments))));
+          }
+        }
+      }
+      String finishReason = stringValue(firstChoice.get("finish_reason"));
+      if (finishReason != null && !finishReason.isBlank()) {
+        out.addAll(finish(promptTokens, outputTokens, finishReason));
+      }
+      return out;
+    }
+
+    private List<String> finish(int latestPromptTokens, int latestOutputTokens) {
+      return finish(latestPromptTokens, latestOutputTokens, null);
+    }
+
+    private List<String> finish(int latestPromptTokens, int latestOutputTokens, String finishReason) {
+      if (messageStopped) {
+        return List.of();
+      }
+      this.promptTokens = latestPromptTokens;
+      this.outputTokens = latestOutputTokens;
+      ArrayList<String> out = new ArrayList<>();
+      if (textBlockIndex != null) {
+        out.add(sseEvent("content_block_stop", Map.of("type", "content_block_stop", "index", textBlockIndex)));
+        textBlockIndex = null;
+      }
+      for (Integer blockIndex : toolBlockIndexes.values()) {
+        out.add(sseEvent("content_block_stop", Map.of("type", "content_block_stop", "index", blockIndex)));
+      }
+      toolBlockIndexes.clear();
+      out.add(
+          sseEvent(
+              "message_delta",
+              anthropicMessageDeltaEvent(
+                  mapOpenAiFinishReasonToAnthropic(firstNonBlank(finishReason, "stop")),
+                  null,
+                  outputTokens)));
+      out.add(sseEvent("message_stop", Map.of("type", "message_stop")));
+      messageStopped = true;
+      return out;
+    }
+  }
+
+  private final class AnthropicStreamAccumulator {
+    private final String fallbackModel;
+    private final int estimatedPromptTokens;
+    private String id;
+    private String model;
+    private long created = Instant.now().getEpochSecond();
+    private int promptTokens;
+    private int completionTokens;
+    private String stopReason = "end_turn";
+    private String stopSequence;
+    private boolean openAiDone;
+    private boolean openAiRoleSent;
+    private int nextToolIndex;
+    private final StringBuilder content = new StringBuilder();
+    private final LinkedHashMap<Integer, Integer> blockIndexToToolIndex = new LinkedHashMap<>();
+    private final ArrayList<OpenAiToolCallAccumulator> toolCalls = new ArrayList<>();
+
+    private AnthropicStreamAccumulator(String fallbackModel, int estimatedPromptTokens) {
+      this.fallbackModel = fallbackModel;
+      this.estimatedPromptTokens = estimatedPromptTokens;
+      this.promptTokens = estimatedPromptTokens;
+    }
+
+    private void apply(String eventName, Map<String, Object> payload) {
+      switch (eventName) {
+        case "message_start" -> {
+          Map<String, Object> message = nestedMap(payload.get("message"));
+          this.id = firstNonBlank(stringValue(message.get("id")), this.id);
+          this.model = firstNonBlank(stringValue(message.get("model")), this.model, fallbackModel);
+          Map<String, Object> usage = nestedMap(message.get("usage"));
+          this.promptTokens = intValue(usage.get("input_tokens"), promptTokens);
+        }
+        case "content_block_start" -> {
+          int blockIndex = intValue(payload.get("index"), 0);
+          Map<String, Object> block = nestedMap(payload.get("content_block"));
+          if ("tool_use".equals(stringValue(block.get("type")))) {
+            int toolIndex = nextToolIndex++;
+            blockIndexToToolIndex.put(blockIndex, toolIndex);
+            while (toolCalls.size() <= toolIndex) {
+              toolCalls.add(new OpenAiToolCallAccumulator());
+            }
+            toolCalls.get(toolIndex).initialize(stringValue(block.get("id")), stringValue(block.get("name")));
+          }
+        }
+        case "content_block_delta" -> {
+          int blockIndex = intValue(payload.get("index"), 0);
+          Map<String, Object> delta = nestedMap(payload.get("delta"));
+          String type = stringValue(delta.get("type"));
+          if ("text_delta".equals(type)) {
+            String text = stringValue(delta.get("text"));
+            if (text != null && !text.isBlank()) {
+              content.append(text);
+            }
+          }
+          if ("input_json_delta".equals(type)) {
+            Integer toolIndex = blockIndexToToolIndex.get(blockIndex);
+            if (toolIndex != null && toolIndex < toolCalls.size()) {
+              toolCalls.get(toolIndex).appendArguments(stringValue(delta.get("partial_json")));
+            }
+          }
+        }
+        case "message_delta" -> {
+          Map<String, Object> delta = nestedMap(payload.get("delta"));
+          this.stopReason = firstNonBlank(stringValue(delta.get("stop_reason")), stopReason);
+          this.stopSequence = stringValue(delta.get("stop_sequence"));
+          Map<String, Object> usage = nestedMap(payload.get("usage"));
+          this.completionTokens = intValue(usage.get("output_tokens"), completionTokens);
+        }
+        default -> {
+        }
+      }
+    }
+
+    private List<String> toOpenAiEvents(
+        String eventName, Map<String, Object> payload, boolean includeUsage) {
+      ArrayList<String> out = new ArrayList<>();
+      if ("message_start".equals(eventName) && !openAiRoleSent) {
+        out.add(
+            sseData(
+                openAiStreamChunk(
+                    firstNonBlank(id, "chatcmpl-proxy-" + Ids.shortHex(8)),
+                    created,
+                    firstNonBlank(model, fallbackModel, ""),
+                    Map.of("role", "assistant"),
+                    null)));
+        openAiRoleSent = true;
+      }
+      if ("content_block_delta".equals(eventName)) {
+        int blockIndex = intValue(payload.get("index"), 0);
+        Map<String, Object> delta = nestedMap(payload.get("delta"));
+        String type = stringValue(delta.get("type"));
+        if ("text_delta".equals(type)) {
+          String text = stringValue(delta.get("text"));
+          if (text != null && !text.isBlank()) {
+            out.add(
+                sseData(
+                    openAiStreamChunk(
+                        firstNonBlank(id, "chatcmpl-proxy-" + Ids.shortHex(8)),
+                        created,
+                        firstNonBlank(model, fallbackModel, ""),
+                        Map.of("content", text),
+                        null)));
+          }
+        }
+        if ("input_json_delta".equals(type)) {
+          Integer toolIndex = blockIndexToToolIndex.get(blockIndex);
+          if (toolIndex != null) {
+            OpenAiToolCallAccumulator toolCall = toolCalls.get(toolIndex);
+            out.add(
+                sseData(
+                    openAiStreamChunk(
+                        firstNonBlank(id, "chatcmpl-proxy-" + Ids.shortHex(8)),
+                        created,
+                        firstNonBlank(model, fallbackModel, ""),
+                        Map.of(
+                            "tool_calls",
+                            List.of(
+                                Map.of(
+                                    "index", toolIndex,
+                                    "id", firstNonBlank(toolCall.id, "call_" + Ids.shortHex(8)),
+                                    "type", "function",
+                                    "function",
+                                    Map.of("name", firstNonBlank(toolCall.name, "tool"), "arguments", stringValue(delta.get("partial_json")))))),
+                        null)));
+          }
+        }
+      }
+      if ("content_block_start".equals(eventName)) {
+        int blockIndex = intValue(payload.get("index"), 0);
+        Map<String, Object> block = nestedMap(payload.get("content_block"));
+        if ("tool_use".equals(stringValue(block.get("type")))) {
+          Integer toolIndex = blockIndexToToolIndex.get(blockIndex);
+          if (toolIndex != null) {
+            out.add(
+                sseData(
+                    openAiStreamChunk(
+                        firstNonBlank(id, "chatcmpl-proxy-" + Ids.shortHex(8)),
+                        created,
+                        firstNonBlank(model, fallbackModel, ""),
+                        Map.of(
+                            "tool_calls",
+                            List.of(
+                                Map.of(
+                                    "index", toolIndex,
+                                    "id", firstNonBlank(stringValue(block.get("id")), "call_" + Ids.shortHex(8)),
+                                    "type", "function",
+                                    "function",
+                                    Map.of("name", firstNonBlank(stringValue(block.get("name")), "tool"), "arguments", "")))),
+                        null)));
+          }
+        }
+      }
+      if ("message_delta".equals(eventName)) {
+        out.add(
+            sseData(
+                openAiStreamChunk(
+                    firstNonBlank(id, "chatcmpl-proxy-" + Ids.shortHex(8)),
+                    created,
+                    firstNonBlank(model, fallbackModel, ""),
+                    Map.of(),
+                    openAiFinishReasonFromAnthropicStop(stopReason))));
+      }
+      if ("message_stop".equals(eventName) && !openAiDone) {
+        if (includeUsage) {
+          out.add(
+              sseData(
+                  Map.of(
+                      "id", firstNonBlank(id, "chatcmpl-proxy-" + Ids.shortHex(8)),
+                      "object", "chat.completion.chunk",
+                      "created", created,
+                      "model", firstNonBlank(model, fallbackModel, ""),
+                      "choices", List.of(),
+                      "usage",
+                      Map.of(
+                          "prompt_tokens", promptTokens(),
+                          "completion_tokens", completionTokens(),
+                          "total_tokens", totalTokens()))));
+        }
+        out.add("data: [DONE]\n\n");
+        openAiDone = true;
+      }
+      return out;
+    }
+
+    private List<String> finishOpenAi(boolean includeUsage) {
+      if (openAiDone) {
+        return List.of();
+      }
+      ArrayList<String> out = new ArrayList<>();
+      out.add(
+          sseData(
+              openAiStreamChunk(
+                  firstNonBlank(id, "chatcmpl-proxy-" + Ids.shortHex(8)),
+                  created,
+                  firstNonBlank(model, fallbackModel, ""),
+                  Map.of(),
+                  openAiFinishReasonFromAnthropicStop(stopReason))));
+      if (includeUsage) {
+        out.add(
+            sseData(
+                Map.of(
+                    "id", firstNonBlank(id, "chatcmpl-proxy-" + Ids.shortHex(8)),
+                    "object", "chat.completion.chunk",
+                    "created", created,
+                    "model", firstNonBlank(model, fallbackModel, ""),
+                    "choices", List.of(),
+                    "usage",
+                    Map.of(
+                        "prompt_tokens", promptTokens(),
+                        "completion_tokens", completionTokens(),
+                        "total_tokens", totalTokens()))));
+      }
+      out.add("data: [DONE]\n\n");
+      openAiDone = true;
+      return out;
+    }
+
+    private int promptTokens() {
+      return promptTokens <= 0 ? estimatedPromptTokens : promptTokens;
+    }
+
+    private int completionTokens() {
+      if (completionTokens > 0) {
+        return completionTokens;
+      }
+      return Math.max(1, content.length() / 4);
+    }
+
+    private int totalTokens() {
+      return promptTokens() + completionTokens();
+    }
+
+    private Map<String, Object> toPayload() {
+      LinkedHashMap<String, Object> message = new LinkedHashMap<>();
+      message.put("role", "assistant");
+      message.put("content", content.toString());
+      if (!toolCalls.isEmpty()) {
+        message.put(
+            "tool_calls",
+            toolCalls.stream().map(OpenAiToolCallAccumulator::toMap).toList());
+      }
+      LinkedHashMap<String, Object> choice = new LinkedHashMap<>();
+      choice.put("index", 0);
+      choice.put("message", message);
+      choice.put("finish_reason", openAiFinishReasonFromAnthropicStop(stopReason));
+      LinkedHashMap<String, Object> payload = new LinkedHashMap<>();
+      payload.put("id", firstNonBlank(id, "chatcmpl-proxy-" + Ids.shortHex(8)));
+      payload.put("object", "chat.completion");
+      payload.put("created", created);
+      payload.put("model", firstNonBlank(model, fallbackModel, ""));
+      payload.put("choices", List.of(choice));
+      payload.put(
+          "usage",
+          Map.of(
+              "prompt_tokens", promptTokens(),
+              "completion_tokens", completionTokens(),
+              "total_tokens", totalTokens()));
+      return payload;
+    }
   }
 
   private static final RowMapper<AppKeyRow> APP_KEY_ROW_MAPPER =

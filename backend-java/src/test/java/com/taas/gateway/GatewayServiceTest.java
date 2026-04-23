@@ -137,6 +137,72 @@ class GatewayServiceTest {
 
   @Test
   @SuppressWarnings("unchecked")
+  void normalizeAnthropicMessagesRequestShouldPreserveToolsAndToolResults() throws Exception {
+    Map<String, Object> normalized =
+        (Map<String, Object>)
+            invoke(
+                "normalizeAnthropicMessagesRequest",
+                Map.of(
+                    "model",
+                    "claude-3-5-sonnet",
+                    "tool_choice",
+                    Map.of("type", "tool", "name", "echo_tool"),
+                    "tools",
+                    List.of(
+                        Map.of(
+                            "name", "echo_tool",
+                            "description", "Echo text",
+                            "input_schema",
+                            Map.of(
+                                "type", "object",
+                                "properties", Map.of("text", Map.of("type", "string"))))),
+                    "messages",
+                    List.of(
+                        Map.of(
+                            "role",
+                            "assistant",
+                            "content",
+                            List.of(
+                                Map.of("type", "text", "text", "Calling tool"),
+                                Map.of(
+                                    "type", "tool_use",
+                                    "id", "toolu_1",
+                                    "name", "echo_tool",
+                                    "input", Map.of("text", "hello")))),
+                        Map.of(
+                            "role",
+                            "user",
+                            "content",
+                            List.of(
+                                Map.of(
+                                    "type", "tool_result",
+                                    "tool_use_id", "toolu_1",
+                                    "content", "tool ok"))))));
+
+    List<Map<String, Object>> messages =
+        assertInstanceOf(List.class, normalized.get("messages"));
+    assertEquals("assistant", messages.get(0).get("role"));
+    assertEquals("Calling tool", messages.get(0).get("content"));
+    List<Map<String, Object>> toolCalls =
+        assertInstanceOf(List.class, messages.get(0).get("tool_calls"));
+    assertEquals("toolu_1", toolCalls.get(0).get("id"));
+    Map<String, Object> function = assertInstanceOf(Map.class, toolCalls.get(0).get("function"));
+    assertEquals("echo_tool", function.get("name"));
+    assertEquals("{\"text\":\"hello\"}", function.get("arguments"));
+    assertEquals("tool", messages.get(1).get("role"));
+    assertEquals("toolu_1", messages.get(1).get("tool_call_id"));
+    Map<String, Object> toolChoice = assertInstanceOf(Map.class, normalized.get("tool_choice"));
+    assertEquals("function", toolChoice.get("type"));
+    Map<String, Object> toolChoiceFunction =
+        assertInstanceOf(Map.class, toolChoice.get("function"));
+    assertEquals("echo_tool", toolChoiceFunction.get("name"));
+    List<Map<String, Object>> tools = assertInstanceOf(List.class, normalized.get("tools"));
+    Map<String, Object> tool = assertInstanceOf(Map.class, tools.get(0).get("function"));
+    assertEquals("echo_tool", tool.get("name"));
+  }
+
+  @Test
+  @SuppressWarnings("unchecked")
   void normalizeAnthropicGatewayResponseShouldConvertChatPayloadShape() throws Exception {
     Map<String, Object> normalized =
         (Map<String, Object>)
@@ -166,6 +232,115 @@ class GatewayServiceTest {
     Map<String, Object> usage = assertInstanceOf(Map.class, normalized.get("usage"));
     assertEquals(12, usage.get("input_tokens"));
     assertEquals(8, usage.get("output_tokens"));
+  }
+
+  @Test
+  @SuppressWarnings("unchecked")
+  void normalizeAnthropicGatewayResponseShouldConvertToolCallsToToolUseBlocks() throws Exception {
+    Map<String, Object> normalized =
+        (Map<String, Object>)
+            invoke(
+                "normalizeAnthropicGatewayResponse",
+                Map.of(
+                    "id",
+                    "chatcmpl_tool_123",
+                    "model",
+                    "claude-3-5-sonnet",
+                    "choices",
+                    List.of(
+                        Map.of(
+                            "message",
+                            Map.of(
+                                "role", "assistant",
+                                "content", "Calling tool",
+                                "tool_calls",
+                                List.of(
+                                    Map.of(
+                                        "id", "call_1",
+                                        "type", "function",
+                                        "function",
+                                        Map.of(
+                                            "name", "echo_tool",
+                                            "arguments", "{\"text\":\"hello\"}")))),
+                            "finish_reason", "tool_calls")),
+                    "usage",
+                    Map.of("prompt_tokens", 12, "completion_tokens", 8, "total_tokens", 20)));
+
+    assertEquals("tool_use", normalized.get("stop_reason"));
+    List<Map<String, Object>> content =
+        assertInstanceOf(List.class, normalized.get("content"));
+    assertEquals("text", content.get(0).get("type"));
+    assertEquals("Calling tool", content.get(0).get("text"));
+    assertEquals("tool_use", content.get(1).get("type"));
+    assertEquals("call_1", content.get(1).get("id"));
+    assertEquals("echo_tool", content.get(1).get("name"));
+    Map<String, Object> input = assertInstanceOf(Map.class, content.get(1).get("input"));
+    assertEquals("hello", input.get("text"));
+  }
+
+  @Test
+  @SuppressWarnings("unchecked")
+  void buildOpenAiStreamEventsShouldEmitDoneAndUsage() throws Exception {
+    List<String> events =
+        (List<String>)
+            invoke(
+                "buildOpenAiStreamEvents",
+                Map.of(
+                    "id",
+                    "chatcmpl_123",
+                    "created",
+                    1710000000,
+                    "model",
+                    "gpt-4o-mini",
+                    "choices",
+                    List.of(
+                        Map.of(
+                            "message",
+                            Map.of("role", "assistant", "content", "Hello back"),
+                            "finish_reason", "stop")),
+                    "usage",
+                    Map.of("prompt_tokens", 12, "completion_tokens", 8, "total_tokens", 20)),
+                true);
+
+    assertEquals(true, events.get(0).contains("\"role\":\"assistant\""));
+    assertEquals(true, events.get(1).contains("\"content\":\"Hello back\""));
+    assertEquals(true, events.get(2).contains("\"finish_reason\":\"stop\""));
+    assertEquals(true, events.get(3).contains("\"usage\""));
+    assertEquals("data: [DONE]\n\n", events.get(4));
+  }
+
+  @Test
+  @SuppressWarnings("unchecked")
+  void buildAnthropicStreamEventsShouldEmitMessageLifecycle() throws Exception {
+    Map<String, Object> payload = new java.util.LinkedHashMap<>();
+    payload.put("id", "msg_123");
+    payload.put("model", "claude-3-5-sonnet");
+    payload.put(
+        "content",
+        List.of(
+            Map.of("type", "text", "text", "Hello"),
+            Map.of(
+                "type", "tool_use",
+                "id", "toolu_1",
+                "name", "echo_tool",
+                "input", Map.of("text", "hello"))));
+    payload.put("stop_reason", "tool_use");
+    payload.put("stop_sequence", null);
+    payload.put("usage", Map.of("input_tokens", 12, "output_tokens", 8));
+
+    List<String> events =
+        (List<String>)
+            invoke("buildAnthropicStreamEvents", payload);
+
+    assertEquals(true, events.stream().anyMatch(event -> event.startsWith("event: message_start\n")));
+    assertEquals(true, events.stream().anyMatch(event -> event.contains("\"text\":\"Hello\"")));
+    assertEquals(true, events.stream().anyMatch(event -> event.contains("\"type\":\"tool_use\"")));
+    assertEquals(
+        true,
+        events.stream()
+            .anyMatch(event -> event.contains("\"partial_json\":\"{\\\"text\\\":\\\"hello\\\"}\"")));
+    assertEquals(true, events.stream().anyMatch(event -> event.startsWith("event: message_delta\n")));
+    assertEquals(true, events.stream().anyMatch(event -> event.startsWith("event: message_stop\n")));
   }
 
   private Object invoke(String methodName, Object... args) throws Exception {
