@@ -26,6 +26,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -43,6 +47,10 @@ import reactor.core.publisher.Flux;
 
 @Service
 public class GatewayService {
+  private static final Logger log = LoggerFactory.getLogger(GatewayService.class);
+  private static final String INTERNAL_DEBUG_TRACE_ID = "_gateway_debug_trace_id";
+  private static final Pattern UPSTREAM_REQUEST_ID_PATTERN =
+      Pattern.compile("request id: ([^)\\s]+)");
   private final NamedParameterJdbcTemplate jdbcTemplate;
   private final GatewayCacheService cacheService;
   private final CryptoUtils cryptoUtils;
@@ -174,12 +182,16 @@ public class GatewayService {
         && (xApiKey == null || xApiKey.isBlank())) {
       throw new ApiException(401, "Missing AppKey");
     }
+    String debugTraceId = "anthdbg_" + Ids.shortHex(8);
+    Map<String, Object> normalizedRequest =
+        withGatewayDebugTraceId(normalizeAnthropicMessagesRequest(requestBody), debugTraceId);
+    logAnthropicNormalization(debugTraceId, requestIp, false, requestBody, normalizedRequest);
     GatewayResponse response =
         chatCompletions(
             resolveGatewayAuthorization(authorizationHeader, xApiKey),
             idempotencyKey,
             requestIp,
-            normalizeAnthropicMessagesRequest(requestBody));
+            normalizedRequest);
     return new GatewayResponse(
         response.status(), normalizeAnthropicGatewayResponse(response.body()), response.headers());
   }
@@ -266,7 +278,10 @@ public class GatewayService {
       throw new ApiException(401, "Missing AppKey");
     }
     String resolvedAuthorization = resolveGatewayAuthorization(authorizationHeader, xApiKey);
-    Map<String, Object> normalizedRequest = normalizeAnthropicMessagesRequest(requestBody);
+    String debugTraceId = "anthdbg_" + Ids.shortHex(8);
+    Map<String, Object> normalizedRequest =
+        withGatewayDebugTraceId(normalizeAnthropicMessagesRequest(requestBody), debugTraceId);
+    logAnthropicNormalization(debugTraceId, requestIp, true, requestBody, normalizedRequest);
     if (resolvedAuthorization == null || !resolvedAuthorization.startsWith("Bearer ")) {
       throw new ApiException(401, "Missing Bearer AppKey");
     }
@@ -477,7 +492,10 @@ public class GatewayService {
                 Map.of(HttpHeaders.AUTHORIZATION, "Bearer " + apiKey),
                 mergePayload(requestBody, Map.of("model", model, "stream", true)),
                 "openai_request_failed",
-                provider.timeoutMs())
+                provider.timeoutMs(),
+                gatewayDebugTraceId(requestBody),
+                provider.slug(),
+                model)
             .toStream()) {
       stream.forEach(
           event -> {
@@ -569,7 +587,10 @@ public class GatewayService {
                 Map.of("x-api-key", apiKey, "anthropic-version", "2023-06-01"),
                 body,
                 "anthropic_request_failed",
-                provider.timeoutMs())
+                provider.timeoutMs(),
+                gatewayDebugTraceId(requestBody),
+                provider.slug(),
+                model)
             .toStream()) {
       stream.forEach(
           event -> {
@@ -616,7 +637,10 @@ public class GatewayService {
       Map<String, String> headers,
       Object body,
       String fallbackProviderErrorCode,
-      int timeoutMs) {
+      int timeoutMs,
+      String debugTraceId,
+      String providerSlug,
+      String model) {
     return webClient
         .post()
         .uri(url)
@@ -632,7 +656,13 @@ public class GatewayService {
                     .flatMapMany(
                         entity -> {
                           try {
-                            toProviderHttpResponse(entity, fallbackProviderErrorCode);
+                            toProviderHttpResponse(
+                                entity,
+                                fallbackProviderErrorCode,
+                                debugTraceId,
+                                providerSlug,
+                                url,
+                                model);
                             return Flux.empty();
                           } catch (ApiException exception) {
                             return Flux.error(exception);
@@ -644,20 +674,36 @@ public class GatewayService {
         .timeout(Duration.ofMillis(Math.max(timeoutMs, 1000)))
         .onErrorMap(
             java.util.concurrent.TimeoutException.class,
-            error ->
-                new ApiException(
-                    504,
-                    providerNameFromErrorCode(fallbackProviderErrorCode) + " request timed out",
-                    "timeout"))
+            error -> {
+              logProviderTransportFailure(
+                  "gateway.provider.timeout",
+                  debugTraceId,
+                  providerSlug,
+                  model,
+                  url,
+                  "timeout");
+              return new ApiException(
+                  504,
+                  providerNameFromErrorCode(fallbackProviderErrorCode) + " request timed out",
+                  "timeout");
+            })
         .onErrorMap(
             error -> !(error instanceof ApiException),
-            error ->
-                new ApiException(
-                    502,
-                    error.getMessage() == null
-                        ? providerNameFromErrorCode(fallbackProviderErrorCode) + " request failed"
-                        : error.getMessage(),
-                    "network_error"));
+            error -> {
+              logProviderTransportFailure(
+                  "gateway.provider.network_error",
+                  debugTraceId,
+                  providerSlug,
+                  model,
+                  url,
+                  error.getMessage());
+              return new ApiException(
+                  502,
+                  error.getMessage() == null
+                      ? providerNameFromErrorCode(fallbackProviderErrorCode) + " request failed"
+                      : error.getMessage(),
+                  "network_error");
+            });
   }
 
   private StreamingResponseBody staticStreamBody(List<String> events) {
@@ -723,7 +769,7 @@ public class GatewayService {
             """
             select
               a.id, a.tenant_id, a.name, a.qps_limit, a.daily_budget_usd, a.monthly_budget_usd,
-              a.allowed_models::text as allowed_models, a.scopes::text as scopes,
+              a.allowed_models::text as allowed_models, a.scopes::text as scopes, a.owner_user_id,
               t.balance_tokens, t.monthly_budget_usd as tenant_monthly_budget_usd, t.spend_cap_enforced
             from app_keys a
             join tenants t on t.id = a.tenant_id
@@ -851,17 +897,36 @@ public class GatewayService {
 
   private ProviderExecution callProviders(List<ProviderRow> candidates, String model, Map<String, Object> requestBody) {
     List<String> errors = new ArrayList<>();
+    String debugTraceId = gatewayDebugTraceId(requestBody);
     for (int i = 0; i < candidates.size(); i++) {
       ProviderRow provider = candidates.get(i);
       try {
         ProviderExecution execution = callProvider(provider, model, requestBody, i + 1);
         return execution;
       } catch (ApiException exception) {
+        if (debugTraceId != null) {
+          log.warn(
+              "gateway.provider.failed traceId={} provider={} model={} attempt={} status={} code={} message={}",
+              debugTraceId,
+              provider.slug(),
+              model,
+              i + 1,
+              exception.getStatusCode(),
+              exception.getCode(),
+              exception.getMessage());
+        }
         errors.add(
             provider.slug()
                 + ":"
                 + (exception.getCode() == null ? exception.getMessage() : exception.getCode()));
       }
+    }
+    if (debugTraceId != null) {
+      log.error(
+          "gateway.provider.failed_all traceId={} model={} errors={}",
+          debugTraceId,
+          model,
+          String.join(", ", errors));
     }
     throw new ApiException(
         502,
@@ -921,7 +986,10 @@ public class GatewayService {
         Map.of(HttpHeaders.AUTHORIZATION, "Bearer " + apiKey),
         mergePayload(requestBody, Map.of("model", model, "stream", false)),
         "openai_request_failed",
-        provider.timeoutMs());
+        provider.timeoutMs(),
+        gatewayDebugTraceId(requestBody),
+        provider.slug(),
+        model);
   }
 
   private ProviderHttpResponse callAnthropic(
@@ -958,7 +1026,10 @@ public class GatewayService {
             Map.of("x-api-key", apiKey, "anthropic-version", "2023-06-01"),
             body,
             "anthropic_request_failed",
-            provider.timeoutMs());
+            provider.timeoutMs(),
+            gatewayDebugTraceId(requestBody),
+            provider.slug(),
+            model);
     Map<String, Object> raw = upstream.payload();
     AnthropicAssistantPayload assistantPayload = extractAnthropicAssistantPayload(raw.get("content"));
     Map<String, Object> usage = (Map<String, Object>) raw.getOrDefault("usage", Map.of());
@@ -1020,7 +1091,10 @@ public class GatewayService {
                         requestBody.get("max_completion_tokens"),
                         intValue(requestBody.get("max_tokens"), 512)))),
             "google_request_failed",
-            provider.timeoutMs());
+            provider.timeoutMs(),
+            gatewayDebugTraceId(requestBody),
+            provider.slug(),
+            model);
     Map<String, Object> raw = upstream.payload();
     List<?> candidates = (List<?>) raw.getOrDefault("candidates", List.of());
     String text = "";
@@ -1242,12 +1316,12 @@ public class GatewayService {
     jdbcTemplate.update(
         """
         insert into api_request_logs (
-          id, tenant_id, app_key_id, provider_id, request_id, trace_id, model,
+          id, tenant_id, user_id, app_key_id, provider_id, request_id, trace_id, model,
           prompt_tokens, completion_tokens, total_tokens, latency_ms, cache_hit,
           routing_primary, routing_actual, routing_reason, provider_error_code, retry_count,
           request_source_ip, status_code, idempotency_key, created_at
         ) values (
-          :id, :tenantId, :appKeyId, :providerId, :requestId, :traceId, :model,
+          :id, :tenantId, :userId, :appKeyId, :providerId, :requestId, :traceId, :model,
           :promptTokens, :completionTokens, :totalTokens, :latencyMs, false,
           :routingPrimary, :routingActual, :routingReason, :providerErrorCode, :retryCount,
           :requestSourceIp, :statusCode, :idempotencyKey, :createdAt
@@ -1256,6 +1330,7 @@ public class GatewayService {
         new MapSqlParameterSource()
             .addValue("id", logId)
             .addValue("tenantId", appKey.tenantId())
+            .addValue("userId", appKey.ownerUserId())
             .addValue("appKeyId", appKey.id())
             .addValue("providerId", execution.provider().id())
             .addValue("requestId", requestId)
@@ -1333,16 +1408,17 @@ public class GatewayService {
     jdbcTemplate.update(
         """
         insert into api_request_logs (
-          id, tenant_id, app_key_id, provider_id, request_id, trace_id, model, prompt_tokens, completion_tokens,
+          id, tenant_id, user_id, app_key_id, provider_id, request_id, trace_id, model, prompt_tokens, completion_tokens,
           total_tokens, latency_ms, cache_hit, routing_primary, routing_actual, retry_count, request_source_ip,
           status_code, idempotency_key, created_at
         ) values (
-          :id, :tenantId, :appKeyId, :providerId, :requestId, :traceId, :model, 0, 0, 0, 8, true, 'cache', 'cache', 0, :ip, 200, :idempotencyKey, :createdAt
+          :id, :tenantId, :userId, :appKeyId, :providerId, :requestId, :traceId, :model, 0, 0, 0, 8, true, 'cache', 'cache', 0, :ip, 200, :idempotencyKey, :createdAt
         )
         """,
         new MapSqlParameterSource()
             .addValue("id", logId)
             .addValue("tenantId", appKey.tenantId())
+            .addValue("userId", appKey.ownerUserId())
             .addValue("appKeyId", appKey.id())
             .addValue("providerId", provider.id())
             .addValue("requestId", "req_" + Ids.shortHex(8))
@@ -1378,7 +1454,10 @@ public class GatewayService {
       Map<String, String> headers,
       Object body,
       String fallbackProviderErrorCode,
-      int timeoutMs) {
+      int timeoutMs,
+      String debugTraceId,
+      String providerSlug,
+      String model) {
     return webClient
         .post()
         .uri(url)
@@ -1392,27 +1471,56 @@ public class GatewayService {
                     .map(
                         entity ->
                             toProviderHttpResponse(
-                                entity, fallbackProviderErrorCode)))
+                                entity,
+                                fallbackProviderErrorCode,
+                                debugTraceId,
+                                providerSlug,
+                                url,
+                                model)))
         .timeout(Duration.ofMillis(Math.max(timeoutMs, 1000)))
         .onErrorMap(
             java.util.concurrent.TimeoutException.class,
-            error -> new ApiException(504, providerNameFromErrorCode(fallbackProviderErrorCode) + " request timed out", "timeout"))
+            error -> {
+              logProviderTransportFailure(
+                  "gateway.provider.timeout",
+                  debugTraceId,
+                  providerSlug,
+                  model,
+                  url,
+                  "timeout");
+              return new ApiException(
+                  504,
+                  providerNameFromErrorCode(fallbackProviderErrorCode) + " request timed out",
+                  "timeout");
+            })
         .onErrorMap(
             error ->
                 !(error instanceof ApiException),
-            error ->
-                new ApiException(
-                    502,
-                    error.getMessage() == null
-                        ? providerNameFromErrorCode(fallbackProviderErrorCode) + " request failed"
-                        : error.getMessage(),
-                    "network_error"))
+            error -> {
+              logProviderTransportFailure(
+                  "gateway.provider.network_error",
+                  debugTraceId,
+                  providerSlug,
+                  model,
+                  url,
+                  error.getMessage());
+              return new ApiException(
+                  502,
+                  error.getMessage() == null
+                      ? providerNameFromErrorCode(fallbackProviderErrorCode) + " request failed"
+                      : error.getMessage(),
+                  "network_error");
+            })
         .block();
   }
 
   private ProviderHttpResponse toProviderHttpResponse(
       org.springframework.http.ResponseEntity<String> entity,
-      String fallbackProviderErrorCode) {
+      String fallbackProviderErrorCode,
+      String debugTraceId,
+      String providerSlug,
+      String url,
+      String model) {
     Map<String, Object> payload = readBodyAsMap(entity.getBody());
     int statusCode = entity.getStatusCode().value();
     if (statusCode >= 400) {
@@ -1424,13 +1532,27 @@ public class GatewayService {
               stringValue(nestedError.get("status")),
               stringValue(payload.get("code")),
               fallbackProviderErrorCode);
-      throw new ApiException(
-          statusCode,
+      String providerMessage =
           firstNonBlank(
               stringValue(nestedError.get("message")),
               stringValue(payload.get("message")),
               stringValue(payload.get("error")),
-              "Provider request failed"),
+              "Provider request failed");
+      if (debugTraceId != null) {
+        log.warn(
+            "gateway.provider.http_error traceId={} provider={} model={} url={} status={} code={} upstreamRequestId={} message={}",
+            debugTraceId,
+            providerSlug,
+            model,
+            url,
+            statusCode,
+            providerErrorCode,
+            extractUpstreamRequestId(payload, providerMessage),
+            providerMessage);
+      }
+      throw new ApiException(
+          statusCode,
+          providerMessage,
           providerErrorCode);
     }
     return new ProviderHttpResponse(statusCode, payload, null);
@@ -1527,6 +1649,198 @@ public class GatewayService {
       }
     }
     return stringifyMessageContent(rawContent);
+  }
+
+  private void logAnthropicNormalization(
+      String debugTraceId,
+      String requestIp,
+      boolean stream,
+      Map<String, Object> anthropicRequest,
+      Map<String, Object> normalizedOpenAiRequest) {
+    Map<String, Object> rawSummary = summarizeAnthropicRequest(anthropicRequest);
+    Map<String, Object> normalizedSummary = summarizeOpenAiRequest(normalizedOpenAiRequest);
+    int rawMaxToolUseBlocks = intValue(rawSummary.get("max_tool_use_blocks"), 0);
+    int normalizedMaxToolCalls = intValue(normalizedSummary.get("max_tool_calls"), 0);
+    log.info(
+        "gateway.anthropic.debug traceId={} stream={} requestIp={} raw={} normalized={}",
+        debugTraceId,
+        stream,
+        requestIp,
+        jsons.stringify(rawSummary),
+        jsons.stringify(normalizedSummary));
+    if (rawMaxToolUseBlocks > 120 || normalizedMaxToolCalls > 120) {
+      log.warn(
+          "gateway.anthropic.debug.near_limit traceId={} stream={} requestIp={} rawMaxToolUseBlocks={} normalizedMaxToolCalls={}",
+          debugTraceId,
+          stream,
+          requestIp,
+          rawMaxToolUseBlocks,
+          normalizedMaxToolCalls);
+    }
+  }
+
+  private void logProviderTransportFailure(
+      String eventName,
+      String debugTraceId,
+      String providerSlug,
+      String model,
+      String url,
+      String message) {
+    if (debugTraceId == null) {
+      return;
+    }
+    log.warn(
+        "{} traceId={} provider={} model={} url={} message={}",
+        eventName,
+        debugTraceId,
+        providerSlug,
+        model,
+        url,
+        message);
+  }
+
+  private Map<String, Object> withGatewayDebugTraceId(
+      Map<String, Object> requestBody, String debugTraceId) {
+    LinkedHashMap<String, Object> copy = new LinkedHashMap<>(requestBody);
+    copy.put(INTERNAL_DEBUG_TRACE_ID, debugTraceId);
+    return copy;
+  }
+
+  private String gatewayDebugTraceId(Map<String, Object> requestBody) {
+    return requestBody == null ? null : stringValue(requestBody.get(INTERNAL_DEBUG_TRACE_ID));
+  }
+
+  private String extractUpstreamRequestId(Map<String, Object> payload, String providerMessage) {
+    String raw =
+        firstNonBlank(
+            stringValue(payload.get("request_id")),
+            stringValue(payload.get("requestId")),
+            providerMessage);
+    if (raw == null || raw.isBlank()) {
+      return null;
+    }
+    Matcher matcher = UPSTREAM_REQUEST_ID_PATTERN.matcher(raw);
+    if (matcher.find()) {
+      return matcher.group(1);
+    }
+    return raw.contains("request id") ? raw : null;
+  }
+
+  private Map<String, Object> summarizeAnthropicRequest(Map<String, Object> requestBody) {
+    LinkedHashMap<String, Object> summary = new LinkedHashMap<>();
+    summary.put("model", normalizeRequestedModel(requestBody.get("model")));
+    summary.put("stream", requestBody.get("stream"));
+    summary.put("messages_count", listSize(requestBody.get("messages")));
+    summary.put("system_blocks", contentBlockCount(requestBody.get("system")));
+    summary.put("tools_count", listSize(requestBody.get("tools")));
+    summary.put("tool_choice", toolChoiceSummary(requestBody.get("tool_choice")));
+
+    ArrayList<Map<String, Object>> perMessage = new ArrayList<>();
+    int maxToolUseBlocks = 0;
+    if (requestBody.get("messages") instanceof List<?> messages) {
+      for (int i = 0; i < messages.size(); i++) {
+        if (!(messages.get(i) instanceof Map<?, ?> map)) {
+          continue;
+        }
+        String role = stringValue(map.get("role"));
+        Object content = map.get("content");
+        int contentBlocks = contentBlockCount(content);
+        int toolUseBlocks = anthropicBlockTypeCount(content, "tool_use");
+        int toolResultBlocks = anthropicBlockTypeCount(content, "tool_result");
+        int textBlocks = anthropicBlockTypeCount(content, "text");
+        maxToolUseBlocks = Math.max(maxToolUseBlocks, toolUseBlocks);
+        perMessage.add(
+            Map.of(
+                "index", i,
+                "role", role == null ? "user" : role,
+                "content_blocks", contentBlocks,
+                "text_blocks", textBlocks,
+                "tool_use_blocks", toolUseBlocks,
+                "tool_result_blocks", toolResultBlocks));
+      }
+    }
+    summary.put("max_tool_use_blocks", maxToolUseBlocks);
+    summary.put("message_summaries", perMessage);
+    return summary;
+  }
+
+  private Map<String, Object> summarizeOpenAiRequest(Map<String, Object> requestBody) {
+    LinkedHashMap<String, Object> summary = new LinkedHashMap<>();
+    summary.put("model", normalizeRequestedModel(requestBody.get("model")));
+    summary.put("stream", requestBody.get("stream"));
+    summary.put("messages_count", listSize(requestBody.get("messages")));
+    summary.put("tools_count", listSize(requestBody.get("tools")));
+    summary.put("tool_choice", toolChoiceSummary(requestBody.get("tool_choice")));
+
+    ArrayList<Map<String, Object>> perMessage = new ArrayList<>();
+    int maxToolCalls = 0;
+    if (requestBody.get("messages") instanceof List<?> messages) {
+      for (int i = 0; i < messages.size(); i++) {
+        if (!(messages.get(i) instanceof Map<?, ?> map)) {
+          continue;
+        }
+        String role = stringValue(map.get("role"));
+        int contentBlocks = contentBlockCount(map.get("content"));
+        int toolCalls = listSize(map.get("tool_calls"));
+        maxToolCalls = Math.max(maxToolCalls, toolCalls);
+        perMessage.add(
+            Map.of(
+                "index", i,
+                "role", role == null ? "user" : role,
+                "content_blocks", contentBlocks,
+                "tool_calls", toolCalls));
+      }
+    }
+    summary.put("max_tool_calls", maxToolCalls);
+    summary.put("message_summaries", perMessage);
+    return summary;
+  }
+
+  private int listSize(Object raw) {
+    return raw instanceof List<?> list ? list.size() : 0;
+  }
+
+  private int contentBlockCount(Object rawContent) {
+    if (rawContent instanceof List<?> blocks) {
+      return blocks.size();
+    }
+    return rawContent == null ? 0 : 1;
+  }
+
+  private int anthropicBlockTypeCount(Object rawContent, String type) {
+    if (!(rawContent instanceof List<?> blocks)) {
+      return 0;
+    }
+    int count = 0;
+    for (Object block : blocks) {
+      if (block instanceof Map<?, ?> map
+          && type.equals(stringValue(map.get("type")))) {
+        count++;
+      }
+    }
+    return count;
+  }
+
+  private Map<String, Object> toolChoiceSummary(Object rawToolChoice) {
+    LinkedHashMap<String, Object> summary = new LinkedHashMap<>();
+    if (rawToolChoice == null) {
+      summary.put("type", "none");
+      return summary;
+    }
+    if (rawToolChoice instanceof String text) {
+      summary.put("type", text);
+      return summary;
+    }
+    Map<String, Object> map = nestedMap(rawToolChoice);
+    summary.put("type", firstNonBlank(stringValue(map.get("type")), "object"));
+    String name = stringValue(map.get("name"));
+    if (name == null) {
+      name = stringValue(nestedMap(map.get("function")).get("name"));
+    }
+    if (name != null && !name.isBlank()) {
+      summary.put("name", name);
+    }
+    return summary;
   }
 
   private Map<String, Object> disableStreamFlag(Map<String, Object> requestBody) {
@@ -2175,6 +2489,7 @@ public class GatewayService {
 
   private static Map<String, Object> mergePayload(Map<String, Object> original, Map<String, Object> extra) {
     LinkedHashMap<String, Object> merged = new LinkedHashMap<>(original);
+    merged.remove(INTERNAL_DEBUG_TRACE_ID);
     merged.putAll(extra);
     return merged;
   }
@@ -2258,6 +2573,7 @@ public class GatewayService {
       BigDecimal monthlyBudgetUsd,
       String allowedModelsJson,
       String scopesJson,
+      String ownerUserId,
       BigDecimal balanceTokens,
       BigDecimal tenantMonthlyBudgetUsd,
       boolean spendCapEnforced) {
@@ -2887,6 +3203,7 @@ public class GatewayService {
               rs.getBigDecimal("monthly_budget_usd"),
               rs.getString("allowed_models"),
               rs.getString("scopes"),
+              rs.getString("owner_user_id"),
               rs.getBigDecimal("balance_tokens"),
               rs.getBigDecimal("tenant_monthly_budget_usd"),
               rs.getBoolean("spend_cap_enforced"));

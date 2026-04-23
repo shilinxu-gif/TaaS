@@ -200,6 +200,15 @@ public class ConsoleController {
         principal(), userId, tenantId, body, clientIp(forwardedFor));
   }
 
+  @PatchMapping("/admin/users/tenants/{tenantId}/token-balance")
+  public Map<String, Object> updateAdminTenantTokenBalance(
+      @PathVariable String tenantId,
+      @RequestBody Map<String, Object> body,
+      @RequestHeader(value = "X-Forwarded-For", required = false) String forwardedFor) {
+    return consoleService.updateAdminTenantTokenBalance(
+        principal(), tenantId, body, clientIp(forwardedFor));
+  }
+
   @GetMapping("/admin/usage-overview")
   public Map<String, Object> adminUsageOverview(
       @RequestParam(required = false) String from,

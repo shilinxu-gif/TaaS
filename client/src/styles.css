@@ -4024,6 +4024,31 @@ ul.saas-chart {
   padding: 2rem 1rem !important;
 }
 
+.admin-users-membership {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.2rem 0;
+  min-height: 2.5rem;
+}
+
+.admin-users-membership--actions {
+  justify-content: flex-start;
+}
+
+.admin-users-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
+.admin-users-actions .btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
 .bill-td-date {
   font-size: 0.78rem;
   color: #64748b;

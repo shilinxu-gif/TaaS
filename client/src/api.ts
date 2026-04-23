@@ -660,6 +660,17 @@ export type AdminModelUsageRow = {
   successRate: number;
 };
 
+export type AdminUserModelUsageRow = {
+  userId: string;
+  userName: string;
+  email: string | null;
+  model: string;
+  requestCount: number;
+  totalTokens: number;
+  spendUsd: string;
+  lastCalledAt: string | null;
+};
+
 export type AdminRechargeOverviewRow = {
   tenantId: string;
   tenantName: string;
@@ -725,6 +736,7 @@ export type AdminUsageOverview = {
   summaries: AdminUsageSummaryRow[];
   appKeys: AdminAppKeyUsageRow[];
   models: AdminModelUsageRow[];
+  userModels: AdminUserModelUsageRow[];
   appKeyTrends: AdminTrendSeries[];
   modelTrends: AdminTrendSeries[];
   recharges: AdminRechargeOverviewRow[];

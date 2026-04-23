@@ -53,7 +53,15 @@ class GatewayServiceTest {
     ApiException exception =
         assertThrows(
             ApiException.class,
-            () -> invoke("toProviderHttpResponse", entity, "openai_request_failed"));
+            () ->
+                invoke(
+                    "toProviderHttpResponse",
+                    entity,
+                    "openai_request_failed",
+                    "anthdbg_test",
+                    "openai",
+                    "https://example.com/chat/completions",
+                    "gpt-4o-mini"));
 
     assertEquals(429, exception.getStatusCode());
     assertEquals("Rate limited", exception.getMessage());

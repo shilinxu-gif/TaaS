@@ -24,6 +24,13 @@ type CreateUserForm = {
   tokenBalance: string;
 };
 
+type TenantBalanceForm = {
+  tenantId: string;
+  tenantName: string;
+  userName: string;
+  tokenBalance: string;
+};
+
 function defaultCreateForm(): CreateUserForm {
   return {
     name: "",
@@ -46,11 +53,13 @@ export function AdminUsers() {
   const [createOpen, setCreateOpen] = useState(false);
   const [createForm, setCreateForm] = useState<CreateUserForm>(() => defaultCreateForm());
   const [configOpen, setConfigOpen] = useState(false);
+  const [tokenDialog, setTokenDialog] = useState<TenantBalanceForm | null>(null);
   const [selectedMembership, setSelectedMembership] = useState<{
     userId: string;
     userName: string;
     tenantId: string;
     tenantName: string;
+    balanceTokens: string;
     allowedModels: string[];
   } | null>(null);
   const [modelSelection, setModelSelection] = useState<string[]>([]);
@@ -102,6 +111,26 @@ export function AdminUsers() {
       setConfigOpen(false);
       setSelectedMembership(null);
       await qc.invalidateQueries({ queryKey: ["admin", "users"] });
+    },
+  });
+
+  const tokenBalanceMut = useMutation({
+    mutationFn: async () => {
+      if (!tokenDialog) return;
+      return api<{ ok: boolean; balanceTokens: string }>(
+        `/admin/users/tenants/${tokenDialog.tenantId}/token-balance`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ tokenBalance: tokenDialog.tokenBalance }),
+        }
+      );
+    },
+    onSuccess: async () => {
+      setTokenDialog(null);
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["admin", "users"] }),
+        qc.invalidateQueries({ queryKey: ["admin", "users", "tenant-options"] }),
+      ]);
     },
   });
 
@@ -185,11 +214,30 @@ export function AdminUsers() {
       userName: user.name,
       tenantId: membership.tenantId,
       tenantName: membership.tenantName,
+      balanceTokens: membership.balanceTokens,
       allowedModels: membership.allowedModels,
     });
     setModelSelection(membership.allowedModels);
     setConfigOpen(true);
     saveMut.reset();
+  }
+
+  function openTokenDialog(
+    user: Pick<AdminUserRow, "name">,
+    membership: AdminUserRow["memberships"][number]
+  ) {
+    setTokenDialog({
+      tenantId: membership.tenantId,
+      tenantName: membership.tenantName,
+      userName: user.name,
+      tokenBalance: membership.balanceTokens,
+    });
+    tokenBalanceMut.reset();
+  }
+
+  function closeTokenDialog() {
+    setTokenDialog(null);
+    tokenBalanceMut.reset();
   }
 
   if (usersQuery.isLoading) {
@@ -215,24 +263,34 @@ export function AdminUsers() {
             )}
           </p>
         </div>
-        <button type="button" className="btn btn-primary" onClick={openCreateModal}>
-          {text("新增账号", "Create account")}
-        </button>
       </header>
 
       <section className="bill-section">
-        <div className="pane-search" style={{ maxWidth: 420 }}>
-          <svg width="18" height="18" viewBox="0 0 24 24" style={{ opacity: 0.45 }}>
-            <path
-              fill="currentColor"
-              d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: "0.9rem",
+            flexWrap: "wrap",
+          }}
+        >
+          <div className="pane-search" style={{ maxWidth: 420, minWidth: 280 }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" style={{ opacity: 0.45 }}>
+              <path
+                fill="currentColor"
+                d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"
+              />
+            </svg>
+            <input
+              placeholder={text("搜索姓名 / 邮箱 / 租户", "Search by name / email / tenant")}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
             />
-          </svg>
-          <input
-            placeholder={text("搜索姓名 / 邮箱 / 租户", "Search by name / email / tenant")}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+          </div>
+          <button type="button" className="btn btn-primary" onClick={openCreateModal}>
+            {text("新增账号", "Create account")}
+          </button>
         </div>
       </section>
 
@@ -252,12 +310,13 @@ export function AdminUsers() {
                 <th>{text("成功充值(CNY)", "Successful Recharge (CNY)")}</th>
                 <th>{text("邮箱验证", "Email Verification")}</th>
                 <th>{text("创建时间", "Created At")}</th>
+                <th>{text("操作", "Actions")}</th>
               </tr>
             </thead>
             <tbody>
               {list.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="bill-table-empty muted">
+                  <td colSpan={11} className="bill-table-empty muted">
                     {text("暂无符合条件的用户", "No users match the current filters")}
                   </td>
                 </tr>
@@ -273,13 +332,7 @@ export function AdminUsers() {
                         : row.memberships.map((item) => (
                             <div
                               key={`${row.id}-${item.tenantId}`}
-                              style={{
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "space-between",
-                                gap: "0.5rem",
-                                padding: "0.2rem 0",
-                              }}
+                              className="admin-users-membership"
                             >
                               <span>
                                 {`${item.tenantName}（${item.role} / ${item.tenantStatus}）`}
@@ -300,13 +353,6 @@ export function AdminUsers() {
                                       )}
                                 </span>
                               </span>
-                              <button
-                                type="button"
-                                className="btn btn-ghost"
-                                onClick={() => openConfig(row, item)}
-                              >
-                                {text("配置模型", "Configure models")}
-                              </button>
                             </div>
                           ))}
                     </td>
@@ -316,6 +362,33 @@ export function AdminUsers() {
                     <td>{row.rechargeSuccessCny}</td>
                     <td>{row.emailVerifiedAt ? text("已验证", "Verified") : text("未验证", "Unverified")}</td>
                     <td>{formatDateTime(row.createdAt, i18n.resolvedLanguage)}</td>
+                    <td>
+                      {row.memberships.length === 0
+                        ? text("—", "—")
+                        : row.memberships.map((item) => (
+                            <div
+                              key={`${row.id}-${item.tenantId}-actions`}
+                              className="admin-users-membership admin-users-membership--actions"
+                            >
+                              <div className="admin-users-actions">
+                                <button
+                                  type="button"
+                                  className="btn btn-ghost"
+                                  onClick={() => openTokenDialog(row, item)}
+                                >
+                                  {text("修改 Token", "Edit tokens")}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn btn-ghost"
+                                  onClick={() => openConfig(row, item)}
+                                >
+                                  {text("配置模型", "Configure models")}
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                    </td>
                   </tr>
                 ))
               )}
@@ -532,6 +605,88 @@ export function AdminUsers() {
                   }
                 >
                   {createMut.isPending ? text("创建中…", "Creating…") : text("确认创建", "Create")}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {tokenDialog ? (
+        <div
+          className="keys-modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="admin-user-token-title"
+        >
+          <div className="keys-modal">
+            <div className="keys-modal-hd">
+              <h2 id="admin-user-token-title">
+                {text("修改租户 Token 余额", "Update tenant token balance")}
+              </h2>
+              <button
+                type="button"
+                className="btn btn-header-ghost"
+                onClick={closeTokenDialog}
+                disabled={tokenBalanceMut.isPending}
+              >
+                {text("关闭", "Close")}
+              </button>
+            </div>
+            <div className="keys-form">
+              <div className="provider-delete-warning">
+                <p className="provider-delete-title">
+                  {text(
+                    `${tokenDialog.userName} / ${tokenDialog.tenantName}`,
+                    `${tokenDialog.userName} / ${tokenDialog.tenantName}`
+                  )}
+                </p>
+                <p className="muted provider-delete-text">
+                  {text(
+                    "这里修改的是租户当前 Token 余额，保存后该租户下所有成员都会看到新的余额。",
+                    "This updates the tenant's current token balance. All members in the tenant will see the new balance after saving."
+                  )}
+                </p>
+              </div>
+
+              <label className="keys-field">
+                <span className="keys-label">{text("Token 余额", "Token Balance")}</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={tokenDialog.tokenBalance}
+                  onChange={(e) =>
+                    setTokenDialog((current) =>
+                      current ? { ...current, tokenBalance: e.target.value } : current
+                    )
+                  }
+                  disabled={tokenBalanceMut.isPending}
+                />
+              </label>
+
+              {tokenBalanceMut.error ? (
+                <p className="error">{(tokenBalanceMut.error as Error).message}</p>
+              ) : null}
+
+              <div className="keys-modal-actions">
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={closeTokenDialog}
+                  disabled={tokenBalanceMut.isPending}
+                >
+                  {text("取消", "Cancel")}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => tokenBalanceMut.mutate()}
+                  disabled={tokenBalanceMut.isPending}
+                >
+                  {tokenBalanceMut.isPending
+                    ? text("保存中…", "Saving…")
+                    : text("保存余额", "Save balance")}
                 </button>
               </div>
             </div>

@@ -413,10 +413,10 @@ public class ConsoleService {
         """
         insert into app_keys (
           id, tenant_id, name, description, token, token_hash, token_preview, status, environment,
-          scopes, qps_limit, daily_budget_usd, monthly_budget_usd, allowed_models, created_at
+          scopes, qps_limit, daily_budget_usd, monthly_budget_usd, allowed_models, owner_user_id, created_at
         ) values (
           :id, :tenantId, :name, :description, null, :tokenHash, :tokenPreview, :status, :environment,
-          cast(:scopes as jsonb), :qpsLimit, :dailyBudgetUsd, :monthlyBudgetUsd, cast(:allowedModels as jsonb), :createdAt
+          cast(:scopes as jsonb), :qpsLimit, :dailyBudgetUsd, :monthlyBudgetUsd, cast(:allowedModels as jsonb), :ownerUserId, :createdAt
         )
         """,
         new MapSqlParameterSource()
@@ -438,6 +438,7 @@ public class ConsoleService {
                 "allowedModels",
                 jsons.stringify(
                     defaultStringList(body.get("allowedModels"), memberAllowedModels)))
+            .addValue("ownerUserId", principal.userId())
             .addValue("createdAt", ts(now)));
 
     auditService.write(
@@ -1425,6 +1426,52 @@ public class ConsoleService {
     return Map.of("ok", true, "userId", userId, "tenantId", tenantId, "allowedModels", allowedModels);
   }
 
+  public Map<String, Object> updateAdminTenantTokenBalance(
+      JwtPrincipal principal, String tenantId, Map<String, Object> body, String ip) {
+    requirePlatformAdmin(principal);
+    BigDecimal tokenBalance;
+    try {
+      tokenBalance = decimalOrDefault(body.get("tokenBalance"), null);
+    } catch (RuntimeException ex) {
+      throw new ApiException(400, "Token 余额格式不正确");
+    }
+    if (tokenBalance == null) {
+      throw new ApiException(400, "Token 余额不能为空");
+    }
+    if (tokenBalance.compareTo(BigDecimal.ZERO) < 0
+        || tokenBalance.compareTo(new BigDecimal("999999999999999")) > 0) {
+      throw new ApiException(400, "Token 余额超出允许范围");
+    }
+    TenantRow tenant = requireTenant(tenantId);
+    jdbcTemplate.update(
+        """
+        update tenants
+        set balance_tokens = :balanceTokens, updated_at = :now
+        where id = :tenantId
+        """,
+        new MapSqlParameterSource()
+            .addValue("tenantId", tenantId)
+            .addValue("balanceTokens", tokenBalance)
+            .addValue("now", ts(Instant.now())));
+    auditService.write(
+        principal.tenantId(),
+        principal.userId(),
+        "tenant",
+        "tenant.balance_tokens.update",
+        "tenant",
+        tenantId,
+        ip,
+        orderedMap(
+            "tenantName", tenant.name(),
+            "tenantSlug", tenant.slug(),
+            "balanceTokens", MoneyUtils.money(tokenBalance)));
+    return orderedMap(
+        "ok", true,
+        "tenantId", tenantId,
+        "tenantName", tenant.name(),
+        "balanceTokens", MoneyUtils.money(tokenBalance));
+  }
+
   public Map<String, Object> adminUsageOverview(
       JwtPrincipal principal, String from, String to, String dimension) {
     requirePlatformAdmin(principal);
@@ -1510,6 +1557,7 @@ public class ConsoleService {
                           rs.getBigDecimal("avg_latency_ms").setScale(0, RoundingMode.HALF_UP).intValue(),
                       "successRate", successRate);
                 }),
+        "userModels", adminUserModelUsage(range),
         "appKeyTrends", buildAppKeyTrends(range),
         "modelTrends", buildModelTrends(range),
         "recharges", adminRechargeOverview(range),
@@ -1549,14 +1597,16 @@ public class ConsoleService {
     jdbcTemplate.query(
         """
         select
-          tm.user_id,
+          coalesce(l.user_id, a.owner_user_id) as user_id,
           count(l.id) as request_count,
           coalesce(sum(l.total_tokens), 0) as total_tokens,
           max(l.created_at) as last_request_at
-        from tenant_members tm
-        left join api_request_logs l
-          on l.tenant_id = tm.tenant_id and l.created_at >= :fromTs and l.created_at < :toTs
-        group by tm.user_id
+        from api_request_logs l
+        join app_keys a on a.id = l.app_key_id
+        where l.created_at >= :fromTs
+          and l.created_at < :toTs
+          and coalesce(l.user_id, a.owner_user_id) is not null
+        group by coalesce(l.user_id, a.owner_user_id)
         """,
         usageRangeParams(range),
         (rs, rowNum) -> {
@@ -1615,6 +1665,48 @@ public class ConsoleService {
           return String.valueOf(left.get("name")).compareToIgnoreCase(String.valueOf(right.get("name")));
         });
     return users;
+  }
+
+  private List<Map<String, Object>> adminUserModelUsage(UsageRange range) {
+    return jdbcTemplate.query(
+        """
+        select
+          coalesce(l.user_id, a.owner_user_id) as user_id,
+          coalesce(nullif(trim(u.name), ''), u.email, '未知用户') as user_name,
+          u.email,
+          coalesce(l.model, 'unknown') as model,
+          count(l.id) as request_count,
+          coalesce(sum(l.total_tokens), 0) as total_tokens,
+          coalesce(sum(b.amount_usd), 0) as spend_usd,
+          max(l.created_at) as last_called_at
+        from api_request_logs l
+        join app_keys a on a.id = l.app_key_id
+        left join users u on u.id = coalesce(l.user_id, a.owner_user_id)
+        left join billing_records b on b.log_id = l.id
+        where l.created_at >= :fromTs
+          and l.created_at < :toTs
+          and coalesce(l.user_id, a.owner_user_id) is not null
+        group by
+          coalesce(l.user_id, a.owner_user_id),
+          coalesce(nullif(trim(u.name), ''), u.email, '未知用户'),
+          u.email,
+          coalesce(l.model, 'unknown')
+        order by request_count desc, total_tokens desc, user_name asc, model asc
+        """,
+        usageRangeParams(range),
+        (rs, rowNum) ->
+            orderedMap(
+                "userId", rs.getString("user_id"),
+                "userName", rs.getString("user_name"),
+                "email", rs.getString("email"),
+                "model", rs.getString("model"),
+                "requestCount", rs.getLong("request_count"),
+                "totalTokens", rs.getLong("total_tokens"),
+                "spendUsd", MoneyUtils.money(rs.getBigDecimal("spend_usd")),
+                "lastCalledAt",
+                    rs.getTimestamp("last_called_at") == null
+                        ? null
+                        : rs.getTimestamp("last_called_at").toInstant()));
   }
 
   private List<Map<String, Object>> adminTenantUsageSummaries(UsageRange range) {

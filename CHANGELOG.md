@@ -2,6 +2,33 @@
 
 ## Unreleased
 
+### 2026-04-23 14:35 管理员统计页新增用户模型归因
+
+- 改动内容：为 `app_keys` 新增 `owner_user_id`、为 `api_request_logs` 新增 `user_id`，新建迁移并让网关在请求成功与幂等缓存命中时写入用户归因；管理员统计接口新增“用户模型调用情况”数据集，并将用户维度汇总的请求量改为按 `api_request_logs.user_id / app_keys.owner_user_id` 归因统计；前端管理统计页同步新增“用户模型调用情况”表，展示用户、邮箱、模型、请求数、总 Token、费用与最近调用时间。
+- 影响范围：`backend-java/src/main/resources/db/migration/V20260423160000__usage_user_attribution.sql`、`backend-java/src/main/java/com/taas/gateway/GatewayService.java`、`backend-java/src/main/java/com/taas/console/ConsoleService.java`、`client/src/api.ts`、`client/src/pages/AdminUsage.tsx`、`CHANGELOG.md`。
+- 验证情况：已完成最近改动文件的 linter 检查且无报错；待执行后端测试/编译与前端构建，确认新字段、统计接口与页面表格能一起通过。
+- 运维动作：发布前需要执行新增数据库迁移，再重启后端服务加载新的请求日志归因逻辑；前端需重新发版静态资源；本地联调环境按项目规则重启前后端开发服务。
+- 线上数据影响：会新增 `app_keys.owner_user_id` 与 `api_request_logs.user_id` 字段及索引；不回填历史日志，历史请求会在统计查询时尽量回退使用当前 `app_keys.owner_user_id` 进行展示，仅影响管理统计口径，不改动历史账单、余额或请求结果。
+- 风险控制：新字段均为可空并通过 `coalesce(l.user_id, a.owner_user_id)` 做兼容查询，避免迁移前后请求或存量 AppKey 因归因字段缺失导致接口报错；写日志只在网关内部生效，不影响上游协议兼容性。
+
+### 2026-04-23 14:12 上游失败日志串联 Anthropic 调试 traceId
+
+- 改动内容：将 `POST /v1/messages` 入口生成的调试 `traceId` 透传到网关内部 provider 调用链，在上游返回 `4xx/5xx`、超时、网络错误以及 `all_providers_failed` 聚合失败时同步打印同一个 `traceId`；同时尝试从上游错误消息中提取 `request id` 并写入日志，便于把 Anthropic 摘要日志与真实 provider 失败日志一条链路串起来排障。
+- 影响范围：`backend-java/src/main/java/com/taas/gateway/GatewayService.java`、`CHANGELOG.md`。
+- 验证情况：待执行后端编译与网关测试，确认新增 traceId 串联日志不会泄露内部字段到上游请求，也不影响现有 Messages / Streaming 兼容行为。
+- 运维动作：本地联调环境需重启后端开发服务以加载新的失败链路日志；线上发布后可通过 `gateway.anthropic.debug`、`gateway.provider.http_error`、`gateway.provider.failed`、`gateway.provider.failed_all` 等关键字联动检索。
+- 线上数据影响：无；仅补充运行日志，不修改数据库结构、配置、计费逻辑或请求结果。
+- 风险控制：内部 `traceId` 仅保留在网关内存请求上下文中，合并上游请求体时会主动移除，不会透传给模型供应商接口。
+
+### 2026-04-23 12:28 新增 Anthropic 请求归一化摘要日志
+
+- 改动内容：为网关 `POST /v1/messages` 与对应流式入口新增安全摘要日志，记录 Anthropic 原始请求与归一化后 OpenAI 请求的消息数、每条消息的 `tool_calls` / `tool_use` 数量、content block 数量、工具定义数量与工具选择方式，用于排查 Claude Code 等客户端出现的 `tool_calls` 数量越界问题，同时避免输出请求正文与密钥。
+- 影响范围：`backend-java/src/main/java/com/taas/gateway/GatewayService.java`、`CHANGELOG.md`。
+- 验证情况：待执行后端编译与网关测试，确认新增日志不影响现有 Messages / Streaming 兼容行为。
+- 运维动作：本地联调环境需重启后端开发服务以加载新的排障日志逻辑；线上发布后可直接通过应用日志按 `gateway.anthropic.debug` 与 `gateway.anthropic.debug.near_limit` 检索。
+- 线上数据影响：无；仅新增运行日志，不修改数据库结构、租户配置、余额、账单或请求结果。
+- 风险控制：日志只记录结构摘要与计数，不打印用户消息正文、工具参数正文、AppKey 或上游密钥，降低排障过程中的敏感信息泄露风险。
+
 ### 2026-04-23 12:15 升级为真实 chunk 透传低延迟流式网关
 
 - 改动内容：将前一版“由完整响应合成 SSE 事件”的流式兼容升级为真实的上游 chunk 透传模式；网关现在会在保持现有鉴权、限流、预算、模型选路、计费与幂等缓存逻辑的前提下，直接消费上游 OpenAI / Anthropic SSE 并边收边转发，同时在结束后再落请求日志、用量记录与账单。

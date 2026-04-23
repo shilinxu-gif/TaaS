@@ -42,6 +42,7 @@ const emptyOverview: AdminUsageOverview = {
   summaries: [],
   appKeys: [],
   models: [],
+  userModels: [],
   appKeyTrends: [],
   modelTrends: [],
   recharges: [],
@@ -97,6 +98,12 @@ export function AdminUsage() {
         (row) =>
           row.model.toLowerCase().includes(q) ||
           row.providerSlug.toLowerCase().includes(q),
+      ),
+      userModels: data.userModels.filter(
+        (row) =>
+          row.userName.toLowerCase().includes(q) ||
+          (row.email ?? "").toLowerCase().includes(q) ||
+          row.model.toLowerCase().includes(q),
       ),
       appKeyTrends: data.appKeyTrends.filter((row) =>
         row.label.toLowerCase().includes(q),
@@ -408,6 +415,46 @@ export function AdminUsage() {
                     <td>{row.spendUsd}</td>
                     <td>{row.avgLatencyMs} ms</td>
                     <td>{row.successRate.toFixed(1)}%</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="bill-section bill-section--table">
+        <h2 className="bill-section-title">用户模型调用情况</h2>
+        <div className="bill-table-wrap">
+          <table className="bill-table">
+            <thead>
+              <tr>
+                <th>用户</th>
+                <th>邮箱</th>
+                <th>模型</th>
+                <th>请求数</th>
+                <th>总 Token</th>
+                <th>费用(USD)</th>
+                <th>最近调用</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.userModels.length === 0 ? (
+                <tr>
+                  <td className="bill-table-empty" colSpan={7}>
+                    当前筛选条件下暂无用户模型调用数据
+                  </td>
+                </tr>
+              ) : (
+                filtered.userModels.map((row) => (
+                  <tr key={`${row.userId}-${row.model}`}>
+                    <td>{row.userName}</td>
+                    <td>{row.email ?? "—"}</td>
+                    <td>{row.model}</td>
+                    <td>{row.requestCount}</td>
+                    <td>{formatNumber(row.totalTokens, i18n.resolvedLanguage)}</td>
+                    <td>{row.spendUsd}</td>
+                    <td>{formatDateTime(row.lastCalledAt)}</td>
                   </tr>
                 ))
               )}
