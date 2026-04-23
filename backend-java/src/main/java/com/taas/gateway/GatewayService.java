@@ -91,8 +91,9 @@ public class GatewayService {
       throw new ApiException(403, "This AppKey does not have chat:complete scope");
     }
     List<String> allowedModels = jsons.readStringList(appKey.allowedModelsJson());
-    String requestedModel = normalizeRequestedModel(requestBody.get("model"));
-    if (requestedModel != null && !allowedModels.isEmpty() && !allowedModels.contains(requestedModel)) {
+    String rawRequestedModel = normalizeRequestedModel(requestBody.get("model"));
+    String requestedModel = canonicalizeAllowedModel(rawRequestedModel, allowedModels);
+    if (rawRequestedModel != null && !allowedModels.isEmpty() && requestedModel == null) {
       return new GatewayResponse(
           HttpStatus.FORBIDDEN,
           Map.of("error", "此 AppKey 未授权使用该 model", "allowedModels", allowedModels),
@@ -211,8 +212,9 @@ public class GatewayService {
       throw new ApiException(403, "This AppKey does not have chat:complete scope");
     }
     List<String> allowedModels = jsons.readStringList(appKey.allowedModelsJson());
-    String requestedModel = normalizeRequestedModel(requestBody.get("model"));
-    if (requestedModel != null && !allowedModels.isEmpty() && !allowedModels.contains(requestedModel)) {
+    String rawRequestedModel = normalizeRequestedModel(requestBody.get("model"));
+    String requestedModel = canonicalizeAllowedModel(rawRequestedModel, allowedModels);
+    if (rawRequestedModel != null && !allowedModels.isEmpty() && requestedModel == null) {
       return new GatewayStreamResponse(
           HttpStatus.FORBIDDEN,
           Map.of("error", "此 AppKey 未授权使用该 model", "allowedModels", allowedModels),
@@ -292,8 +294,9 @@ public class GatewayService {
       throw new ApiException(403, "This AppKey does not have chat:complete scope");
     }
     List<String> allowedModels = jsons.readStringList(appKey.allowedModelsJson());
-    String requestedModel = normalizeRequestedModel(normalizedRequest.get("model"));
-    if (requestedModel != null && !allowedModels.isEmpty() && !allowedModels.contains(requestedModel)) {
+    String rawRequestedModel = normalizeRequestedModel(normalizedRequest.get("model"));
+    String requestedModel = canonicalizeAllowedModel(rawRequestedModel, allowedModels);
+    if (rawRequestedModel != null && !allowedModels.isEmpty() && requestedModel == null) {
       return new GatewayStreamResponse(
           HttpStatus.FORBIDDEN,
           Map.of("error", "此 AppKey 未授权使用该 model", "allowedModels", allowedModels),
@@ -733,7 +736,9 @@ public class GatewayService {
   private ResolvedModelSelection resolveModelSelection(
       String requestedModel, List<String> allowedModels, String mode) {
     if (requestedModel != null) {
-      return new ResolvedModelSelection(requestedModel, chooseProvider(requestedModel, mode));
+      ProviderSelection selection = chooseProvider(requestedModel, mode);
+      return new ResolvedModelSelection(
+          canonicalizeModelForSelection(requestedModel, selection), selection);
     }
     if (allowedModels.isEmpty()) {
       throw new ApiException(
@@ -744,7 +749,10 @@ public class GatewayService {
     List<ResolvedModelSelection> availableSelections = new ArrayList<>();
     for (String allowedModel : allowedModels) {
       try {
-        availableSelections.add(new ResolvedModelSelection(allowedModel, chooseProvider(allowedModel, mode)));
+        ProviderSelection selection = chooseProvider(allowedModel, mode);
+        availableSelections.add(
+            new ResolvedModelSelection(
+                canonicalizeModelForSelection(allowedModel, selection), selection));
       } catch (ApiException exception) {
         if (!"no_provider_for_model".equals(exception.getCode())) {
           throw exception;
@@ -868,6 +876,37 @@ public class GatewayService {
   private Comparator<ProviderRow> providerComparator(String mode, String model) {
     ProviderCatalog.Entry catalog = ProviderCatalog.find(model);
     return (left, right) -> Double.compare(score(right, mode, catalog), score(left, mode, catalog));
+  }
+
+  private String canonicalizeAllowedModel(String requestedModel, List<String> allowedModels) {
+    if (requestedModel == null || allowedModels.isEmpty()) {
+      return requestedModel;
+    }
+    return allowedModels.stream()
+        .filter(allowedModel -> allowedModel.equalsIgnoreCase(requestedModel))
+        .findFirst()
+        .orElse(null);
+  }
+
+  private String canonicalizeModelForSelection(String model, ProviderSelection selection) {
+    for (ProviderRow provider : selection.candidates()) {
+      String canonicalModel = canonicalizeModelForProvider(model, provider);
+      if (canonicalModel != null) {
+        return canonicalModel;
+      }
+    }
+    return model;
+  }
+
+  private String canonicalizeModelForProvider(String model, ProviderRow provider) {
+    List<Map<String, Object>> catalog = jsons.readObjectList(provider.modelCatalogJson());
+    for (Map<String, Object> item : catalog) {
+      String configuredModel = normalizeRequestedModel(item.get("model"));
+      if (configuredModel != null && configuredModel.equalsIgnoreCase(model)) {
+        return configuredModel;
+      }
+    }
+    return null;
   }
 
   private double score(ProviderRow row, String mode, ProviderCatalog.Entry catalog) {

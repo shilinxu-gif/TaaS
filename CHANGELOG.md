@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### 2026-04-23 15:02 DeepSeek 模型 ID 大小写按目录纠正
+
+- 改动内容：调整网关对请求 `model` 的处理逻辑；当客户端传入的模型 ID 与 AppKey 白名单或 provider 模型目录仅大小写不一致时，先按大小写无关方式匹配授权，再使用 provider 目录中配置的标准模型 ID 继续路由并转发上游，避免 `deepseek-ai/deepseek-v3.1-terminus` 这类小写请求被上游因大小写敏感拒绝。
+- 影响范围：`backend-java/src/main/java/com/taas/gateway/GatewayService.java`、`backend-java/src/test/java/com/taas/gateway/GatewayServiceTest.java`、`CHANGELOG.md`。
+- 验证情况：待执行 `mvn -f backend-java/pom.xml -Dtest=GatewayServiceTest test` 与后端编译，确认新增大小写兼容逻辑不会影响现有 AppKey 白名单校验、provider 选路和 Anthropic/OpenAI 兼容入口。
+- 运维动作：需要发布后端并重启 `taas-backend` 使新的模型 ID 纠正规则生效；无需执行 SQL、迁移、清缓存或额外补配置。
+- 线上数据影响：无；本次仅调整网关内存中的模型名匹配与上游转发逻辑，不修改数据库表结构、存量配置、历史请求日志、账单或余额数据。
+- 风险控制：仅在白名单或 provider 目录已存在大小写无关匹配项时才改写为配置里的标准模型 ID；若目录中没有匹配项，仍保持原有行为，避免误改其他模型名或影响未建模的上游兼容场景。
+
 ### 2026-04-23 14:35 管理员统计页新增用户模型归因
 
 - 改动内容：为 `app_keys` 新增 `owner_user_id`、为 `api_request_logs` 新增 `user_id`，新建迁移并让网关在请求成功与幂等缓存命中时写入用户归因；管理员统计接口新增“用户模型调用情况”数据集，并将用户维度汇总的请求量改为按 `api_request_logs.user_id / app_keys.owner_user_id` 归因统计；前端管理统计页同步新增“用户模型调用情况”表，展示用户、邮箱、模型、请求数、总 Token、费用与最近调用时间。

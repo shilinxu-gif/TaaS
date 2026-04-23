@@ -110,6 +110,39 @@ class GatewayServiceTest {
   }
 
   @Test
+  void canonicalizeAllowedModelShouldMatchIgnoringCaseAndKeepConfiguredCase() throws Exception {
+    String canonicalModel =
+        (String)
+            invoke(
+                "canonicalizeAllowedModel",
+                "deepseek-ai/deepseek-v3.1-terminus",
+                List.of("deepseek-ai/DeepSeek-V3.1-Terminus"));
+
+    assertEquals("deepseek-ai/DeepSeek-V3.1-Terminus", canonicalModel);
+  }
+
+  @Test
+  void resolveModelSelectionShouldCanonicalizeRequestedModelUsingProviderCatalog() throws Exception {
+    when(jdbcTemplate.query(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.<org.springframework.jdbc.core.RowMapper<Object>>any()))
+        .thenReturn(
+            List.of(
+                newProviderRow(
+                    "openai",
+                    "[{\"model\":\"deepseek-ai/DeepSeek-V3.1-Terminus\"}]")));
+
+    Object resolved =
+        invoke(
+            "resolveModelSelection",
+            "deepseek-ai/deepseek-v3.1-terminus",
+            List.of("deepseek-ai/DeepSeek-V3.1-Terminus"),
+            "balance");
+
+    assertEquals(
+        "deepseek-ai/DeepSeek-V3.1-Terminus",
+        invokeRecordAccessor(resolved, "model"));
+  }
+
+  @Test
   @SuppressWarnings("unchecked")
   void normalizeAnthropicMessagesRequestShouldConvertSystemAndContentBlocks() throws Exception {
     Map<String, Object> normalized =
