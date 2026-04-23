@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### 2026-04-23 22:05 工作台最近请求表支持排序
+
+- 改动内容：在租户「工作台」的「最近请求」表格上，为时间、模型、供应商、Token、延迟、缓存列增加与用量页一致的 `UsageSortTh` 双箭头排序；数据仍为接口返回日志截取前 10 条后再在浏览器内排序，不改变接口；`useMemo` / `useState` 置于工作台摘要查询的提前 `return` 之前，避免 Hooks 顺序问题。
+- 影响范围：`client/src/pages/Dashboard.tsx`、`CHANGELOG.md`。
+- 验证情况：已执行 `npm run build --prefix client` 通过；已检查 `Dashboard.tsx` 的 linter 且无报错。
+- 运维动作：仅需发布前端静态资源。
+- 线上数据影响：无。
+- 风险控制：仅本地重排已展示的最多 10 条记录，不改变拉取范围与 KPI 数据。
+
 ### 2026-04-23 21:50 修复计费中心白屏（Hooks 顺序）
 
 - 改动内容：`Billing` 组件在加载/错误分支提前 `return` 之后才调用 `useMemo`，违反 React Hooks 规则，数据加载完成后会抛错导致整页白屏；将账单排序 `useMemo` 与 `toggleRecordSort` 提前到所有条件 `return` 之前，并在无 `data` 时对 `records` 做空数组兼容。

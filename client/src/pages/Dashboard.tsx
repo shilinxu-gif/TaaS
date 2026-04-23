@@ -1,8 +1,69 @@
 import { useQuery } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { UsageSortTh, type UsageSortDir } from "../components/UsageSortTh";
 import { api, type DashboardSummary, type LogRow } from "../api";
 import { formatCurrencyAmount, formatDateTime, formatNumber } from "../i18n/format";
 import { pickText } from "../i18n/inline";
+
+type DashRecentSortField =
+  | "createdAt"
+  | "model"
+  | "providerSlug"
+  | "totalTokens"
+  | "latencyMs"
+  | "cacheHit";
+
+function parseIsoMs(value: string | null | undefined): number | null {
+  if (value == null || value.trim() === "") return null;
+  const ms = Date.parse(value);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+function compareLogRows(
+  left: LogRow,
+  right: LogRow,
+  field: DashRecentSortField,
+  dir: UsageSortDir,
+): number {
+  const sign = dir === "desc" ? -1 : 1;
+  let primary = 0;
+  switch (field) {
+    case "createdAt": {
+      const lm = parseIsoMs(left.createdAt);
+      const rm = parseIsoMs(right.createdAt);
+      if (lm == null && rm == null) primary = 0;
+      else if (lm == null) primary = 1;
+      else if (rm == null) primary = -1;
+      else primary = dir === "desc" ? rm - lm : lm - rm;
+      break;
+    }
+    case "model":
+      primary =
+        sign * left.model.localeCompare(right.model, undefined, { sensitivity: "base" });
+      break;
+    case "providerSlug":
+      primary =
+        sign *
+        left.provider.slug.localeCompare(right.provider.slug, undefined, {
+          sensitivity: "base",
+        });
+      break;
+    case "totalTokens":
+      primary = sign * (left.totalTokens - right.totalTokens);
+      break;
+    case "latencyMs":
+      primary = sign * (left.latencyMs - right.latencyMs);
+      break;
+    case "cacheHit":
+      primary = sign * (Number(left.cacheHit) - Number(right.cacheHit));
+      break;
+    default:
+      primary = 0;
+  }
+  if (primary !== 0) return primary;
+  return left.id.localeCompare(right.id);
+}
 
 export function Dashboard() {
   const { i18n } = useTranslation();
@@ -16,6 +77,27 @@ export function Dashboard() {
     queryKey: ["logs", "dash"],
     queryFn: () => api<LogRow[]>("/logs"),
   });
+  const [recentSort, setRecentSort] = useState<{
+    field: DashRecentSortField;
+    dir: UsageSortDir;
+  }>({ field: "createdAt", dir: "desc" });
+
+  const sortedRecent = useMemo(() => {
+    const slice = (logsQuery.data ?? []).slice(0, 10);
+    if (slice.length <= 1) return slice;
+    return [...slice].sort((a, b) =>
+      compareLogRows(a, b, recentSort.field, recentSort.dir),
+    );
+  }, [logsQuery.data, recentSort.dir, recentSort.field]);
+
+  const toggleRecentSort = (field: DashRecentSortField) => {
+    setRecentSort((prev) => {
+      if (prev.field !== field) {
+        return { field, dir: "desc" };
+      }
+      return { field, dir: prev.dir === "desc" ? "asc" : "desc" };
+    });
+  };
 
   if (summaryQuery.isLoading) return <p className="muted dash-pad">{text("加载中…", "Loading…")}</p>;
   if (summaryQuery.error)
@@ -29,7 +111,6 @@ export function Dashboard() {
     tokens: 0,
     cacheSavingsUsd: "0",
   };
-  const recent = (logsQuery.data ?? []).slice(0, 10);
   const series = d.chartSeries7d ?? [];
   const maxTok = Math.max(1, ...series.map((s) => s.tokens));
   const mix = d.modelMix7d ?? [];
@@ -205,16 +286,112 @@ export function Dashboard() {
             <table className="dash-table">
               <thead>
                 <tr>
-                  <th>{text("时间", "Time")}</th>
-                  <th>{text("模型", "Model")}</th>
-                  <th>{text("供应商", "Provider")}</th>
-                  <th>Token</th>
-                  <th>{text("延迟", "Latency")}</th>
-                  <th>{text("缓存", "Cache")}</th>
+                  <th
+                    {...(recentSort.field === "createdAt"
+                      ? {
+                          "aria-sort":
+                            recentSort.dir === "asc"
+                              ? ("ascending" as const)
+                              : ("descending" as const),
+                        }
+                      : {})}
+                  >
+                    <UsageSortTh
+                      field="createdAt"
+                      label={text("时间", "Time")}
+                      sort={recentSort}
+                      onToggle={toggleRecentSort}
+                    />
+                  </th>
+                  <th
+                    {...(recentSort.field === "model"
+                      ? {
+                          "aria-sort":
+                            recentSort.dir === "asc"
+                              ? ("ascending" as const)
+                              : ("descending" as const),
+                        }
+                      : {})}
+                  >
+                    <UsageSortTh
+                      field="model"
+                      label={text("模型", "Model")}
+                      sort={recentSort}
+                      onToggle={toggleRecentSort}
+                    />
+                  </th>
+                  <th
+                    {...(recentSort.field === "providerSlug"
+                      ? {
+                          "aria-sort":
+                            recentSort.dir === "asc"
+                              ? ("ascending" as const)
+                              : ("descending" as const),
+                        }
+                      : {})}
+                  >
+                    <UsageSortTh
+                      field="providerSlug"
+                      label={text("供应商", "Provider")}
+                      sort={recentSort}
+                      onToggle={toggleRecentSort}
+                    />
+                  </th>
+                  <th
+                    {...(recentSort.field === "totalTokens"
+                      ? {
+                          "aria-sort":
+                            recentSort.dir === "asc"
+                              ? ("ascending" as const)
+                              : ("descending" as const),
+                        }
+                      : {})}
+                  >
+                    <UsageSortTh
+                      field="totalTokens"
+                      label="Token"
+                      sort={recentSort}
+                      onToggle={toggleRecentSort}
+                    />
+                  </th>
+                  <th
+                    {...(recentSort.field === "latencyMs"
+                      ? {
+                          "aria-sort":
+                            recentSort.dir === "asc"
+                              ? ("ascending" as const)
+                              : ("descending" as const),
+                        }
+                      : {})}
+                  >
+                    <UsageSortTh
+                      field="latencyMs"
+                      label={text("延迟", "Latency")}
+                      sort={recentSort}
+                      onToggle={toggleRecentSort}
+                    />
+                  </th>
+                  <th
+                    {...(recentSort.field === "cacheHit"
+                      ? {
+                          "aria-sort":
+                            recentSort.dir === "asc"
+                              ? ("ascending" as const)
+                              : ("descending" as const),
+                        }
+                      : {})}
+                  >
+                    <UsageSortTh
+                      field="cacheHit"
+                      label={text("缓存", "Cache")}
+                      sort={recentSort}
+                      onToggle={toggleRecentSort}
+                    />
+                  </th>
                 </tr>
               </thead>
               <tbody>
-                {recent.map((row) => (
+                {sortedRecent.map((row) => (
                   <tr key={row.id}>
                     <td className="dash-td-time">
                       {formatDateTime(row.createdAt, i18n.resolvedLanguage)}
