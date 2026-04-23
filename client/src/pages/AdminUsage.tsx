@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import {
@@ -7,6 +7,7 @@ import {
   type AdminTrendSeries,
   type AdminUsageDimension,
   type AdminUsageOverview,
+  type AdminUserModelUsageRow,
 } from "../api";
 import {
   formatCurrencyAmount,
@@ -49,6 +50,66 @@ const emptyOverview: AdminUsageOverview = {
   rechargeOrders: [],
 };
 
+type UserModelSortField = "lastCalledAt" | "requestCount" | "totalTokens";
+type UserModelSortDir = "asc" | "desc";
+
+function parseLastCalledAtMs(value: string | null): number | null {
+  if (value == null || value.trim() === "") {
+    return null;
+  }
+  const ms = Date.parse(value);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+function compareNullableNumberDesc(
+  left: number | null,
+  right: number | null,
+): number {
+  if (left == null && right == null) return 0;
+  if (left == null) return 1;
+  if (right == null) return -1;
+  return right - left;
+}
+
+function compareNullableNumberAsc(
+  left: number | null,
+  right: number | null,
+): number {
+  if (left == null && right == null) return 0;
+  if (left == null) return 1;
+  if (right == null) return -1;
+  return left - right;
+}
+
+function compareUserModelRows(
+  left: AdminUserModelUsageRow,
+  right: AdminUserModelUsageRow,
+  field: UserModelSortField,
+  dir: UserModelSortDir,
+): number {
+  const sign = dir === "desc" ? -1 : 1;
+  if (field === "requestCount") {
+    const byCount = sign * (left.requestCount - right.requestCount);
+    if (byCount !== 0) return byCount;
+  } else if (field === "totalTokens") {
+    const byTokens = sign * (left.totalTokens - right.totalTokens);
+    if (byTokens !== 0) return byTokens;
+  } else {
+    const leftMs = parseLastCalledAtMs(left.lastCalledAt);
+    const rightMs = parseLastCalledAtMs(right.lastCalledAt);
+    const byTime =
+      dir === "desc"
+        ? compareNullableNumberDesc(leftMs, rightMs)
+        : compareNullableNumberAsc(leftMs, rightMs);
+    if (byTime !== 0) return byTime;
+  }
+
+  const byUser = left.userName.localeCompare(right.userName, undefined, { sensitivity: "base" });
+  if (byUser !== 0) return byUser;
+
+  return left.model.localeCompare(right.model, undefined, { sensitivity: "base" });
+}
+
 export function AdminUsage() {
   const { i18n } = useTranslation();
   const text = (zhCN: string, enUS: string) => pickText(i18n.resolvedLanguage, zhCN, enUS);
@@ -57,6 +118,10 @@ export function AdminUsage() {
   const [from, setFrom] = useState(DEFAULT_FROM);
   const [to, setTo] = useState(DEFAULT_TO);
   const [expandedTenantId, setExpandedTenantId] = useState<string | null>(null);
+  const [userModelSort, setUserModelSort] = useState<{
+    field: UserModelSortField;
+    dir: UserModelSortDir;
+  }>({ field: "lastCalledAt", dir: "desc" });
   const overviewQuery = useQuery({
     queryKey: ["admin", "usage-overview", dimension, from, to],
     queryFn: () => {
@@ -117,6 +182,36 @@ export function AdminUsage() {
       rechargeOrders,
     };
   }, [overviewQuery.data, search]);
+
+  useEffect(() => {
+    setUserModelSort({ field: "lastCalledAt", dir: "desc" });
+  }, [from, to, dimension, search]);
+
+  const sortedUserModels = useMemo(() => {
+    const rows = filtered.userModels;
+    if (rows.length === 0) {
+      return rows;
+    }
+    return [...rows].sort((left, right) =>
+      compareUserModelRows(left, right, userModelSort.field, userModelSort.dir),
+    );
+  }, [filtered.userModels, userModelSort.dir, userModelSort.field]);
+
+  const userModelSortMark = (field: UserModelSortField) => {
+    if (userModelSort.field !== field) {
+      return "";
+    }
+    return userModelSort.dir === "desc" ? "↓" : "↑";
+  };
+
+  const toggleUserModelSort = (field: UserModelSortField) => {
+    setUserModelSort((prev) => {
+      if (prev.field !== field) {
+        return { field, dir: "desc" };
+      }
+      return { field, dir: prev.dir === "desc" ? "asc" : "desc" };
+    });
+  };
 
   const summaryStats = useMemo(() => {
     return {
@@ -432,21 +527,45 @@ export function AdminUsage() {
                 <th>用户</th>
                 <th>邮箱</th>
                 <th>模型</th>
-                <th>请求数</th>
-                <th>总 Token</th>
+                <th>
+                  <button
+                    className="btn btn-ghost admin-usage-sort-th"
+                    onClick={() => toggleUserModelSort("requestCount")}
+                    type="button"
+                  >
+                    请求数{userModelSortMark("requestCount")}
+                  </button>
+                </th>
+                <th>
+                  <button
+                    className="btn btn-ghost admin-usage-sort-th"
+                    onClick={() => toggleUserModelSort("totalTokens")}
+                    type="button"
+                  >
+                    总 Token{userModelSortMark("totalTokens")}
+                  </button>
+                </th>
                 <th>费用(USD)</th>
-                <th>最近调用</th>
+                <th>
+                  <button
+                    className="btn btn-ghost admin-usage-sort-th"
+                    onClick={() => toggleUserModelSort("lastCalledAt")}
+                    type="button"
+                  >
+                    最近调用{userModelSortMark("lastCalledAt")}
+                  </button>
+                </th>
               </tr>
             </thead>
             <tbody>
-              {filtered.userModels.length === 0 ? (
+              {sortedUserModels.length === 0 ? (
                 <tr>
                   <td className="bill-table-empty" colSpan={7}>
                     当前筛选条件下暂无用户模型调用数据
                   </td>
                 </tr>
               ) : (
-                filtered.userModels.map((row) => (
+                sortedUserModels.map((row) => (
                   <tr key={`${row.userId}-${row.model}`}>
                     <td>{row.userName}</td>
                     <td>{row.email ?? "—"}</td>

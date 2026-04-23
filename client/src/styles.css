@@ -2820,6 +2820,28 @@ ul.saas-chart {
   gap: 0.5rem;
 }
 
+.admin-usage-sort-th {
+  width: 100%;
+  justify-content: flex-start;
+  padding-left: 0;
+  padding-right: 0;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* 表头排序为 <button>，点击后会保留焦点，浏览器默认焦点环会像「蓝框」；去掉以免干扰阅读 */
+.admin-usage-sort-th:focus,
+.admin-usage-sort-th:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+.admin-usage-sort-th:focus-visible {
+  text-decoration: underline;
+  text-decoration-color: var(--crm-blue-light);
+  text-underline-offset: 0.2em;
+}
+
 .admin-usage-subtle {
   display: inline-block;
   margin-top: 0.2rem;
