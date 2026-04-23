@@ -19,6 +19,7 @@ import {
   formatNumber,
 } from "../i18n/format";
 import { pickText } from "../i18n/inline";
+import { UsageSortTh, type UsageSortDir } from "../components/UsageSortTh";
 
 const DEFAULT_TO = new Date().toISOString().slice(0, 10);
 const DEFAULT_FROM = shiftDate(DEFAULT_TO, -13);
@@ -53,8 +54,6 @@ const emptyOverview: AdminUsageOverview = {
   recharges: [],
   rechargeOrders: [],
 };
-
-type UsageSortDir = "asc" | "desc";
 
 type UserModelSortField = "lastCalledAt" | "requestCount" | "totalTokens" | "spendUsd";
 
@@ -405,49 +404,6 @@ function compareUserModelRows(
   if (byUser !== 0) return byUser;
 
   return left.model.localeCompare(right.model, undefined, { sensitivity: "base" });
-}
-
-function UsageSortTh<F extends string>({
-  field,
-  label,
-  sort,
-  onToggle,
-}: {
-  field: F;
-  label: string;
-  sort: { field: F; dir: UsageSortDir };
-  onToggle: (field: F) => void;
-}) {
-  const active = sort.field === field;
-  return (
-    <button
-      type="button"
-      className="admin-usage-sort-control"
-      onClick={() => onToggle(field)}
-    >
-      <span className="admin-usage-sort-label">{label}</span>
-      <span className="admin-usage-sort-arrows" aria-hidden>
-        <span
-          className={
-            active && sort.dir === "asc"
-              ? "admin-usage-sort-arrow admin-usage-sort-arrow--active"
-              : "admin-usage-sort-arrow"
-          }
-        >
-          ↑
-        </span>
-        <span
-          className={
-            active && sort.dir === "desc"
-              ? "admin-usage-sort-arrow admin-usage-sort-arrow--active"
-              : "admin-usage-sort-arrow"
-          }
-        >
-          ↓
-        </span>
-      </span>
-    </button>
-  );
 }
 
 export function AdminUsage() {

@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { UsageSortTh, type UsageSortDir } from "../components/UsageSortTh";
 import { api, type UsageRow } from "../api";
 import { formatCurrencyAmount, formatDateTime, formatNumber } from "../i18n/format";
 import { pickText } from "../i18n/inline";
@@ -32,6 +33,107 @@ function inDateRange(iso: string, from: string, to: string): boolean {
   return true;
 }
 
+type TenantUsageSortField =
+  | "createdAt"
+  | "appKeyName"
+  | "tenantName"
+  | "model"
+  | "promptTokens"
+  | "completionTokens"
+  | "totalTokens"
+  | "costUsd"
+  | "cacheHit"
+  | "providerName"
+  | "latencyMs"
+  | "statusCode";
+
+function parseIsoMs(value: string | null | undefined): number | null {
+  if (value == null || value.trim() === "") return null;
+  const ms = Date.parse(value);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+function parseMoneyString(value: string | null | undefined): number {
+  const n = Number.parseFloat(String(value ?? "").replace(/,/g, ""));
+  return Number.isFinite(n) ? n : 0;
+}
+
+function compareNullableTime(
+  left: number | null,
+  right: number | null,
+  dir: UsageSortDir,
+): number {
+  if (left == null && right == null) return 0;
+  if (left == null) return 1;
+  if (right == null) return -1;
+  return dir === "desc" ? right - left : left - right;
+}
+
+function compareUsageRows(
+  left: UsageRow,
+  right: UsageRow,
+  field: TenantUsageSortField,
+  dir: UsageSortDir,
+): number {
+  const sign = dir === "desc" ? -1 : 1;
+  let primary = 0;
+  switch (field) {
+    case "createdAt": {
+      const lm = parseIsoMs(left.createdAt);
+      const rm = parseIsoMs(right.createdAt);
+      primary = compareNullableTime(lm, rm, dir);
+      break;
+    }
+    case "appKeyName":
+      primary =
+        sign *
+        left.appKey.name.localeCompare(right.appKey.name, undefined, { sensitivity: "base" });
+      break;
+    case "tenantName":
+      primary =
+        sign *
+        left.tenantName.localeCompare(right.tenantName, undefined, { sensitivity: "base" });
+      break;
+    case "model":
+      primary =
+        sign * left.model.localeCompare(right.model, undefined, { sensitivity: "base" });
+      break;
+    case "promptTokens":
+      primary = sign * (left.promptTokens - right.promptTokens);
+      break;
+    case "completionTokens":
+      primary = sign * (left.completionTokens - right.completionTokens);
+      break;
+    case "totalTokens":
+      primary = sign * (left.totalTokens - right.totalTokens);
+      break;
+    case "costUsd":
+      primary =
+        sign * (parseMoneyString(left.costUsd) - parseMoneyString(right.costUsd));
+      break;
+    case "cacheHit":
+      primary = sign * (Number(left.cacheHit) - Number(right.cacheHit));
+      break;
+    case "providerName":
+      primary =
+        sign *
+        left.provider.name.localeCompare(right.provider.name, undefined, {
+          sensitivity: "base",
+        });
+      break;
+    case "latencyMs":
+      primary = sign * (left.latencyMs - right.latencyMs);
+      break;
+    case "statusCode":
+      primary = sign * (left.statusCode - right.statusCode);
+      break;
+    default:
+      primary = 0;
+  }
+  if (primary !== 0) return primary;
+  return left.id.localeCompare(right.id);
+}
+
 export function Usage() {
   const { i18n } = useTranslation();
   const text = (zhCN: string, enUS: string) =>
@@ -43,6 +145,10 @@ export function Usage() {
   const [cacheFilter, setCacheFilter] = useState<"all" | "hit" | "miss">(
     "all"
   );
+  const [sort, setSort] = useState<{
+    field: TenantUsageSortField;
+    dir: UsageSortDir;
+  }>({ field: "createdAt", dir: "desc" });
   const [selected, setSelected] = useState<UsageRow | null>(null);
 
   const { data, isLoading, error } = useQuery({
@@ -80,6 +186,24 @@ export function Usage() {
     }
     return rows;
   }, [data, dateFrom, dateTo, modelFilter, appKeyFilter, cacheFilter]);
+
+  useEffect(() => {
+    setSort({ field: "createdAt", dir: "desc" });
+  }, [dateFrom, dateTo, modelFilter, appKeyFilter, cacheFilter]);
+
+  const sortedFiltered = useMemo(() => {
+    if (filtered.length <= 1) return filtered;
+    return [...filtered].sort((a, b) => compareUsageRows(a, b, sort.field, sort.dir));
+  }, [filtered, sort.dir, sort.field]);
+
+  const toggleSort = (field: TenantUsageSortField) => {
+    setSort((prev) => {
+      if (prev.field !== field) {
+        return { field, dir: "desc" };
+      }
+      return { field, dir: prev.dir === "desc" ? "asc" : "desc" };
+    });
+  };
 
   useEffect(() => {
     if (!selected) return;
@@ -196,7 +320,7 @@ export function Usage() {
           </label>
         </div>
         <p className="usage-filter-meta muted">
-          {text("共 ", "Total ")}<strong>{filtered.length}</strong>{text(" 条", "")}
+          {text("共 ", "Total ")}<strong>{sortedFiltered.length}</strong>{text(" 条", "")}
           {(data?.length ?? 0) !== filtered.length
             ? text(`（已筛选，原始 ${data?.length ?? 0} 条）`, ` (filtered from ${data?.length ?? 0})`)
             : null}
@@ -208,29 +332,197 @@ export function Usage() {
           <table className="usage-table">
             <thead>
               <tr>
-                  <th>{text("时间", "Time")}</th>
-                <th>AppKey</th>
-                  <th>{text("租户", "Tenant")}</th>
-                  <th>{text("模型", "Model")}</th>
-                  <th>{text("输入", "Input")}</th>
-                  <th>{text("输出", "Output")}</th>
-                  <th>{text("总计", "Total")}</th>
-                  <th>{text("费用 (USD)", "Cost (USD)")}</th>
-                  <th>{text("缓存", "Cache")}</th>
-                  <th>{text("供应商", "Provider")}</th>
-                  <th>{text("延迟", "Latency")}</th>
-                  <th>{text("状态", "Status")}</th>
+                <th
+                  {...(sort.field === "createdAt"
+                    ? {
+                        "aria-sort":
+                          sort.dir === "asc" ? ("ascending" as const) : ("descending" as const),
+                      }
+                    : {})}
+                >
+                  <UsageSortTh
+                    field="createdAt"
+                    label={text("时间", "Time")}
+                    sort={sort}
+                    onToggle={toggleSort}
+                  />
+                </th>
+                <th
+                  {...(sort.field === "appKeyName"
+                    ? {
+                        "aria-sort":
+                          sort.dir === "asc" ? ("ascending" as const) : ("descending" as const),
+                      }
+                    : {})}
+                >
+                  <UsageSortTh
+                    field="appKeyName"
+                    label="AppKey"
+                    sort={sort}
+                    onToggle={toggleSort}
+                  />
+                </th>
+                <th
+                  {...(sort.field === "tenantName"
+                    ? {
+                        "aria-sort":
+                          sort.dir === "asc" ? ("ascending" as const) : ("descending" as const),
+                      }
+                    : {})}
+                >
+                  <UsageSortTh
+                    field="tenantName"
+                    label={text("租户", "Tenant")}
+                    sort={sort}
+                    onToggle={toggleSort}
+                  />
+                </th>
+                <th
+                  {...(sort.field === "model"
+                    ? {
+                        "aria-sort":
+                          sort.dir === "asc" ? ("ascending" as const) : ("descending" as const),
+                      }
+                    : {})}
+                >
+                  <UsageSortTh
+                    field="model"
+                    label={text("模型", "Model")}
+                    sort={sort}
+                    onToggle={toggleSort}
+                  />
+                </th>
+                <th
+                  {...(sort.field === "promptTokens"
+                    ? {
+                        "aria-sort":
+                          sort.dir === "asc" ? ("ascending" as const) : ("descending" as const),
+                      }
+                    : {})}
+                >
+                  <UsageSortTh
+                    field="promptTokens"
+                    label={text("输入", "Input")}
+                    sort={sort}
+                    onToggle={toggleSort}
+                  />
+                </th>
+                <th
+                  {...(sort.field === "completionTokens"
+                    ? {
+                        "aria-sort":
+                          sort.dir === "asc" ? ("ascending" as const) : ("descending" as const),
+                      }
+                    : {})}
+                >
+                  <UsageSortTh
+                    field="completionTokens"
+                    label={text("输出", "Output")}
+                    sort={sort}
+                    onToggle={toggleSort}
+                  />
+                </th>
+                <th
+                  {...(sort.field === "totalTokens"
+                    ? {
+                        "aria-sort":
+                          sort.dir === "asc" ? ("ascending" as const) : ("descending" as const),
+                      }
+                    : {})}
+                >
+                  <UsageSortTh
+                    field="totalTokens"
+                    label={text("总计", "Total")}
+                    sort={sort}
+                    onToggle={toggleSort}
+                  />
+                </th>
+                <th
+                  {...(sort.field === "costUsd"
+                    ? {
+                        "aria-sort":
+                          sort.dir === "asc" ? ("ascending" as const) : ("descending" as const),
+                      }
+                    : {})}
+                >
+                  <UsageSortTh
+                    field="costUsd"
+                    label={text("费用 (USD)", "Cost (USD)")}
+                    sort={sort}
+                    onToggle={toggleSort}
+                  />
+                </th>
+                <th
+                  {...(sort.field === "cacheHit"
+                    ? {
+                        "aria-sort":
+                          sort.dir === "asc" ? ("ascending" as const) : ("descending" as const),
+                      }
+                    : {})}
+                >
+                  <UsageSortTh
+                    field="cacheHit"
+                    label={text("缓存", "Cache")}
+                    sort={sort}
+                    onToggle={toggleSort}
+                  />
+                </th>
+                <th
+                  {...(sort.field === "providerName"
+                    ? {
+                        "aria-sort":
+                          sort.dir === "asc" ? ("ascending" as const) : ("descending" as const),
+                      }
+                    : {})}
+                >
+                  <UsageSortTh
+                    field="providerName"
+                    label={text("供应商", "Provider")}
+                    sort={sort}
+                    onToggle={toggleSort}
+                  />
+                </th>
+                <th
+                  {...(sort.field === "latencyMs"
+                    ? {
+                        "aria-sort":
+                          sort.dir === "asc" ? ("ascending" as const) : ("descending" as const),
+                      }
+                    : {})}
+                >
+                  <UsageSortTh
+                    field="latencyMs"
+                    label={text("延迟", "Latency")}
+                    sort={sort}
+                    onToggle={toggleSort}
+                  />
+                </th>
+                <th
+                  {...(sort.field === "statusCode"
+                    ? {
+                        "aria-sort":
+                          sort.dir === "asc" ? ("ascending" as const) : ("descending" as const),
+                      }
+                    : {})}
+                >
+                  <UsageSortTh
+                    field="statusCode"
+                    label={text("状态", "Status")}
+                    sort={sort}
+                    onToggle={toggleSort}
+                  />
+                </th>
               </tr>
             </thead>
             <tbody>
-              {filtered.length === 0 ? (
+              {sortedFiltered.length === 0 ? (
                 <tr>
                   <td colSpan={12} className="usage-table-empty muted">
                     {text("无匹配记录，请调整筛选条件", "No matching records. Try adjusting the filters.")}
                   </td>
                 </tr>
               ) : (
-                filtered.map((r) => (
+                sortedFiltered.map((r) => (
                   <tr
                     key={r.id}
                     className="usage-row"

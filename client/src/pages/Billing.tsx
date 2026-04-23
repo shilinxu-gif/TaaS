@@ -1,9 +1,68 @@
 import { useQuery } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { BillingRechargeSection } from "../components/BillingRechargeSection";
-import { api, type BillingOverview, type BillingPlanDto } from "../api";
+import { UsageSortTh, type UsageSortDir } from "../components/UsageSortTh";
+import { api, type BillingOverview, type BillingPlanDto, type BillingRecordRow } from "../api";
 import { formatCurrencyAmount, formatDateTime, formatNumber } from "../i18n/format";
 import { pickText } from "../i18n/inline";
+
+type BillingRecordSortField = "createdAt" | "type" | "amountUsd" | "status" | "description";
+
+function parseMoneyString(value: string | null | undefined): number {
+  const n = Number.parseFloat(String(value ?? "").replace(/,/g, ""));
+  return Number.isFinite(n) ? n : 0;
+}
+
+function parseIsoMs(value: string | null | undefined): number | null {
+  if (value == null || value.trim() === "") return null;
+  const ms = Date.parse(value);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+function compareBillingRecords(
+  left: BillingRecordRow,
+  right: BillingRecordRow,
+  field: BillingRecordSortField,
+  dir: UsageSortDir,
+): number {
+  const sign = dir === "desc" ? -1 : 1;
+  let primary = 0;
+  switch (field) {
+    case "createdAt": {
+      const lm = parseIsoMs(left.createdAt);
+      const rm = parseIsoMs(right.createdAt);
+      if (lm == null && rm == null) primary = 0;
+      else if (lm == null) primary = 1;
+      else if (rm == null) primary = -1;
+      else primary = dir === "desc" ? rm - lm : lm - rm;
+      break;
+    }
+    case "type":
+      primary =
+        sign * left.type.localeCompare(right.type, undefined, { sensitivity: "base" });
+      break;
+    case "amountUsd":
+      primary =
+        sign * (parseMoneyString(left.amountUsd) - parseMoneyString(right.amountUsd));
+      break;
+    case "status":
+      primary =
+        sign * left.status.localeCompare(right.status, undefined, { sensitivity: "base" });
+      break;
+    case "description":
+      primary =
+        sign *
+        left.description.localeCompare(right.description, undefined, {
+          sensitivity: "base",
+        });
+      break;
+    default:
+      primary = 0;
+  }
+  if (primary !== 0) return primary;
+  return left.id.localeCompare(right.id);
+}
 
 function PlanCard({
   plan,
@@ -48,6 +107,10 @@ function PlanCard({
 export function Billing() {
   const { i18n } = useTranslation();
   const text = (zhCN: string, enUS: string) => pickText(i18n.resolvedLanguage, zhCN, enUS);
+  const [recordSort, setRecordSort] = useState<{
+    field: BillingRecordSortField;
+    dir: UsageSortDir;
+  }>({ field: "createdAt", dir: "desc" });
   const { data, isLoading, error } = useQuery({
     queryKey: ["billing", "overview"],
     queryFn: () => api<BillingOverview>("/billing/overview"),
@@ -58,6 +121,23 @@ export function Billing() {
 
   const d = data!;
   const { summary } = d;
+
+  const sortedRecords = useMemo(() => {
+    const rows = d.records;
+    if (rows.length <= 1) return rows;
+    return [...rows].sort((a, b) =>
+      compareBillingRecords(a, b, recordSort.field, recordSort.dir),
+    );
+  }, [d.records, recordSort.dir, recordSort.field]);
+
+  const toggleRecordSort = (field: BillingRecordSortField) => {
+    setRecordSort((prev) => {
+      if (prev.field !== field) {
+        return { field, dir: "desc" };
+      }
+      return { field, dir: prev.dir === "desc" ? "asc" : "desc" };
+    });
+  };
 
   return (
     <div className="bill-page">
@@ -158,28 +238,108 @@ export function Billing() {
       <section className="bill-section bill-section--table">
         <h2 className="bill-section-title">{text("账单明细", "Billing Records")}</h2>
         <p className="bill-section-desc muted">
-          {text(`共 ${d.records.length} 条记录（最多展示最近 100 条）`, `${d.records.length} records (showing the latest 100 at most)`)}
+          {text(`共 ${sortedRecords.length} 条记录（最多展示最近 100 条）`, `${sortedRecords.length} records (showing the latest 100 at most)`)}
         </p>
         <div className="bill-table-wrap">
           <table className="bill-table">
             <thead>
               <tr>
-                <th>{text("日期", "Date")}</th>
-                <th>{text("类型", "Type")}</th>
-                <th>{text(`金额（${summary.currency}）`, `Amount (${summary.currency})`)}</th>
-                <th>{text("状态", "Status")}</th>
-                <th>{text("说明", "Description")}</th>
+                <th
+                  {...(recordSort.field === "createdAt"
+                    ? {
+                        "aria-sort":
+                          recordSort.dir === "asc"
+                            ? ("ascending" as const)
+                            : ("descending" as const),
+                      }
+                    : {})}
+                >
+                  <UsageSortTh
+                    field="createdAt"
+                    label={text("日期", "Date")}
+                    sort={recordSort}
+                    onToggle={toggleRecordSort}
+                  />
+                </th>
+                <th
+                  {...(recordSort.field === "type"
+                    ? {
+                        "aria-sort":
+                          recordSort.dir === "asc"
+                            ? ("ascending" as const)
+                            : ("descending" as const),
+                      }
+                    : {})}
+                >
+                  <UsageSortTh
+                    field="type"
+                    label={text("类型", "Type")}
+                    sort={recordSort}
+                    onToggle={toggleRecordSort}
+                  />
+                </th>
+                <th
+                  {...(recordSort.field === "amountUsd"
+                    ? {
+                        "aria-sort":
+                          recordSort.dir === "asc"
+                            ? ("ascending" as const)
+                            : ("descending" as const),
+                      }
+                    : {})}
+                >
+                  <UsageSortTh
+                    field="amountUsd"
+                    label={text(`金额（${summary.currency}）`, `Amount (${summary.currency})`)}
+                    sort={recordSort}
+                    onToggle={toggleRecordSort}
+                  />
+                </th>
+                <th
+                  {...(recordSort.field === "status"
+                    ? {
+                        "aria-sort":
+                          recordSort.dir === "asc"
+                            ? ("ascending" as const)
+                            : ("descending" as const),
+                      }
+                    : {})}
+                >
+                  <UsageSortTh
+                    field="status"
+                    label={text("状态", "Status")}
+                    sort={recordSort}
+                    onToggle={toggleRecordSort}
+                  />
+                </th>
+                <th
+                  {...(recordSort.field === "description"
+                    ? {
+                        "aria-sort":
+                          recordSort.dir === "asc"
+                            ? ("ascending" as const)
+                            : ("descending" as const),
+                      }
+                    : {})}
+                >
+                  <UsageSortTh
+                    field="description"
+                    label={text("说明", "Description")}
+                    sort={recordSort}
+                    onToggle={toggleRecordSort}
+                  />
+                </th>
               </tr>
             </thead>
             <tbody>
-              {d.records.length === 0 ? (
+              {sortedRecords.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="bill-table-empty muted">
                     {text("暂无账单记录", "No billing records")}
                   </td>
                 </tr>
               ) : (
-                d.records.map((r) => (
+                sortedRecords.map((r) => (
                   <tr key={r.id}>
                     <td className="bill-td-date">
                       {formatDateTime(r.createdAt, i18n.resolvedLanguage)}
