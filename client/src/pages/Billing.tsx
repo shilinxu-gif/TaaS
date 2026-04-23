@@ -116,19 +116,15 @@ export function Billing() {
     queryFn: () => api<BillingOverview>("/billing/overview"),
   });
 
-  if (isLoading) return <p className="muted bill-page-pad">{text("加载中…", "Loading…")}</p>;
-  if (error) return <p className="error bill-page-pad">{(error as Error).message}</p>;
-
-  const d = data!;
-  const { summary } = d;
-
   const sortedRecords = useMemo(() => {
-    const rows = d.records;
-    if (rows.length <= 1) return rows;
+    const rows = data?.records;
+    if (!rows || rows.length <= 1) {
+      return rows ?? [];
+    }
     return [...rows].sort((a, b) =>
       compareBillingRecords(a, b, recordSort.field, recordSort.dir),
     );
-  }, [d.records, recordSort.dir, recordSort.field]);
+  }, [data, recordSort.dir, recordSort.field]);
 
   const toggleRecordSort = (field: BillingRecordSortField) => {
     setRecordSort((prev) => {
@@ -138,6 +134,12 @@ export function Billing() {
       return { field, dir: prev.dir === "desc" ? "asc" : "desc" };
     });
   };
+
+  if (isLoading) return <p className="muted bill-page-pad">{text("加载中…", "Loading…")}</p>;
+  if (error) return <p className="error bill-page-pad">{(error as Error).message}</p>;
+
+  const d = data!;
+  const { summary } = d;
 
   return (
     <div className="bill-page">
