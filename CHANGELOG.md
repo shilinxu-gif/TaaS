@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### 2026-04-24 15:10 部署手册修正一键脚本示例命令
+
+- 改动内容：`docs/ALIBABA_CLOUD_LINUX_DEPLOYMENT.md` 中「使用一键更新脚本」小节误写为 `image.png`，已改为正确的 `bash scripts/deploy-prod.sh` 示例。
+- 影响范围：`docs/ALIBABA_CLOUD_LINUX_DEPLOYMENT.md`、`CHANGELOG.md`。
+- 验证情况：已人工核对小节上下文与脚本路径一致。
+- 运维动作：无；纯文档修正。
+- 线上数据影响：无。
+- 风险控制：无。
+
 ### 2026-04-24 14:35 网关 SSE 再加固：避免 BodyBuilder 预设 Content-Type 触发转换器
 
 - 改动内容：在已改为 `ResponseEntity<Object>` 的基础上，流式分支不再使用 `ResponseEntity.BodyBuilder.contentType(TEXT_EVENT_STREAM).body(StreamingResponseBody)` 链式写法，改为 `HttpHeaders` 设置 `Content-Type` / `Cache-Control` 后使用全参 `new ResponseEntity<>(stream, headers, status)`；非流式 JSON 同样统一为 `jsonEntity` 全参构造，降低部分 Spring 版本仍对 SSE 体误走 `HttpMessageConverter`、报 `No converter for … Lambda … text/event-stream` 的概率。该问题与 Claude Code 请求 JSON 结构无直接冲突，属服务端写出路径。
