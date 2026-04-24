@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### 2026-04-24 14:35 网关 SSE 再加固：避免 BodyBuilder 预设 Content-Type 触发转换器
+
+- 改动内容：在已改为 `ResponseEntity<Object>` 的基础上，流式分支不再使用 `ResponseEntity.BodyBuilder.contentType(TEXT_EVENT_STREAM).body(StreamingResponseBody)` 链式写法，改为 `HttpHeaders` 设置 `Content-Type` / `Cache-Control` 后使用全参 `new ResponseEntity<>(stream, headers, status)`；非流式 JSON 同样统一为 `jsonEntity` 全参构造，降低部分 Spring 版本仍对 SSE 体误走 `HttpMessageConverter`、报 `No converter for … Lambda … text/event-stream` 的概率。该问题与 Claude Code 请求 JSON 结构无直接冲突，属服务端写出路径。
+- 影响范围：`backend-java/src/main/java/com/taas/gateway/GatewayController.java`、`CHANGELOG.md`。
+- 验证情况：已执行 `mvn -f backend-java/pom.xml -DskipTests compile` 与 `mvn -f backend-java/pom.xml -Dtest=GatewayControllerTest,GatewayServiceTest test` 通过。
+- 运维动作：发布后端并重启网关进程；无需 SQL、迁移或清缓存。
+- 线上数据影响：无。
+- 风险控制：仅调整 `ResponseEntity` 构造方式，不改变 Anthropic/OpenAI 兼容语义与流式字节格式。
+
 ### 2026-04-23 22:30 修复流式网关 ResponseEntity 通配符导致 SSE 500
 
 - 改动内容：Claude Code 等客户端在 `stream: true` 下访问 `/v1/messages` 或 Chat Completions 时，Spring 报 `No converter for [GatewayService$$Lambda…] with preset Content-Type 'text/event-stream'` 并返回 500；根因为控制器方法声明为 `ResponseEntity<?>` 时，框架无法将 `StreamingResponseBody` 交给流式写出处理器而误走 `HttpMessageConverter`（与 Spring Framework #25996 同类问题）。将 `GatewayController` 中流式相关入口与 `toResponse` 的返回类型改为 `ResponseEntity<Object>`，使流式体按 `StreamingResponseBody` 正常写出。

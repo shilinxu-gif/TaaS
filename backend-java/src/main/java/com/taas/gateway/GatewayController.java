@@ -2,6 +2,7 @@ package com.taas.gateway;
 
 import java.util.Map;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -36,9 +37,7 @@ public class GatewayController {
     }
     GatewayService.GatewayResponse response =
         gatewayService.chatCompletions(authorization, idempotencyKey, clientIp(forwardedFor), body);
-    ResponseEntity.BodyBuilder builder = ResponseEntity.status(response.status());
-    response.headers().forEach(builder::header);
-    return builder.body(response.body());
+    return jsonEntity(response);
   }
 
   @PostMapping({"/v1/messages", "/gateway/v1/messages"})
@@ -56,22 +55,34 @@ public class GatewayController {
     GatewayService.GatewayResponse response =
         gatewayService.anthropicMessages(
             authorization, xApiKey, idempotencyKey, clientIp(forwardedFor), body);
-    ResponseEntity.BodyBuilder builder = ResponseEntity.status(response.status());
-    response.headers().forEach(builder::header);
-    return builder.body(response.body());
+    return jsonEntity(response);
   }
 
+  private static ResponseEntity<Object> jsonEntity(GatewayService.GatewayResponse response) {
+    HttpHeaders headers = new HttpHeaders();
+    response.headers().forEach(headers::add);
+    return new ResponseEntity<>(response.body(), headers, response.status());
+  }
+
+  /**
+   * 使用 {@link ResponseEntity} 全参构造 + {@link HttpHeaders} 设置 SSE Content-Type，避免
+   * {@code BodyBuilder.contentType(TEXT_EVENT_STREAM).body(stream)} 在部分环境下仍走
+   * HttpMessageConverter 查找 Lambda 转换器的问题。
+   */
   private ResponseEntity<Object> toResponse(GatewayService.GatewayStreamResponse response) {
-    ResponseEntity.BodyBuilder builder = ResponseEntity.status(response.status());
-    response.headers().forEach(builder::header);
     if (response.body() != null) {
-      return builder.body(response.body());
+      HttpHeaders headers = new HttpHeaders();
+      response.headers().forEach(headers::add);
+      return new ResponseEntity<>(response.body(), headers, response.status());
     }
-    builder.header(HttpHeaders.CACHE_CONTROL, "no-cache");
-    builder.header("X-Accel-Buffering", "no");
-    builder.contentType(MediaType.TEXT_EVENT_STREAM);
     StreamingResponseBody stream = response.streamBody();
-    return builder.body(stream);
+    HttpHeaders headers = new HttpHeaders();
+    response.headers().forEach(headers::add);
+    headers.setCacheControl("no-cache");
+    headers.add("X-Accel-Buffering", "no");
+    headers.setContentType(MediaType.TEXT_EVENT_STREAM);
+    HttpStatusCode status = response.status();
+    return new ResponseEntity<>(stream, headers, status);
   }
 
   private boolean streamRequested(Map<String, Object> body) {
