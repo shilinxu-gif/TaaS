@@ -30,6 +30,7 @@ class GatewayServiceTest {
   private final NamedParameterJdbcTemplate jdbcTemplate = mock(NamedParameterJdbcTemplate.class);
   private final TenantIdempotencyCachePolicyService tenantIdempotencyCachePolicy =
       mock(TenantIdempotencyCachePolicyService.class);
+  private final TaasProperties taasProperties = mock(TaasProperties.class);
   private final GatewayService gatewayService =
       new GatewayService(
           jdbcTemplate,
@@ -37,7 +38,7 @@ class GatewayServiceTest {
           tenantIdempotencyCachePolicy,
           mock(CryptoUtils.class),
           new Jsons(new ObjectMapper()),
-          mock(TaasProperties.class),
+          taasProperties,
           mock(AuditService.class),
           WebClient.builder());
 
@@ -45,6 +46,7 @@ class GatewayServiceTest {
   void stubIdempotencyPolicy() {
     Mockito.when(tenantIdempotencyCachePolicy.forTenant(Mockito.anyString()))
         .thenReturn(new TenantIdempotencyCachePolicyService.IdempotencyPolicy(true, Duration.ofHours(24)));
+    Mockito.when(taasProperties.getGateway()).thenReturn(new TaasProperties.Gateway());
   }
 
   @Test

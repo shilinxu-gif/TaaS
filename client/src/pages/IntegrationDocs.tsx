@@ -669,6 +669,16 @@ console.log(await response.json());`,
     },
     {
       question: text(
+        "不传 Idempotency-Key 时还能命中响应缓存吗？",
+        "Can response cache hits work without an Idempotency-Key?"
+      ),
+      answer: text(
+        "可以（在租户缓存开启且网关未关闭该能力时）。对 **非流式** `chat/completions`，若无幂等键，网关会对白名单内的请求字段（如 model、messages、temperature 等）做稳定规范化后 SHA-256，使用 Redis 键前缀 `bodyfp:`；**幂等键始终优先**。流式 `stream: true` 当前不走该指纹缓存。可通过环境变量 `TAAS_GATEWAY_BODY_FINGERPRINT_CACHE=false` 全局关闭。",
+        "Yes (when tenant cache is enabled and the gateway feature is on). For **non-streaming** `chat/completions`, if there is no idempotency key, the gateway hashes a stable subset of JSON fields (e.g. model, messages, temperature) and stores responses under the Redis prefix `bodyfp:`; an **`Idempotency-Key` always wins** if present. Streaming (`stream: true`) does not use this fingerprint cache yet. Set `TAAS_GATEWAY_BODY_FINGERPRINT_CACHE=false` to disable globally."
+      ),
+    },
+    {
+      question: text(
         "为什么请求的 model 明明存在，却还是报错？",
         "Why does the request still fail even though the model exists?"
       ),

@@ -9,6 +9,8 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class GatewayCacheService {
+  private static final String BODYFP_PREFIX = "bodyfp:";
+
   private final StringRedisTemplate redisTemplate;
   private final Jsons jsons;
   private final Map<String, String> localStore = new ConcurrentHashMap<>();
@@ -41,6 +43,35 @@ public class GatewayCacheService {
       redisTemplate.opsForValue().set("idem:" + key, raw, effective);
     } catch (Exception ignored) {
       localStore.put(key, raw);
+    }
+  }
+
+  public Map<String, Object> getBodyFingerprintResponse(String appKeyId, String sha256Hex) {
+    if (appKeyId == null || sha256Hex == null || sha256Hex.isBlank()) {
+      return null;
+    }
+    String redisKey = BODYFP_PREFIX + appKeyId + ":" + sha256Hex;
+    try {
+      String raw = redisTemplate.opsForValue().get(redisKey);
+      return raw == null ? null : jsons.readObject(raw);
+    } catch (Exception ignored) {
+      String raw = localStore.get(redisKey);
+      return raw == null ? null : jsons.readObject(raw);
+    }
+  }
+
+  public void setBodyFingerprintResponse(
+      String appKeyId, String sha256Hex, Map<String, Object> payload, Duration ttl) {
+    if (appKeyId == null || sha256Hex == null || sha256Hex.isBlank()) {
+      return;
+    }
+    String redisKey = BODYFP_PREFIX + appKeyId + ":" + sha256Hex;
+    String raw = jsons.stringify(payload);
+    Duration effective = ttl == null || ttl.isNegative() || ttl.isZero() ? Duration.ofHours(24) : ttl;
+    try {
+      redisTemplate.opsForValue().set(redisKey, raw, effective);
+    } catch (Exception ignored) {
+      localStore.put(redisKey, raw);
     }
   }
 

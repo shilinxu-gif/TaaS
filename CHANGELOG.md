@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### 2026-04-24 19:40 网关：无幂等键时非流式 chat 请求体指纹缓存（第三方零改）
+
+- 改动内容：对 **非流式** `chat/completions`，在租户缓存策略开启、且未传 `Idempotency-Key` 时，对白名单字段（`model`、`messages`、`temperature`、`tools` 等）做稳定规范化 JSON 后 **SHA-256**，Redis 键 `bodyfp:{appKeyId}:{sha}` 读写响应；**仍优先** `idem:{appKeyId}:{Idempotency-Key}`。新增 `ChatCompletionBodyFingerprint`、`GatewayCacheService` 的 bodyfp 读写；`taas.gateway.body-fingerprint-cache-enabled`（`TAAS_GATEWAY_BODY_FINGERPRINT_CACHE`，默认 true）可关闭。`stream: true` 不使用指纹缓存。部署文档与集成文档 FAQ 已补充。
+- 影响范围：`backend-java` 网关、`TaasProperties`、`application.yml`、`IntegrationDocs.tsx`、`docs/ALIBABA_CLOUD_LINUX_DEPLOYMENT.md`、`CHANGELOG.md`。
+- 验证情况：已执行 `mvn -f backend-java/pom.xml test`。
+- 运维动作：发版并重启后端；可选在 `.env` 设置 `TAAS_GATEWAY_BODY_FINGERPRINT_CACHE=false` 后重启以关闭指纹缓存。无需迁移。Redis 将新增 `bodyfp:*` 键，与 `idem:*` 并存。
+- 线上数据影响：无表结构变更；命中指纹缓存时 `api_request_logs.idempotency_key` 可为空（与幂等命中相同计费语义）。
+- 风险控制：相同规范化体不同业务语义可能误命中，需知悉白名单字段设计；关闭指纹后行为回退为仅幂等键缓存。
+
 ### 2026-04-24 19:05 成本优化 MVP：缓存命中估算列、控制台聚合与网关读租户缓存策略
 
 - 改动内容：`recordCacheHit` 从缓存响应体解析 OpenAI/Anthropic 形态 `usage`，写入 `saved_tokens_estimate` / `saved_prompt_tokens` / `saved_completion_tokens`（`CachedResponseUsageEstimate`）；`usage_records` 与余额仍为 0。控制台 `optimizationSummary`、`estimateCacheSavings`、高频重复 SQL 改为 `sum(saved_tokens_estimate)`；工作台/用量图表/本月用量等「真实消耗」类 `sum(total_tokens)` 仅统计 `cache_hit = false`；运营侧按用户/租户/AppKey/模型的 Token 汇总同步排除缓存命中。网关新增 `TenantIdempotencyCachePolicyService`（Caffeine ~45s）读 `tenant_cache_settings`：`enabled=false` 时跳过幂等缓存读写；`ttl_seconds` 传入 `GatewayCacheService.setIdempotentResponse` 的 Redis TTL；MVP 语义/混合与精确一致（代码注释说明）。`pom.xml` 增加 `caffeine` 依赖。集成文档 FAQ 补充控制台开关/TTL 与网关关系。新增 `CachedResponseUsageEstimateTest`；`GatewayServiceTest` 注入策略 Mock。

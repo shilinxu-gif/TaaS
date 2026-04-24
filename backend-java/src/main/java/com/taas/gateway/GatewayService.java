@@ -112,6 +112,13 @@ public class GatewayService {
     TenantIdempotencyCachePolicyService.IdempotencyPolicy idemPolicy =
         tenantIdempotencyCachePolicy.forTenant(appKey.tenantId());
     String idemKey = idempotencyKey == null || idempotencyKey.isBlank() ? null : appKey.id() + ":" + idempotencyKey.trim();
+    String bodyFingerprintSha =
+        idemPolicy.enabled()
+                && idemKey == null
+                && properties.getGateway().isBodyFingerprintCacheEnabled()
+                && ChatCompletionBodyFingerprint.isEligible(requestBody)
+            ? ChatCompletionBodyFingerprint.sha256Hex(jsons, requestBody)
+            : null;
     if (idemPolicy.enabled() && idemKey != null) {
       Map<String, Object> cached = cacheService.getIdempotentResponse(idemKey);
       if (cached != null) {
@@ -120,6 +127,17 @@ public class GatewayService {
             firstNonBlank(requestedModel, stringValue(cached.get("model"))),
             requestIp,
             idempotencyKey,
+            cached);
+        return new GatewayResponse(HttpStatus.OK, cached, Map.of());
+      }
+    } else if (bodyFingerprintSha != null) {
+      Map<String, Object> cached = cacheService.getBodyFingerprintResponse(appKey.id(), bodyFingerprintSha);
+      if (cached != null) {
+        recordCacheHit(
+            appKey,
+            firstNonBlank(requestedModel, stringValue(cached.get("model"))),
+            requestIp,
+            null,
             cached);
         return new GatewayResponse(HttpStatus.OK, cached, Map.of());
       }
@@ -174,6 +192,10 @@ public class GatewayService {
         routingConfig);
     if (idemPolicy.enabled() && idemKey != null) {
       cacheService.setIdempotentResponse(idemKey, payload, idemPolicy.redisTtl());
+    } else if (idemPolicy.enabled()
+        && bodyFingerprintSha != null
+        && properties.getGateway().isBodyFingerprintCacheEnabled()) {
+      cacheService.setBodyFingerprintResponse(appKey.id(), bodyFingerprintSha, payload, idemPolicy.redisTtl());
     }
     return new GatewayResponse(HttpStatus.OK, payload, Map.of());
   }

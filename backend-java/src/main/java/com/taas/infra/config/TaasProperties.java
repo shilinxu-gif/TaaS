@@ -162,6 +162,19 @@ public class TaasProperties {
     private boolean debugLogHttpBodies = false;
     private int debugLogMaxChars = 24000;
     private int debugLogSseHeadMaxChars = 16384;
+    /**
+     * 无 Idempotency-Key 时，对非流式 chat/completions 按请求体白名单字段做指纹并读写 Redis（bodyfp 前缀）。
+     * 关闭后仅保留幂等键缓存，与「第三方零改」场景互斥。
+     */
+    private boolean bodyFingerprintCacheEnabled = true;
+
+    public boolean isBodyFingerprintCacheEnabled() {
+      return bodyFingerprintCacheEnabled;
+    }
+
+    public void setBodyFingerprintCacheEnabled(boolean bodyFingerprintCacheEnabled) {
+      this.bodyFingerprintCacheEnabled = bodyFingerprintCacheEnabled;
+    }
 
     public boolean isDebugLogHttpBodies() {
       return debugLogHttpBodies;
