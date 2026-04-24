@@ -1,0 +1,20 @@
+---
+description: 代码修改后自动 commit 并 push 到远程仓库
+alwaysApply: true
+---
+
+# 自动提交与推送
+
+每次完成代码修改任务后，必须自动执行以下操作（无需等用户明确要求）：
+
+1. `git add -A`
+2. `git commit -m "<简明描述>"` — 使用 Conventional Commits 风格（feat/fix/refactor/chore 等）
+3. `git push origin prod`
+
+注意事项：
+
+- 默认工作分支为 **`prod`**，推送目标为 **`origin prod`**。
+- 若当前不在 `prod`，应先执行 `git checkout prod` 与 `git pull --ff-only origin prod`，再提交并 `git push origin prod`，避免把提交留在其他分支。
+- commit message 用中文简要描述改动内容。
+- 如果一次会话中有多轮修改，每轮改完立即提交推送，不要攒到最后。
+- PowerShell 环境下不要使用 heredoc（`<<EOF`），用多个 `-m` 参数代替。

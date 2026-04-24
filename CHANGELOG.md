@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### 2026-04-24 17:05 Cursor 规则：自动推送目标改为 prod
+
+- 改动内容：`.cursor/rules/auto-commit-push.mdc` 将助手自动 `git push` 的目标由 `origin dev` 改为 **`origin prod`**，并约定默认在 **`prod`** 上提交；若当前不在 `prod` 须先 `checkout` + `pull --ff-only` 再推送。
+- 影响范围：`.cursor/rules/auto-commit-push.mdc`、`CHANGELOG.md`。
+- 验证情况：已人工核对规则正文与分支名一致。
+- 运维动作：无；不涉及运行中的服务或数据库。
+- 线上数据影响：无。
+- 风险控制：团队若仍习惯在 `dev` 开发，需在合并进 `prod` 后再发版，或自行约定分支流程；规则仅约束 Cursor 助手行为。
+
 ### 2026-04-24 16:25 网关可选 TAAS_GATEWAY_DEBUG_LOG_HTTP_BODIES 临时打印请求/响应体
 
 - 改动内容：新增 `taas.gateway.debug-log-http-bodies`（环境变量 `TAAS_GATEWAY_DEBUG_LOG_HTTP_BODIES`，默认 `false`）及 `debug-log-max-chars` / `debug-log-sse-head-max-chars`；为 `true` 时 `GatewayController` 以 **WARN** 打印 `gateway.debug_http`：入站 JSON 请求体（去掉 `_gateway_debug_trace_id`）、非流式与流式 JSON 错误响应体（Jackson 序列化后按字符数截断）；流式 SSE 在写出时用 `HeadCopyOutputStream` 复制下游前若干字节并在结束后打 `kind=sse_head`。**不**记录完整 SSE 流以免内存与日志爆炸。`GatewayController` 构造注入 `TaasProperties`；`TaasProperties` 增加嵌套 `Gateway` 配置段。部署文档 `.env` 示例增加上述变量说明。
