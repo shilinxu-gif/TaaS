@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### 2026-04-24 18:30 Flyway：api_request_logs 增加缓存节省 token 估算列
+
+- 改动内容：新增迁移 `V20260424183000__api_request_logs_saved_tokens_estimate.sql`，为 `api_request_logs` 增加可空列 `saved_tokens_estimate`、`saved_prompt_tokens`、`saved_completion_tokens`；供 `cache_hit = true` 的请求日志写入「未命中缓存时按缓存体 usage 估算的 token」，与 `total_tokens` 恒为 0 的扣费语义分离。
+- 影响范围：`backend-java/src/main/resources/db/migration/V20260424183000__api_request_logs_saved_tokens_estimate.sql`、`CHANGELOG.md`；后续需配合应用层 `recordCacheHit` 与控制台聚合 SQL 读写这些列（本提交仅 schema）。
+- 验证情况：已核对 Flyway 版本号晚于既有迁移；列均为 `INTEGER` 可空、无默认值，存量行保持 `NULL`。
+- 运维动作：发版或重启后端使 Flyway 执行新迁移；无需手工 SQL（除非在禁用 Flyway 的环境需自行执行等同 `ALTER TABLE`）。无需清缓存。
+- 线上数据影响：仅新增列，不改写任何存量行；新列默认全为 `NULL`，直至应用开始写入。
+- 风险控制：可重复执行（`IF NOT EXISTS`）；应用未升级前读新列为 `NULL`，聚合侧需 `coalesce` 直至代码对齐。
+
 ### 2026-04-24 17:05 Cursor 规则：自动推送目标改为 prod
 
 - 改动内容：`.cursor/rules/auto-commit-push.mdc` 将助手自动 `git push` 的目标由 `origin dev` 改为 **`origin prod`**，并约定默认在 **`prod`** 上提交；若当前不在 `prod` 须先 `checkout` + `pull --ff-only` 再推送。
