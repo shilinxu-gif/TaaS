@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### 2026-04-24 网关：缓存命中落库真实供应商与路由
+
+- 改动内容：写入 Redis 幂等/bodyfp 响应前通过 `GatewayCachePayloads.withMeta` 在 JSON 顶层附加 `_taasGatewayCacheMeta`（`providerId`、`routingPrimary`、`routingActual`、`routingReason`），读缓存返回客户端前 `unwrap` 剥离；`recordCacheHit` 按 meta 查 `providers.id` 写入 `api_request_logs.provider_id`，并写入 `routing_primary` / `routing_actual` / `routing_reason`；无 meta 的旧条目仍回退为原「priority 首条」逻辑。新增 `GatewayCachePayloads` 与 `GatewayCachePayloadsTest`。
+- 影响范围：`backend-java/src/main/java/com/taas/gateway/GatewayService.java`、`GatewayCachePayloads.java`、测试、`CHANGELOG.md`。
+- 验证情况：已执行 `mvn -f backend-java/pom.xml test`。
+- 运维动作：发版并重启后端；无需迁移。存量 Redis 键在 TTL 内仍可能无 meta，命中时供应商列行为与升级前一致直至键过期或被覆盖。
+- 线上数据影响：仅影响**新产生**的缓存命中行与之后写入的 Redis 条目；不修改历史行。
+- 风险控制：`_taasGatewayCacheMeta` 在返回前已剥离；若 meta 中 `providerId` 在库中已删除则回退首条 provider。
+
 ### 2026-04-24 用量页筛选区单行对齐
 
 - 改动内容：`Usage.tsx` 筛选容器增加 `usage-filter-grid--tenant-row` 等修饰类；`styles.css` 中用量筛选改为横向 flex（标签与日期/下拉同一基线），时间快捷按钮与日期同一行；窄屏（≤960px）恢复纵向堆叠以便可操作。

@@ -120,26 +120,30 @@ public class GatewayService {
             ? ChatCompletionBodyFingerprint.sha256Hex(jsons, requestBody)
             : null;
     if (idemPolicy.enabled() && idemKey != null) {
-      Map<String, Object> cached = cacheService.getIdempotentResponse(idemKey);
-      if (cached != null) {
+      Map<String, Object> rawCached = cacheService.getIdempotentResponse(idemKey);
+      if (rawCached != null) {
+        GatewayCachePayloads.Unwrapped uw = GatewayCachePayloads.unwrap(rawCached);
         recordCacheHit(
             appKey,
-            firstNonBlank(requestedModel, stringValue(cached.get("model"))),
+            firstNonBlank(requestedModel, stringValue(uw.body().get("model"))),
             requestIp,
             idempotencyKey,
-            cached);
-        return new GatewayResponse(HttpStatus.OK, cached, Map.of());
+            uw.body(),
+            uw.meta());
+        return new GatewayResponse(HttpStatus.OK, uw.body(), Map.of());
       }
     } else if (bodyFingerprintSha != null) {
-      Map<String, Object> cached = cacheService.getBodyFingerprintResponse(appKey.id(), bodyFingerprintSha);
-      if (cached != null) {
+      Map<String, Object> rawCached = cacheService.getBodyFingerprintResponse(appKey.id(), bodyFingerprintSha);
+      if (rawCached != null) {
+        GatewayCachePayloads.Unwrapped uw = GatewayCachePayloads.unwrap(rawCached);
         recordCacheHit(
             appKey,
-            firstNonBlank(requestedModel, stringValue(cached.get("model"))),
+            firstNonBlank(requestedModel, stringValue(uw.body().get("model"))),
             requestIp,
             null,
-            cached);
-        return new GatewayResponse(HttpStatus.OK, cached, Map.of());
+            uw.body(),
+            uw.meta());
+        return new GatewayResponse(HttpStatus.OK, uw.body(), Map.of());
       }
     }
 
@@ -190,12 +194,18 @@ public class GatewayService {
         inputPrice,
         outputPrice,
         routingConfig);
+    GatewayCachePayloads.CacheMeta cacheMeta = gatewayCacheMeta(execution, routingConfig);
     if (idemPolicy.enabled() && idemKey != null) {
-      cacheService.setIdempotentResponse(idemKey, payload, idemPolicy.redisTtl());
+      cacheService.setIdempotentResponse(
+          idemKey, GatewayCachePayloads.withMeta(payload, cacheMeta), idemPolicy.redisTtl());
     } else if (idemPolicy.enabled()
         && bodyFingerprintSha != null
         && properties.getGateway().isBodyFingerprintCacheEnabled()) {
-      cacheService.setBodyFingerprintResponse(appKey.id(), bodyFingerprintSha, payload, idemPolicy.redisTtl());
+      cacheService.setBodyFingerprintResponse(
+          appKey.id(),
+          bodyFingerprintSha,
+          GatewayCachePayloads.withMeta(payload, cacheMeta),
+          idemPolicy.redisTtl());
     }
     return new GatewayResponse(HttpStatus.OK, payload, Map.of());
   }
@@ -262,18 +272,20 @@ public class GatewayService {
             ? null
             : appKey.id() + ":" + idempotencyKey.trim();
     if (idemPolicy.enabled() && idemKey != null) {
-      Map<String, Object> cached = cacheService.getIdempotentResponse(idemKey);
-      if (cached != null) {
+      Map<String, Object> rawCached = cacheService.getIdempotentResponse(idemKey);
+      if (rawCached != null) {
+        GatewayCachePayloads.Unwrapped uw = GatewayCachePayloads.unwrap(rawCached);
         recordCacheHit(
             appKey,
-            firstNonBlank(requestedModel, stringValue(cached.get("model"))),
+            firstNonBlank(requestedModel, stringValue(uw.body().get("model"))),
             requestIp,
             idempotencyKey,
-            cached);
+            uw.body(),
+            uw.meta());
         return new GatewayStreamResponse(
             HttpStatus.OK,
             null,
-            staticStreamBody(buildOpenAiStreamEvents(cached, includeOpenAiUsageInStream(requestBody))),
+            staticStreamBody(buildOpenAiStreamEvents(uw.body(), includeOpenAiUsageInStream(requestBody))),
             Map.of());
       }
     }
@@ -347,18 +359,21 @@ public class GatewayService {
             ? null
             : appKey.id() + ":" + idempotencyKey.trim();
     if (idemPolicy.enabled() && idemKey != null) {
-      Map<String, Object> cached = cacheService.getIdempotentResponse(idemKey);
-      if (cached != null) {
+      Map<String, Object> rawCached = cacheService.getIdempotentResponse(idemKey);
+      if (rawCached != null) {
+        GatewayCachePayloads.Unwrapped uw = GatewayCachePayloads.unwrap(rawCached);
         recordCacheHit(
             appKey,
-            firstNonBlank(requestedModel, stringValue(cached.get("model"))),
+            firstNonBlank(requestedModel, stringValue(uw.body().get("model"))),
             requestIp,
             idempotencyKey,
-            cached);
+            uw.body(),
+            uw.meta());
         return new GatewayStreamResponse(
             HttpStatus.OK,
             null,
-            staticStreamBody(buildAnthropicStreamEvents(normalizeAnthropicGatewayResponse(cached))),
+            staticStreamBody(
+                buildAnthropicStreamEvents(normalizeAnthropicGatewayResponse(uw.body()))),
             Map.of());
       }
     }
@@ -441,7 +456,11 @@ public class GatewayService {
             outputPrice,
             routingConfig);
         if (idemPolicy.enabled() && idemKey != null) {
-          cacheService.setIdempotentResponse(idemKey, execution.payload(), idemPolicy.redisTtl());
+          GatewayCachePayloads.CacheMeta cacheMeta = gatewayCacheMeta(execution, routingConfig);
+          cacheService.setIdempotentResponse(
+              idemKey,
+              GatewayCachePayloads.withMeta(execution.payload(), cacheMeta),
+              idemPolicy.redisTtl());
         }
         return;
       } catch (ApiException exception) {
@@ -1464,18 +1483,68 @@ public class GatewayService {
     auditService.write(appKey.tenantId(), null, "app_key", "gateway.chat_completion", "api_request_log", logId, requestIp, Map.of("provider", execution.provider().slug(), "model", model));
   }
 
+  private GatewayCachePayloads.CacheMeta gatewayCacheMeta(
+      ProviderExecution execution, RoutingConfig routingConfig) {
+    String routingPrimary =
+        firstNonBlank(
+            routingConfig.primaryProviderType(),
+            execution.catalog() == null ? null : execution.catalog().providerType(),
+            "openai");
+    String routingReason =
+        execution.attempts() > 1 ? "fallback_from_" + routingPrimary : null;
+    return new GatewayCachePayloads.CacheMeta(
+        execution.provider().id(), routingPrimary, execution.provider().slug(), routingReason);
+  }
+
+  private ProviderRow resolveProviderForCacheHit(GatewayCachePayloads.CacheMeta cacheMeta) {
+    if (cacheMeta != null
+        && cacheMeta.providerId() != null
+        && !cacheMeta.providerId().isBlank()) {
+      List<ProviderRow> rows =
+          jdbcTemplate.query(
+              """
+              select
+                id, name, slug, provider_type, status, enabled, base_url, api_key_ciphertext,
+                model_catalog::text as model_catalog, priority, timeout_ms, health_status
+              from providers
+              where id = :id
+              limit 1
+              """,
+              Map.of("id", cacheMeta.providerId()),
+              PROVIDER_ROW_MAPPER);
+      if (!rows.isEmpty()) {
+        return rows.get(0);
+      }
+    }
+    return jdbcTemplate.query(
+            "select id, name, slug, provider_type, status, enabled, base_url, api_key_ciphertext, '[]' as model_catalog, priority, timeout_ms, health_status from providers order by priority asc limit 1",
+            PROVIDER_ROW_MAPPER)
+        .stream()
+        .findFirst()
+        .orElse(null);
+  }
+
   @Transactional
-  private void recordCacheHit(AppKeyRow appKey, String model, String requestIp, String idempotencyKey, Map<String, Object> responsePayload) {
-    ProviderRow provider =
-        jdbcTemplate.query(
-                "select id, name, slug, provider_type, status, enabled, base_url, api_key_ciphertext, '[]' as model_catalog, priority, timeout_ms, health_status from providers order by priority asc limit 1",
-                PROVIDER_ROW_MAPPER)
-            .stream()
-            .findFirst()
-            .orElse(null);
+  private void recordCacheHit(
+      AppKeyRow appKey,
+      String model,
+      String requestIp,
+      String idempotencyKey,
+      Map<String, Object> responsePayload,
+      GatewayCachePayloads.CacheMeta cacheMeta) {
+    ProviderRow provider = resolveProviderForCacheHit(cacheMeta);
     if (provider == null) {
       return;
     }
+    String routingPrimary =
+        cacheMeta != null && cacheMeta.routingPrimary() != null && !cacheMeta.routingPrimary().isBlank()
+            ? cacheMeta.routingPrimary()
+            : "cache";
+    String routingActual =
+        cacheMeta != null && cacheMeta.routingActual() != null && !cacheMeta.routingActual().isBlank()
+            ? cacheMeta.routingActual()
+            : "cache";
+    String routingReason = cacheMeta != null ? cacheMeta.routingReason() : null;
     CachedResponseUsageEstimate.Result usageEst = CachedResponseUsageEstimate.fromPayload(responsePayload);
     String logId = Ids.cuidLike("log");
     Instant now = Instant.now();
@@ -1483,10 +1552,10 @@ public class GatewayService {
         """
         insert into api_request_logs (
           id, tenant_id, user_id, app_key_id, provider_id, request_id, trace_id, model, prompt_tokens, completion_tokens,
-          total_tokens, latency_ms, cache_hit, routing_primary, routing_actual, retry_count, request_source_ip,
+          total_tokens, latency_ms, cache_hit, routing_primary, routing_actual, routing_reason, retry_count, request_source_ip,
           status_code, idempotency_key, saved_tokens_estimate, saved_prompt_tokens, saved_completion_tokens, created_at
         ) values (
-          :id, :tenantId, :userId, :appKeyId, :providerId, :requestId, :traceId, :model, 0, 0, 0, 8, true, 'cache', 'cache', 0, :ip, 200, :idempotencyKey,
+          :id, :tenantId, :userId, :appKeyId, :providerId, :requestId, :traceId, :model, 0, 0, 0, 8, true, :routingPrimary, :routingActual, :routingReason, 0, :ip, 200, :idempotencyKey,
           :savedTokensEstimate, :savedPromptTokens, :savedCompletionTokens, :createdAt
         )
         """,
@@ -1499,6 +1568,9 @@ public class GatewayService {
             .addValue("requestId", "req_" + Ids.shortHex(8))
             .addValue("traceId", "trace_" + Ids.shortHex(8))
             .addValue("model", model)
+            .addValue("routingPrimary", routingPrimary)
+            .addValue("routingActual", routingActual)
+            .addValue("routingReason", routingReason)
             .addValue("ip", requestIp)
             .addValue("idempotencyKey", idempotencyKey)
             .addValue("savedTokensEstimate", usageEst.savedTokensEstimate())
