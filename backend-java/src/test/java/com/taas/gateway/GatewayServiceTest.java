@@ -15,9 +15,12 @@ import com.taas.ops.AuditService;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
@@ -25,15 +28,24 @@ import org.springframework.web.reactive.function.client.WebClient;
 
 class GatewayServiceTest {
   private final NamedParameterJdbcTemplate jdbcTemplate = mock(NamedParameterJdbcTemplate.class);
+  private final TenantIdempotencyCachePolicyService tenantIdempotencyCachePolicy =
+      mock(TenantIdempotencyCachePolicyService.class);
   private final GatewayService gatewayService =
       new GatewayService(
           jdbcTemplate,
           mock(GatewayCacheService.class),
+          tenantIdempotencyCachePolicy,
           mock(CryptoUtils.class),
           new Jsons(new ObjectMapper()),
           mock(TaasProperties.class),
           mock(AuditService.class),
           WebClient.builder());
+
+  @BeforeEach
+  void stubIdempotencyPolicy() {
+    Mockito.when(tenantIdempotencyCachePolicy.forTenant(Mockito.anyString()))
+        .thenReturn(new TenantIdempotencyCachePolicyService.IdempotencyPolicy(true, Duration.ofHours(24)));
+  }
 
   @Test
   void supportsModelShouldRejectLegacyFallbackDemoModel() throws Exception {

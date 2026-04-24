@@ -31,9 +31,14 @@ public class GatewayCacheService {
   }
 
   public void setIdempotentResponse(String key, Map<String, Object> payload) {
+    setIdempotentResponse(key, payload, Duration.ofHours(24));
+  }
+
+  public void setIdempotentResponse(String key, Map<String, Object> payload, Duration ttl) {
     String raw = jsons.stringify(payload);
+    Duration effective = ttl == null || ttl.isNegative() || ttl.isZero() ? Duration.ofHours(24) : ttl;
     try {
-      redisTemplate.opsForValue().set("idem:" + key, raw, Duration.ofHours(24));
+      redisTemplate.opsForValue().set("idem:" + key, raw, effective);
     } catch (Exception ignored) {
       localStore.put(key, raw);
     }

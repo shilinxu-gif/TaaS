@@ -53,6 +53,7 @@ public class GatewayService {
       Pattern.compile("request id: ([^)\\s]+)");
   private final NamedParameterJdbcTemplate jdbcTemplate;
   private final GatewayCacheService cacheService;
+  private final TenantIdempotencyCachePolicyService tenantIdempotencyCachePolicy;
   private final CryptoUtils cryptoUtils;
   private final Jsons jsons;
   private final TaasProperties properties;
@@ -62,6 +63,7 @@ public class GatewayService {
   public GatewayService(
       NamedParameterJdbcTemplate jdbcTemplate,
       GatewayCacheService cacheService,
+      TenantIdempotencyCachePolicyService tenantIdempotencyCachePolicy,
       CryptoUtils cryptoUtils,
       Jsons jsons,
       TaasProperties properties,
@@ -69,6 +71,7 @@ public class GatewayService {
       WebClient.Builder webClientBuilder) {
     this.jdbcTemplate = jdbcTemplate;
     this.cacheService = cacheService;
+    this.tenantIdempotencyCachePolicy = tenantIdempotencyCachePolicy;
     this.cryptoUtils = cryptoUtils;
     this.jsons = jsons;
     this.properties = properties;
@@ -106,8 +109,10 @@ public class GatewayService {
           Map.of("Retry-After", "1"));
     }
 
+    TenantIdempotencyCachePolicyService.IdempotencyPolicy idemPolicy =
+        tenantIdempotencyCachePolicy.forTenant(appKey.tenantId());
     String idemKey = idempotencyKey == null || idempotencyKey.isBlank() ? null : appKey.id() + ":" + idempotencyKey.trim();
-    if (idemKey != null) {
+    if (idemPolicy.enabled() && idemKey != null) {
       Map<String, Object> cached = cacheService.getIdempotentResponse(idemKey);
       if (cached != null) {
         recordCacheHit(
@@ -167,8 +172,8 @@ public class GatewayService {
         inputPrice,
         outputPrice,
         routingConfig);
-    if (idemKey != null) {
-      cacheService.setIdempotentResponse(idemKey, payload);
+    if (idemPolicy.enabled() && idemKey != null) {
+      cacheService.setIdempotentResponse(idemKey, payload, idemPolicy.redisTtl());
     }
     return new GatewayResponse(HttpStatus.OK, payload, Map.of());
   }
@@ -228,11 +233,13 @@ public class GatewayService {
           null,
           Map.of("Retry-After", "1"));
     }
+    TenantIdempotencyCachePolicyService.IdempotencyPolicy idemPolicy =
+        tenantIdempotencyCachePolicy.forTenant(appKey.tenantId());
     String idemKey =
         idempotencyKey == null || idempotencyKey.isBlank()
             ? null
             : appKey.id() + ":" + idempotencyKey.trim();
-    if (idemKey != null) {
+    if (idemPolicy.enabled() && idemKey != null) {
       Map<String, Object> cached = cacheService.getIdempotentResponse(idemKey);
       if (cached != null) {
         recordCacheHit(
@@ -263,6 +270,7 @@ public class GatewayService {
                 resolvedModel.model(),
                 resolvedModel.selection(),
                 routingConfig,
+                idemPolicy,
                 false,
                 includeOpenAiUsageInStream(requestBody),
                 outputStream);
@@ -310,11 +318,13 @@ public class GatewayService {
           null,
           Map.of("Retry-After", "1"));
     }
+    TenantIdempotencyCachePolicyService.IdempotencyPolicy idemPolicy =
+        tenantIdempotencyCachePolicy.forTenant(appKey.tenantId());
     String idemKey =
         idempotencyKey == null || idempotencyKey.isBlank()
             ? null
             : appKey.id() + ":" + idempotencyKey.trim();
-    if (idemKey != null) {
+    if (idemPolicy.enabled() && idemKey != null) {
       Map<String, Object> cached = cacheService.getIdempotentResponse(idemKey);
       if (cached != null) {
         recordCacheHit(
@@ -345,6 +355,7 @@ public class GatewayService {
                 resolvedModel.model(),
                 resolvedModel.selection(),
                 routingConfig,
+                idemPolicy,
                 true,
                 false,
                 outputStream);
@@ -360,6 +371,7 @@ public class GatewayService {
       String model,
       ProviderSelection selection,
       RoutingConfig routingConfig,
+      TenantIdempotencyCachePolicyService.IdempotencyPolicy idemPolicy,
       boolean outwardAnthropic,
       boolean includeOpenAiUsage,
       OutputStream outputStream)
@@ -406,8 +418,8 @@ public class GatewayService {
             inputPrice,
             outputPrice,
             routingConfig);
-        if (idemKey != null) {
-          cacheService.setIdempotentResponse(idemKey, execution.payload());
+        if (idemPolicy.enabled() && idemKey != null) {
+          cacheService.setIdempotentResponse(idemKey, execution.payload(), idemPolicy.redisTtl());
         }
         return;
       } catch (ApiException exception) {
@@ -1442,6 +1454,7 @@ public class GatewayService {
     if (provider == null) {
       return;
     }
+    CachedResponseUsageEstimate.Result usageEst = CachedResponseUsageEstimate.fromPayload(responsePayload);
     String logId = Ids.cuidLike("log");
     Instant now = Instant.now();
     jdbcTemplate.update(
@@ -1449,9 +1462,10 @@ public class GatewayService {
         insert into api_request_logs (
           id, tenant_id, user_id, app_key_id, provider_id, request_id, trace_id, model, prompt_tokens, completion_tokens,
           total_tokens, latency_ms, cache_hit, routing_primary, routing_actual, retry_count, request_source_ip,
-          status_code, idempotency_key, created_at
+          status_code, idempotency_key, saved_tokens_estimate, saved_prompt_tokens, saved_completion_tokens, created_at
         ) values (
-          :id, :tenantId, :userId, :appKeyId, :providerId, :requestId, :traceId, :model, 0, 0, 0, 8, true, 'cache', 'cache', 0, :ip, 200, :idempotencyKey, :createdAt
+          :id, :tenantId, :userId, :appKeyId, :providerId, :requestId, :traceId, :model, 0, 0, 0, 8, true, 'cache', 'cache', 0, :ip, 200, :idempotencyKey,
+          :savedTokensEstimate, :savedPromptTokens, :savedCompletionTokens, :createdAt
         )
         """,
         new MapSqlParameterSource()
@@ -1465,6 +1479,9 @@ public class GatewayService {
             .addValue("model", model)
             .addValue("ip", requestIp)
             .addValue("idempotencyKey", idempotencyKey)
+            .addValue("savedTokensEstimate", usageEst.savedTokensEstimate())
+            .addValue("savedPromptTokens", usageEst.savedPromptTokens())
+            .addValue("savedCompletionTokens", usageEst.savedCompletionTokens())
             .addValue("createdAt", ts(now)));
     jdbcTemplate.update(
         "insert into usage_records (id, log_id, tenant_id, period, total_tokens, created_at) values (:id, :logId, :tenantId, :period, 0, :createdAt)",

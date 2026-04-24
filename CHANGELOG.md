@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### 2026-04-24 19:05 成本优化 MVP：缓存命中估算列、控制台聚合与网关读租户缓存策略
+
+- 改动内容：`recordCacheHit` 从缓存响应体解析 OpenAI/Anthropic 形态 `usage`，写入 `saved_tokens_estimate` / `saved_prompt_tokens` / `saved_completion_tokens`（`CachedResponseUsageEstimate`）；`usage_records` 与余额仍为 0。控制台 `optimizationSummary`、`estimateCacheSavings`、高频重复 SQL 改为 `sum(saved_tokens_estimate)`；工作台/用量图表/本月用量等「真实消耗」类 `sum(total_tokens)` 仅统计 `cache_hit = false`；运营侧按用户/租户/AppKey/模型的 Token 汇总同步排除缓存命中。网关新增 `TenantIdempotencyCachePolicyService`（Caffeine ~45s）读 `tenant_cache_settings`：`enabled=false` 时跳过幂等缓存读写；`ttl_seconds` 传入 `GatewayCacheService.setIdempotentResponse` 的 Redis TTL；MVP 语义/混合与精确一致（代码注释说明）。`pom.xml` 增加 `caffeine` 依赖。集成文档 FAQ 补充控制台开关/TTL 与网关关系。新增 `CachedResponseUsageEstimateTest`；`GatewayServiceTest` 注入策略 Mock。
+- 影响范围：`backend-java` 网关与控制台服务、`backend-java/pom.xml`、`client/src/pages/IntegrationDocs.tsx`、`CHANGELOG.md`。
+- 验证情况：已执行 `mvn -f backend-java/pom.xml test` 通过。
+- 运维动作：发版并重启后端；需已执行迁移 `V20260424183000__api_request_logs_saved_tokens_estimate`（若尚未 Flyway，先部署含迁移版本）。无需清 Redis；控制台改 TTL/开关后最多约 45s 网关侧策略缓存延迟。无需手工改数。
+- 线上数据影响：新产生的缓存命中日志会写入 `saved_*`；历史 `cache_hit=true` 行 `saved_tokens_estimate` 仍为 `NULL`，节省类聚合为 0 直至新流量产生；「消耗」类统计不因历史缓存行虚增（此前 `total_tokens` 已为 0）。
+- 风险控制：本地 Redis 不可用时仍走内存兜底，TTL 与现网一致为「尽力」；策略查询异常时回退为开启缓存、TTL 86400。
+
 ### 2026-04-24 18:30 Flyway：api_request_logs 增加缓存节省 token 估算列
 
 - 改动内容：新增迁移 `V20260424183000__api_request_logs_saved_tokens_estimate.sql`，为 `api_request_logs` 增加可空列 `saved_tokens_estimate`、`saved_prompt_tokens`、`saved_completion_tokens`；供 `cache_hit = true` 的请求日志写入「未命中缓存时按缓存体 usage 估算的 token」，与 `total_tokens` 恒为 0 的扣费语义分离。

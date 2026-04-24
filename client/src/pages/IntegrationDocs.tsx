@@ -659,6 +659,16 @@ console.log(await response.json());`,
     },
     {
       question: text(
+        "控制台「成本优化」里的缓存开关和 TTL 会生效吗？",
+        "Do the cache toggle and TTL in console Cost Optimization take effect?"
+      ),
+      answer: text(
+        "会。租户在控制台关闭缓存后，网关将跳过幂等响应缓存的读与写（仍保留 QPS/预算等逻辑）；`ttl_seconds` 会作为 Redis 中幂等响应条目的过期时间。语义/混合模式当前与精确模式一致，仅幂等缓存，不做向量相似命中。",
+        "Yes. When a tenant disables caching in the console, the gateway skips reading and writing the idempotent response cache (QPS/budget checks still apply). `ttl_seconds` controls how long identical `Idempotency-Key` responses stay in Redis. Semantic/hybrid modes currently behave like exact mode: idempotent cache only, no vector similarity matching."
+      ),
+    },
+    {
+      question: text(
         "为什么请求的 model 明明存在，却还是报错？",
         "Why does the request still fail even though the model exists?"
       ),

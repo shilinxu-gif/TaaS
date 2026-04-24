@@ -92,7 +92,7 @@ public class ConsoleService {
                 """
                 select
                   count(*) as requests_24h,
-                  coalesce(sum(total_tokens), 0) as tokens_24h,
+                  coalesce(sum(case when cache_hit = false then total_tokens else 0 end), 0) as tokens_24h,
                   coalesce(sum(case when status_code >= 400 then 1 else 0 end), 0) as failed_24h,
                   coalesce(avg(latency_ms), 0) as average_latency_ms,
                   coalesce(avg(case when provider_error_code is null then 100 else 0 end), 100) as provider_success_rate
@@ -136,7 +136,7 @@ public class ConsoleService {
             """
             select coalesce(sum(total_tokens), 0)
             from api_request_logs
-            where tenant_id = :tenantId and created_at >= :since
+            where tenant_id = :tenantId and created_at >= :since and cache_hit = false
             """,
             Map.of("tenantId", principal.tenantId(), "since", startOfDay),
             Long.class);
@@ -670,7 +670,7 @@ public class ConsoleService {
             """
             select coalesce(sum(total_tokens), 0)
             from api_request_logs
-            where tenant_id = :tenantId and created_at >= :monthStart
+            where tenant_id = :tenantId and created_at >= :monthStart and cache_hit = false
             """,
             Map.of("tenantId", principal.tenantId(), "monthStart", monthStart),
             Long.class);
@@ -906,13 +906,13 @@ public class ConsoleService {
             Long.class);
     Long savedTokens =
         jdbcTemplate.queryForObject(
-            "select coalesce(sum(total_tokens), 0) from api_request_logs where tenant_id = :tenantId and created_at >= :since and cache_hit = true",
+            "select coalesce(sum(saved_tokens_estimate), 0) from api_request_logs where tenant_id = :tenantId and created_at >= :since and cache_hit = true",
             Map.of("tenantId", principal.tenantId(), "since", since),
             Long.class);
     List<Map<String, Object>> topRepeatedPrompts =
         jdbcTemplate.query(
             """
-            select idempotency_key, count(*) as hits, coalesce(sum(total_tokens), 0) as saved_tokens
+            select idempotency_key, count(*) as hits, coalesce(sum(saved_tokens_estimate), 0) as saved_tokens
             from api_request_logs
             where tenant_id = :tenantId and created_at >= :since and cache_hit = true and idempotency_key is not null
             group by idempotency_key
@@ -961,7 +961,8 @@ public class ConsoleService {
         "estimatedSavedUsd", MoneyUtils.money(savedUsd),
         "cacheHits", hits == null ? 0 : hits,
         "nonCacheRequests", misses == null ? 0 : misses,
-        "note", "节省金额按「缓存命中累计 Token × 当前套餐每百万 Token 单价」估算；命中率=命中次数/（命中+未命中）。",
+        "note",
+            "节省金额按「缓存命中行的 saved_tokens_estimate 累计 × 当前套餐每百万 Token 单价」估算；命中率=命中次数/（命中+未命中）。工作台「消耗」类 Token 仅统计 cache_hit=false。",
         "valueLine", "平台通过语义与幂等缓存拦截重复流量，将本将消耗的 Token 与上游成本转化为可核算的节省项。",
         "topRepeatedPrompts", topRepeatedPrompts,
         "promptTemplates", promptTemplates);
@@ -1144,7 +1145,7 @@ public class ConsoleService {
         select
           tm.user_id,
           count(l.id) as request_count,
-          coalesce(sum(l.total_tokens), 0) as total_tokens,
+          coalesce(sum(case when l.cache_hit = false then l.total_tokens else 0 end), 0) as total_tokens,
           max(l.created_at) as last_request_at
         from tenant_members tm
         left join api_request_logs l on l.tenant_id = tm.tenant_id
@@ -1492,7 +1493,7 @@ public class ConsoleService {
                 select
                   a.id, a.name, t.name as tenant_name, a.environment,
                   count(l.id) as request_count,
-                  coalesce(sum(l.total_tokens), 0) as total_tokens,
+                  coalesce(sum(case when l.cache_hit = false then l.total_tokens else 0 end), 0) as total_tokens,
                   coalesce(sum(case when l.status_code >= 200 and l.status_code < 300 then 1 else 0 end), 0) as success_count,
                   coalesce(sum(b.amount_usd), 0) as spend_usd,
                   max(l.created_at) as last_called_at
@@ -1526,7 +1527,7 @@ public class ConsoleService {
                   coalesce(l.model, 'unknown') as model,
                   coalesce(p.slug, 'unknown') as provider_slug,
                   count(l.id) as request_count,
-                  coalesce(sum(l.total_tokens), 0) as total_tokens,
+                  coalesce(sum(case when l.cache_hit = false then l.total_tokens else 0 end), 0) as total_tokens,
                   coalesce(sum(b.amount_usd), 0) as spend_usd,
                   coalesce(avg(l.latency_ms), 0) as avg_latency_ms,
                   coalesce(sum(case when l.status_code >= 200 and l.status_code < 300 then 1 else 0 end), 0) as success_count
@@ -1599,7 +1600,7 @@ public class ConsoleService {
         select
           coalesce(l.user_id, a.owner_user_id) as user_id,
           count(l.id) as request_count,
-          coalesce(sum(l.total_tokens), 0) as total_tokens,
+          coalesce(sum(case when l.cache_hit = false then l.total_tokens else 0 end), 0) as total_tokens,
           max(l.created_at) as last_request_at
         from api_request_logs l
         join app_keys a on a.id = l.app_key_id
@@ -1676,7 +1677,7 @@ public class ConsoleService {
           u.email,
           coalesce(l.model, 'unknown') as model,
           count(l.id) as request_count,
-          coalesce(sum(l.total_tokens), 0) as total_tokens,
+          coalesce(sum(case when l.cache_hit = false then l.total_tokens else 0 end), 0) as total_tokens,
           coalesce(sum(b.amount_usd), 0) as spend_usd,
           max(l.created_at) as last_called_at
         from api_request_logs l
@@ -1743,7 +1744,7 @@ public class ConsoleService {
         select
           t.id as tenant_id,
           count(l.id) as request_count,
-          coalesce(sum(l.total_tokens), 0) as total_tokens,
+          coalesce(sum(case when l.cache_hit = false then l.total_tokens else 0 end), 0) as total_tokens,
           max(l.created_at) as last_request_at
         from tenants t
         left join api_request_logs l
@@ -2230,7 +2231,8 @@ public class ConsoleService {
     jdbcTemplate
         .queryForList(
             """
-            select to_char(created_at at time zone 'UTC', 'YYYY-MM-DD') as day, coalesce(sum(total_tokens), 0) as tokens
+            select to_char(created_at at time zone 'UTC', 'YYYY-MM-DD') as day,
+                   coalesce(sum(case when cache_hit = false then total_tokens else 0 end), 0) as tokens
             from api_request_logs
             where tenant_id = :tenantId and created_at >= :since
             group by day
@@ -2245,7 +2247,7 @@ public class ConsoleService {
   private List<Map<String, Object>> buildModelMix(String tenantId, Timestamp since) {
     return jdbcTemplate.query(
         """
-        select model, coalesce(sum(total_tokens), 0) as tokens
+        select model, coalesce(sum(case when cache_hit = false then total_tokens else 0 end), 0) as tokens
         from api_request_logs
         where tenant_id = :tenantId and created_at >= :since
         group by model
@@ -2270,7 +2272,7 @@ public class ConsoleService {
     Long savedTokens =
         jdbcTemplate.queryForObject(
             """
-            select coalesce(sum(total_tokens), 0)
+            select coalesce(sum(saved_tokens_estimate), 0)
             from api_request_logs
             where tenant_id = :tenantId and created_at >= :since and cache_hit = true
             """,
