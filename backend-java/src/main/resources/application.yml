@@ -43,6 +43,11 @@ mybatis:
     jdbc-type-for-null: 'NULL'
 
 taas:
+  gateway:
+    # 临时排障：true 时 GatewayController 以 WARN 打印 JSON 请求/响应体（截断）；SSE 仅打印响应流开头一段。勿长期开启。
+    debug-log-http-bodies: ${TAAS_GATEWAY_DEBUG_LOG_HTTP_BODIES:false}
+    debug-log-max-chars: ${TAAS_GATEWAY_DEBUG_LOG_MAX_CHARS:24000}
+    debug-log-sse-head-max-chars: ${TAAS_GATEWAY_DEBUG_LOG_SSE_HEAD_MAX_CHARS:16384}
   auth:
     jwt-secret: ${JWT_SECRET:}
     issuer: taas-java

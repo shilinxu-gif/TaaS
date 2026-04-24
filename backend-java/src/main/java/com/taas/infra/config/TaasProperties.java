@@ -9,6 +9,7 @@ public class TaasProperties {
   private final Commercial commercial = new Commercial();
   private final Providers providers = new Providers();
   private final Bootstrap bootstrap = new Bootstrap();
+  private final Gateway gateway = new Gateway();
 
   public Auth getAuth() {
     return auth;
@@ -28,6 +29,10 @@ public class TaasProperties {
 
   public Bootstrap getBootstrap() {
     return bootstrap;
+  }
+
+  public Gateway getGateway() {
+    return gateway;
   }
 
   public static class Auth {
@@ -147,6 +152,39 @@ public class TaasProperties {
 
     public void setGoogleApiKey(String googleApiKey) {
       this.googleApiKey = googleApiKey;
+    }
+  }
+
+  /**
+   * 网关临时排障：开启后会将 JSON 请求/响应体写入日志（截断）；SSE 仅记录响应流开头一段。勿长期在生产开启。
+   */
+  public static class Gateway {
+    private boolean debugLogHttpBodies = false;
+    private int debugLogMaxChars = 24000;
+    private int debugLogSseHeadMaxChars = 16384;
+
+    public boolean isDebugLogHttpBodies() {
+      return debugLogHttpBodies;
+    }
+
+    public void setDebugLogHttpBodies(boolean debugLogHttpBodies) {
+      this.debugLogHttpBodies = debugLogHttpBodies;
+    }
+
+    public int getDebugLogMaxChars() {
+      return debugLogMaxChars;
+    }
+
+    public void setDebugLogMaxChars(int debugLogMaxChars) {
+      this.debugLogMaxChars = debugLogMaxChars;
+    }
+
+    public int getDebugLogSseHeadMaxChars() {
+      return debugLogSseHeadMaxChars;
+    }
+
+    public void setDebugLogSseHeadMaxChars(int debugLogSseHeadMaxChars) {
+      this.debugLogSseHeadMaxChars = debugLogSseHeadMaxChars;
     }
   }
 

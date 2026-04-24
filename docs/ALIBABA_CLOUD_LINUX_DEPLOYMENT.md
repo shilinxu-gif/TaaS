@@ -201,6 +201,9 @@ GOOGLE_API_KEY=
 
 PORT=3001
 ALLOW_MOCK_PROVIDER=false
+
+# 临时排障：true 时网关把 JSON 请求/响应体写入 backend.out.log（WARN，有截断）；SSE 只记录响应流开头一段。含用户提示词与密钥风险，用完改回 false 并 restart。
+TAAS_GATEWAY_DEBUG_LOG_HTTP_BODIES=false
 ```
 
 说明：

@@ -7,6 +7,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.taas.infra.config.TaasProperties;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -16,7 +17,9 @@ import org.springframework.mock.web.MockHttpServletResponse;
 class GatewayControllerTest {
   private final GatewayService gatewayService = mock(GatewayService.class);
   private final ObjectMapper objectMapper = new ObjectMapper();
-  private final GatewayController controller = new GatewayController(gatewayService, objectMapper);
+  private final TaasProperties taasProperties = new TaasProperties();
+  private final GatewayController controller =
+      new GatewayController(gatewayService, objectMapper, taasProperties);
 
   @Test
   void completionsShouldPropagateHeadersFromGatewayResponse() throws Exception {

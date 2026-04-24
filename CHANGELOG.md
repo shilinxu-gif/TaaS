@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### 2026-04-24 16:25 网关可选 TAAS_GATEWAY_DEBUG_LOG_HTTP_BODIES 临时打印请求/响应体
+
+- 改动内容：新增 `taas.gateway.debug-log-http-bodies`（环境变量 `TAAS_GATEWAY_DEBUG_LOG_HTTP_BODIES`，默认 `false`）及 `debug-log-max-chars` / `debug-log-sse-head-max-chars`；为 `true` 时 `GatewayController` 以 **WARN** 打印 `gateway.debug_http`：入站 JSON 请求体（去掉 `_gateway_debug_trace_id`）、非流式与流式 JSON 错误响应体（Jackson 序列化后按字符数截断）；流式 SSE 在写出时用 `HeadCopyOutputStream` 复制下游前若干字节并在结束后打 `kind=sse_head`。**不**记录完整 SSE 流以免内存与日志爆炸。`GatewayController` 构造注入 `TaasProperties`；`TaasProperties` 增加嵌套 `Gateway` 配置段。部署文档 `.env` 示例增加上述变量说明。
+- 影响范围：`backend-java/src/main/java/com/taas/gateway/GatewayController.java`、`backend-java/src/main/java/com/taas/infra/config/TaasProperties.java`、`backend-java/src/main/resources/application.yml`、`backend-java/src/test/java/com/taas/gateway/GatewayControllerTest.java`、`docs/ALIBABA_CLOUD_LINUX_DEPLOYMENT.md`、`CHANGELOG.md`。
+- 验证情况：已执行 `mvn -f backend-java/pom.xml test` 通过。
+- 运维动作：临时排查时在服务器 `.env` 设 `TAAS_GATEWAY_DEBUG_LOG_HTTP_BODIES=true`，`systemctl restart taas-backend`；排查完改回 `false` 再重启。无需 SQL、迁移。
+- 线上数据影响：无；仅日志与磁盘体积风险。
+- 风险控制：**高敏感**：日志含用户消息与可能含 AppKey 上下文，勿长期开启；建议限制日志文件权限与保留周期；SSE 仅为响应头一段非完整模型输出。
+
 ### 2026-04-24 16:15 部署手册：journalctl 与文件日志分工、说明 stop 退出码 143
 
 - 改动内容：在 `docs/ALIBABA_CLOUD_LINUX_DEPLOYMENT.md` 的 systemd 示例中注明 `SuccessExitStatus=0 143` 可选配置，避免将 `systemctl stop` 时 Java 因 SIGTERM 退出码 143 误判为异常崩溃；在「查看日志」中明确 `journalctl` 主要反映服务启停，**应用 stdout/stderr 已重定向到** `/srv/taas/logs/backend.out.log` 与 `backend.err.log`，并说明默认 Spring 不会在 INFO 下逐条打印每个 HTTP 请求。
