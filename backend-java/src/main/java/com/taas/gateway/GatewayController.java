@@ -20,20 +20,24 @@ public class GatewayController {
   }
 
   /**
-   * 返回类型使用 {@code ResponseEntity<Object>} 而非 {@code ResponseEntity<?>}，避免 Spring 在流式分支将
-   * {@link StreamingResponseBody} 误判为需 HttpMessageConverter 序列化的对象，从而抛出 “No converter for …
-   * Lambda … text/event-stream”（参见 Spring Framework #25996）。
+   * 返回 {@link Object}，流式成功时返回 {@code ResponseEntity<StreamingResponseBody>}，流式错误与非流式返回
+   * {@code ResponseEntity<Map<String, Object>>}。若仅声明 {@code ResponseEntity<Object>}，部分 Spring 版本仍按
+   * {@code Object} 选择 HttpMessageConverter，导致 “No converter for … Lambda … text/event-stream”。
    */
   @PostMapping({"/v1/chat/completions", "/gateway/v1/chat/completions"})
-  public ResponseEntity<Object> completions(
+  public Object completions(
       @RequestHeader(value = "Authorization", required = false) String authorization,
       @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
       @RequestHeader(value = "X-Forwarded-For", required = false) String forwardedFor,
       @RequestBody Map<String, Object> body) {
     if (streamRequested(body)) {
-      return toResponse(
+      GatewayService.GatewayStreamResponse streamResponse =
           gatewayService.chatCompletionsStream(
-              authorization, idempotencyKey, clientIp(forwardedFor), body));
+              authorization, idempotencyKey, clientIp(forwardedFor), body);
+      if (streamResponse.body() != null) {
+        return streamJsonEntity(streamResponse);
+      }
+      return streamSseEntity(streamResponse);
     }
     GatewayService.GatewayResponse response =
         gatewayService.chatCompletions(authorization, idempotencyKey, clientIp(forwardedFor), body);
@@ -41,16 +45,20 @@ public class GatewayController {
   }
 
   @PostMapping({"/v1/messages", "/gateway/v1/messages"})
-  public ResponseEntity<Object> anthropicMessages(
+  public Object anthropicMessages(
       @RequestHeader(value = "Authorization", required = false) String authorization,
       @RequestHeader(value = "x-api-key", required = false) String xApiKey,
       @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
       @RequestHeader(value = "X-Forwarded-For", required = false) String forwardedFor,
       @RequestBody Map<String, Object> body) {
     if (streamRequested(body)) {
-      return toResponse(
+      GatewayService.GatewayStreamResponse streamResponse =
           gatewayService.anthropicMessagesStream(
-              authorization, xApiKey, idempotencyKey, clientIp(forwardedFor), body));
+              authorization, xApiKey, idempotencyKey, clientIp(forwardedFor), body);
+      if (streamResponse.body() != null) {
+        return streamJsonEntity(streamResponse);
+      }
+      return streamSseEntity(streamResponse);
     }
     GatewayService.GatewayResponse response =
         gatewayService.anthropicMessages(
@@ -58,23 +66,21 @@ public class GatewayController {
     return jsonEntity(response);
   }
 
-  private static ResponseEntity<Object> jsonEntity(GatewayService.GatewayResponse response) {
+  private static ResponseEntity<Map<String, Object>> jsonEntity(GatewayService.GatewayResponse response) {
     HttpHeaders headers = new HttpHeaders();
     response.headers().forEach(headers::add);
     return new ResponseEntity<>(response.body(), headers, response.status());
   }
 
-  /**
-   * 使用 {@link ResponseEntity} 全参构造 + {@link HttpHeaders} 设置 SSE Content-Type，避免
-   * {@code BodyBuilder.contentType(TEXT_EVENT_STREAM).body(stream)} 在部分环境下仍走
-   * HttpMessageConverter 查找 Lambda 转换器的问题。
-   */
-  private ResponseEntity<Object> toResponse(GatewayService.GatewayStreamResponse response) {
-    if (response.body() != null) {
-      HttpHeaders headers = new HttpHeaders();
-      response.headers().forEach(headers::add);
-      return new ResponseEntity<>(response.body(), headers, response.status());
-    }
+  private static ResponseEntity<Map<String, Object>> streamJsonEntity(
+      GatewayService.GatewayStreamResponse response) {
+    HttpHeaders headers = new HttpHeaders();
+    response.headers().forEach(headers::add);
+    return new ResponseEntity<>(response.body(), headers, response.status());
+  }
+
+  private static ResponseEntity<StreamingResponseBody> streamSseEntity(
+      GatewayService.GatewayStreamResponse response) {
     StreamingResponseBody stream = response.streamBody();
     HttpHeaders headers = new HttpHeaders();
     response.headers().forEach(headers::add);

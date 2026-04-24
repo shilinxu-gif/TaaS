@@ -24,9 +24,11 @@ class GatewayControllerTest {
                 Map.of("error", "QPS limit exceeded"),
                 Map.of("Retry-After", "1")));
 
-    ResponseEntity<Object> response =
+    Object raw =
         controller.completions(
             "Bearer app-key", "idem-1", "10.0.0.1, 127.0.0.1", Map.of("model", "gpt-4o-mini"));
+    @SuppressWarnings("unchecked")
+    ResponseEntity<Map<String, Object>> response = (ResponseEntity<Map<String, Object>>) raw;
 
     assertEquals(HttpStatus.TOO_MANY_REQUESTS, response.getStatusCode());
     assertEquals("1", response.getHeaders().getFirst("Retry-After"));

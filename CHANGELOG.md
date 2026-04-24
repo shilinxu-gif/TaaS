@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### 2026-04-24 15:50 网关流式入口返回 Object 并分流 ResponseEntity 泛型
+
+- 改动内容：`GatewayController` 的 `completions` / `anthropicMessages` 公开方法返回类型由 `ResponseEntity<Object>` 改为 `Object`；`stream: true` 且上游错误等需返回 JSON 时走 `ResponseEntity<Map<String, Object>>`（`streamJsonEntity`），正常 SSE 时返回 `ResponseEntity<StreamingResponseBody>`（`streamSseEntity`），避免部分 Spring 版本仍将 `Object` 体误判为需 `HttpMessageConverter`、对已预设 `text/event-stream` 的 `StreamingResponseBody` lambda 报 `No converter for …`。同步调整 `GatewayControllerTest` 中对控制器返回值的强转方式。
+- 影响范围：`backend-java/src/main/java/com/taas/gateway/GatewayController.java`、`backend-java/src/test/java/com/taas/gateway/GatewayControllerTest.java`、`CHANGELOG.md`。
+- 验证情况：已执行 `mvn -f backend-java/pom.xml -Dtest=GatewayControllerTest,GatewayServiceTest test` 通过。
+- 运维动作：发布包含上述改动的后端 jar 并重启网关进程（如 `taas-backend`）；无需 SQL、迁移或清缓存。
+- 线上数据影响：无。
+- 风险控制：仅 MVC 返回类型与 `ResponseEntity` 泛型分流，不改变鉴权、上游协议与 SSE 字节格式。
+
 ### 2026-04-24 15:10 部署手册修正一键脚本示例命令
 
 - 改动内容：`docs/ALIBABA_CLOUD_LINUX_DEPLOYMENT.md` 中「使用一键更新脚本」小节误写为 `image.png`，已改为正确的 `bash scripts/deploy-prod.sh` 示例。
