@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### 2026-04-24 SDK 文档中心：单 Base URL + 按供应商族分栏
+
+- 改动内容：`IntegrationDocs.tsx` 首屏改为单一可复制 Base URL，并增加 Claude Code 类 JSON 配置示例；移除原四宫格 Endpoint 卡与独立「SDK 示例中心」单页大 Tab；新增 OpenAI / Claude / Gemini 三族分节（锚点 `family-openai` / `family-claude` / `family-gemini`），各族含完整 URL、鉴权说明、独立请求体示例与 `FamilySdkPanel` 栈级 Tab（含 Gemini 专用 Python/Node/requests/cURL 示例，仍指向 `chat/completions`）；`sectionLinks`、能力概览、快速开始、请求规范、环境变量示例、FAQ、`changelogItems` v1.5 与「请求与返回」文案同步；`openAiExampleModel` 排除 `gemini-*` 以免误入 OpenAI 示例。`styles.css` 增补 `integration-hero-*`、`integration-family-*`、`integration-contract-*` 等样式。
+- 影响范围：`client/src/pages/IntegrationDocs.tsx`、`client/src/styles.css`、`CHANGELOG.md`。
+- 验证情况：已执行 `npm run build --prefix client` 通过。
+- 运维动作：仅需发版前端静态资源；无数据库与后端依赖。
+- 线上数据影响：无。
+- 风险控制：无；纯文档页与样式。
+
 ### 2026-04-24 网关：缓存命中落库真实供应商与路由
 
 - 改动内容：写入 Redis 幂等/bodyfp 响应前通过 `GatewayCachePayloads.withMeta` 在 JSON 顶层附加 `_taasGatewayCacheMeta`（`providerId`、`routingPrimary`、`routingActual`、`routingReason`），读缓存返回客户端前 `unwrap` 剥离；`recordCacheHit` 按 meta 查 `providers.id` 写入 `api_request_logs.provider_id`，并写入 `routing_primary` / `routing_actual` / `routing_reason`；无 meta 的旧条目仍回退为原「priority 首条」逻辑。新增 `GatewayCachePayloads` 与 `GatewayCachePayloadsTest`。

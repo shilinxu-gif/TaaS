@@ -5114,6 +5114,225 @@ ul.saas-chart {
   word-break: break-word;
 }
 
+.integration-hero-note {
+  margin: 0;
+  font-size: 0.88rem;
+  color: rgba(191, 219, 254, 0.78);
+}
+
+.integration-hero-panel--single {
+  gap: 1rem;
+}
+
+.integration-hero-base-card,
+.integration-hero-json-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  padding: 1.05rem 1.1rem;
+  border-radius: 18px;
+  background: rgba(15, 23, 42, 0.46);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  backdrop-filter: blur(10px);
+}
+
+.integration-hero-base-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.integration-hero-base-head strong {
+  color: #e0f2fe;
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.integration-hero-base-url {
+  display: block;
+  margin: 0;
+  padding: 0.55rem 0.75rem;
+  border-radius: 12px;
+  background: rgba(2, 6, 23, 0.35);
+  color: #f8fafc;
+  font-size: 0.92rem;
+  line-height: 1.5;
+  word-break: break-all;
+}
+
+.integration-hero-base-hint,
+.integration-hero-json-note {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.6;
+  color: rgba(191, 219, 254, 0.82);
+}
+
+.integration-code-block--compact {
+  max-height: 14rem;
+  overflow: auto;
+  font-size: 0.78rem;
+  margin: 0;
+}
+
+.integration-section-head--tight {
+  margin-bottom: 0.6rem;
+  align-items: center;
+}
+
+.integration-section-head--family {
+  margin-bottom: 0.85rem;
+}
+
+.integration-section-head--family h3 {
+  margin: 0 0 0.35rem;
+}
+
+.integration-family-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.95rem;
+  padding: 1.25rem 1.35rem;
+  border-radius: 24px;
+  border: 1px solid var(--crm-border);
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.06);
+}
+
+.integration-family-head h2 {
+  margin: 0 0 0.45rem;
+  color: var(--crm-text);
+  letter-spacing: -0.02em;
+}
+
+.integration-family-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr);
+  gap: 1.15rem;
+  align-items: start;
+}
+
+.integration-family-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.integration-family-url-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.integration-family-label {
+  display: block;
+  width: 100%;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.integration-family-url {
+  flex: 1;
+  min-width: 0;
+  padding: 0.45rem 0.6rem;
+  border-radius: 12px;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  color: #0f172a;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  word-break: break-all;
+}
+
+.integration-family-bullets {
+  margin: 0;
+  padding-left: 1.1rem;
+  color: #475569;
+  font-size: 0.88rem;
+  line-height: 1.65;
+}
+
+.integration-family-bullets li strong {
+  color: #0f172a;
+}
+
+.integration-family-same-as {
+  margin: -0.35rem 0 0.15rem;
+  font-size: 0.82rem;
+}
+
+.integration-family-payload {
+  padding-top: 0.25rem;
+}
+
+.integration-family-sdk-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.integration-family-sdk-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.integration-family-sdk-tab {
+  padding: 0.55rem 0.75rem;
+  border-radius: 999px;
+  border: 1px solid #dbe7f3;
+  background: #fff;
+  color: #475569;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    border-color 0.16s ease,
+    background 0.16s ease,
+    color 0.16s ease;
+}
+
+.integration-family-sdk-tab:hover {
+  border-color: #93c5fd;
+  color: #1d4ed8;
+}
+
+.integration-family-sdk-tab--active {
+  border-color: #60a5fa;
+  background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+  color: #1d4ed8;
+}
+
+.integration-sdk-view--family .integration-sdk-meta {
+  justify-content: flex-start;
+}
+
+.integration-contract-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin: 0.75rem 0 1rem;
+}
+
+.integration-contract-block {
+  padding: 0.85rem 0.95rem;
+  border-radius: 16px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.integration-contract-title {
+  margin: 0 0 0.65rem;
+  font-size: 0.88rem;
+  color: #0f172a;
+}
+
 .integration-section-nav {
   display: flex;
   flex-wrap: wrap;
@@ -5657,6 +5876,11 @@ ul.saas-chart {
   .integration-grid--triple,
   .integration-sdk-shell,
   .integration-error-row {
+    grid-template-columns: 1fr;
+  }
+
+  .integration-family-body,
+  .integration-contract-grid {
     grid-template-columns: 1fr;
   }
 }

@@ -14,7 +14,35 @@ type SdkTabId =
   | "python-requests"
   | "node-fetch"
   | "anthropic-curl"
-  | "curl";
+  | "curl"
+  | "gemini-python"
+  | "gemini-node"
+  | "gemini-requests"
+  | "gemini-curl";
+
+type SnippetEntry = {
+  label: string;
+  title: string;
+  summary: string;
+  install: string | null;
+  code: string;
+};
+
+const OPENAI_FAMILY_TABS: SdkTabId[] = [
+  "openai-python",
+  "openai-node",
+  "python-requests",
+  "node-fetch",
+  "curl",
+  "java-http",
+];
+const CLAUDE_FAMILY_TABS: SdkTabId[] = ["anthropic-python", "anthropic-curl"];
+const GEMINI_FAMILY_TABS: SdkTabId[] = [
+  "gemini-python",
+  "gemini-node",
+  "gemini-requests",
+  "gemini-curl",
+];
 
 type SupportStatus = "available" | "limited" | "planned";
 
@@ -46,40 +74,6 @@ function CapabilityCard({
     <article className="integration-capability-card">
       <span className="integration-capability-title">{title}</span>
       <strong className="integration-capability-value">{value}</strong>
-      <p>{note}</p>
-    </article>
-  );
-}
-
-function EndpointCard({
-  title,
-  badge,
-  endpoint,
-  note,
-  copyLabel,
-  copiedLabel,
-  isCopied,
-  onCopy,
-}: {
-  title: string;
-  badge: string;
-  endpoint: string;
-  note: string;
-  copyLabel: string;
-  copiedLabel: string;
-  isCopied: boolean;
-  onCopy: () => void;
-}) {
-  return (
-    <article className="integration-endpoint-card">
-      <div className="integration-endpoint-head">
-        <strong>{title}</strong>
-        <span className="integration-chip">{badge}</span>
-      </div>
-      <code className="integration-endpoint-code">{endpoint}</code>
-      <button type="button" className="btn btn-ghost integration-endpoint-copy" onClick={onCopy}>
-        {isCopied ? copiedLabel : copyLabel}
-      </button>
       <p>{note}</p>
     </article>
   );
@@ -188,12 +182,110 @@ function ChangelogItem({
   );
 }
 
+function FamilySdkPanel({
+  panelId,
+  tabs,
+  snippets,
+  copiedId,
+  onCopySnippet,
+  onCopyInstall,
+  text,
+  resolveExampleModel,
+}: {
+  panelId: string;
+  tabs: readonly SdkTabId[];
+  snippets: Record<SdkTabId, SnippetEntry>;
+  copiedId: string | null;
+  onCopySnippet: (id: string, code: string) => void;
+  onCopyInstall: (id: string, cmd: string) => void;
+  text: (zhCN: string, enUS: string) => string;
+  resolveExampleModel: (tab: SdkTabId) => string;
+}) {
+  const [activeTab, setActiveTab] = useState<SdkTabId>(tabs[0]);
+  const activeSnippet = snippets[activeTab];
+  const copyKey = `${panelId}:${activeTab}`;
+
+  return (
+    <div className="integration-family-sdk-shell">
+      <div
+        className="integration-family-sdk-tabs"
+        role="tablist"
+        aria-label={text("示例栈切换", "Snippet stack tabs")}
+      >
+        {tabs.map((id) => {
+          const item = snippets[id];
+          return (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={activeTab === id}
+              className={`integration-family-sdk-tab${activeTab === id ? " integration-family-sdk-tab--active" : ""}`}
+              onClick={() => setActiveTab(id)}
+            >
+              <span>{item.label}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="integration-sdk-view integration-sdk-view--family">
+        <div className="integration-section-head integration-section-head--family">
+          <div>
+            <h3>{activeSnippet.title}</h3>
+            <p className="muted">{activeSnippet.summary}</p>
+          </div>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={() => void onCopySnippet(copyKey, activeSnippet.code)}
+          >
+            {copiedId === copyKey
+              ? text("代码已复制", "Code copied")
+              : text("复制当前示例", "Copy current snippet")}
+          </button>
+        </div>
+        <div className="integration-sdk-meta">
+          <span className="integration-chip">
+            {text("示例模型", "Example model")}: {resolveExampleModel(activeTab)}
+          </span>
+          <span className="integration-chip">
+            {text("调用方式", "Mode")}: {text("非流式", "Non-streaming")}
+          </span>
+          <span className="integration-chip">
+            {text("model", "model")}: {text("原生 HTTP 可省略", "Optional for raw HTTP")}
+          </span>
+        </div>
+        {activeSnippet.install ? (
+          <div className="integration-install-box">
+            <span className="integration-install-label">
+              {text("安装依赖", "Install dependency")}
+            </span>
+            <div className="integration-install-row">
+              <code>{activeSnippet.install}</code>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => void onCopyInstall(`${copyKey}-install`, activeSnippet.install ?? "")}
+              >
+                {copiedId === `${copyKey}-install`
+                  ? text("已复制", "Copied")
+                  : text("复制安装命令", "Copy install command")}
+              </button>
+            </div>
+          </div>
+        ) : null}
+        <pre className="integration-code-block">{activeSnippet.code}</pre>
+      </div>
+    </div>
+  );
+}
+
 export function IntegrationDocs() {
   const { i18n } = useTranslation();
   const language = i18n.resolvedLanguage;
   const text = (zhCN: string, enUS: string) => pickText(language, zhCN, enUS);
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<SdkTabId>("openai-python");
 
   const modelsQuery = useQuery({
     queryKey: ["app-keys", "available-models"],
@@ -203,15 +295,19 @@ export function IntegrationDocs() {
   const modelList = modelsQuery.data ?? [];
   const exampleModel = modelList[0]?.model ?? "gpt-4o-mini";
   const openAiExampleModel =
-    modelList.find((item) => !item.model.toLowerCase().includes("claude"))?.model ?? "gpt-4o-mini";
+    modelList.find((item) => {
+      const m = item.model.toLowerCase();
+      return !m.includes("claude") && !m.includes("gemini");
+    })?.model ?? "gpt-4o-mini";
   const anthropicExampleModel =
     modelList.find((item) => item.model.toLowerCase().includes("claude"))?.model ??
     "claude-3-5-sonnet";
+  const geminiExampleModel =
+    modelList.find((item) => item.model.toLowerCase().includes("gemini"))?.model ?? "gemini-1.5-flash";
   const publicGatewayOrigin = "https://www.itoken.group";
   const sdkBaseUrl = publicGatewayOrigin;
   const chatEndpoint = `${publicGatewayOrigin}/gateway/v1/chat/completions`;
   const messagesEndpoint = `${publicGatewayOrigin}/gateway/v1/messages`;
-  const futureApiFamily = `${publicGatewayOrigin}/gateway/v1/{images|video|audio|...}`;
   const systemPrompt = text(
     "你是一个企业 AI 助手，请简洁回答。",
     "You are an enterprise AI assistant. Answer concisely."
@@ -235,7 +331,55 @@ export function IntegrationDocs() {
         null,
         2
       ),
-    [exampleModel, systemPrompt, userPrompt]
+    [systemPrompt, userPrompt]
+  );
+
+  const anthropicPayloadJson = useMemo(
+    () =>
+      JSON.stringify(
+        {
+          model: anthropicExampleModel,
+          system: systemPrompt,
+          messages: [{ role: "user", content: userPrompt }],
+          max_tokens: 256,
+          temperature: 0.2,
+        },
+        null,
+        2
+      ),
+    [anthropicExampleModel, systemPrompt, userPrompt]
+  );
+
+  const geminiPayloadJson = useMemo(
+    () =>
+      JSON.stringify(
+        {
+          model: geminiExampleModel,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          temperature: 0.2,
+        },
+        null,
+        2
+      ),
+    [geminiExampleModel, systemPrompt, userPrompt]
+  );
+
+  const claudeCodeSettingsJson = useMemo(
+    () =>
+      JSON.stringify(
+        {
+          env: {
+            ANTHROPIC_BASE_URL: sdkBaseUrl,
+            ANTHROPIC_API_KEY: "sk-your-app-key",
+          },
+        },
+        null,
+        2
+      ),
+    [sdkBaseUrl]
   );
 
   const responseJson = useMemo(
@@ -299,18 +443,7 @@ export function IntegrationDocs() {
     []
   );
 
-  const snippets = useMemo<
-    Record<
-      SdkTabId,
-      {
-        label: string;
-        title: string;
-        summary: string;
-        install: string | null;
-        code: string;
-      }
-    >
-  >(
+  const snippets = useMemo<Record<SdkTabId, SnippetEntry>>(
     () => ({
       "openai-python": {
         label: "OpenAI Python",
@@ -530,11 +663,110 @@ console.log(await response.json());`,
   -H "Idempotency-Key: ${idempotencyValue}" \\
   -d '${payloadJson.replace(/'/g, "\\'")}'`,
       },
+      "gemini-python": {
+        label: text("Gemini Python", "Gemini Python"),
+        title: text("OpenAI 兼容形态（Gemini 模型名）", "OpenAI-compatible shape (Gemini model id)"),
+        summary: text(
+          "Gemini 在本平台仍走 OpenAI SDK 的 `chat.completions` 与同一 Base URL；仅 `model` 与上游习惯不同，请使用控制台已开通的 `gemini-*` 模型 id。",
+          "Gemini traffic on this platform still uses the OpenAI SDK `chat.completions` path and the same Base URL; only the `model` id and some parameter habits differ—use an enabled `gemini-*` model id from the console."
+        ),
+        install: "pip install openai",
+        code: `from openai import OpenAI
+
+client = OpenAI(
+    api_key="sk-your-app-key",
+    base_url="${sdkBaseUrl}",
+)
+
+resp = client.chat.completions.create(
+    model="${geminiExampleModel}",
+    messages=[
+        {"role": "system", "content": "${systemPrompt}"},
+        {"role": "user", "content": "${userPrompt}"}
+    ],
+    temperature=0.2,
+)
+
+print(resp.model_dump_json(indent=2))`,
+      },
+      "gemini-node": {
+        label: text("Gemini Node.js", "Gemini Node.js"),
+        title: text("OpenAI 兼容形态（Gemini 模型名）", "OpenAI-compatible shape (Gemini model id)"),
+        summary: text(
+          "与 OpenAI 系相同的 `baseURL` 与路径；将 `model` 换成 `gemini-*` 即可。无独立 `/v1/gemini/...` 入口。",
+          "Same `baseURL` and path as the OpenAI family; swap `model` to `gemini-*`. There is no separate `/v1/gemini/...` entrypoint."
+        ),
+        install: "npm install openai",
+        code: `import OpenAI from "openai";
+
+const client = new OpenAI({
+  apiKey: "sk-your-app-key",
+  baseURL: "${sdkBaseUrl}",
+});
+
+const completion = await client.chat.completions.create({
+  model: "${geminiExampleModel}",
+  messages: [
+    { role: "system", content: "${systemPrompt}" },
+    { role: "user", content: "${userPrompt}" },
+  ],
+  temperature: 0.2,
+});
+
+console.log(JSON.stringify(completion, null, 2));`,
+      },
+      "gemini-requests": {
+        label: text("Gemini requests", "Gemini requests"),
+        title: text("Python requests（Gemini）", "Python requests (Gemini)"),
+        summary: text(
+          "直连 `chat/completions` 完整 URL，与 OpenAI 系相同；鉴权仍为 `Authorization: Bearer`。",
+          "POST the same `chat/completions` URL as the OpenAI family; auth remains `Authorization: Bearer`."
+        ),
+        install: "pip install requests",
+        code: `import requests
+
+url = "${chatEndpoint}"
+headers = {
+    "Content-Type": "application/json",
+    "Authorization": "Bearer sk-your-app-key",
+    "Accept-Language": "${language ?? "zh-CN"}",
+    "Idempotency-Key": "${idempotencyValue}",
+}
+payload = {
+    "model": "${geminiExampleModel}",
+    "messages": [
+        {"role": "system", "content": "${systemPrompt}"},
+        {"role": "user", "content": "${userPrompt}"}
+    ],
+    "temperature": 0.2
+}
+
+response = requests.post(url, headers=headers, json=payload, timeout=60)
+response.raise_for_status()
+print(response.json())`,
+      },
+      "gemini-curl": {
+        label: text("Gemini cURL", "Gemini cURL"),
+        title: text("Gemini 快速联调（OpenAI 路径）", "Gemini smoke test (OpenAI path)"),
+        summary: text(
+          "演示与 OpenAI 系同一 endpoint，仅 body 中 model 为 gemini。",
+          "Demonstrates the same endpoint as OpenAI with a Gemini model id in the body."
+        ),
+        install: null,
+        code: `curl "${chatEndpoint}" \\
+  -X POST \\
+  -H "Content-Type: application/json" \\
+  -H "Authorization: Bearer sk-your-app-key" \\
+  -H "Accept-Language: ${language ?? "zh-CN"}" \\
+  -H "Idempotency-Key: ${idempotencyValue}" \\
+  -d '${geminiPayloadJson.replace(/'/g, "\\'")}'`,
+      },
     }),
     [
       chatEndpoint,
       anthropicExampleModel,
-      exampleModel,
+      geminiExampleModel,
+      geminiPayloadJson,
       idempotencyValue,
       language,
       messagesEndpoint,
@@ -547,14 +779,19 @@ console.log(await response.json());`,
     ]
   );
 
-  const activeSnippet = snippets[activeTab];
+  const resolveExampleModel = (tab: SdkTabId) => {
+    if (tab === "anthropic-python" || tab === "anthropic-curl") return anthropicExampleModel;
+    if (tab.startsWith("gemini")) return geminiExampleModel;
+    return openAiExampleModel;
+  };
 
   const sectionLinks = [
     { id: "overview", label: text("概览", "Overview") },
-    { id: "endpoints", label: text("地址体系", "Endpoints") },
+    { id: "family-openai", label: text("OpenAI 系", "OpenAI family") },
+    { id: "family-claude", label: text("Claude 系", "Claude family") },
+    { id: "family-gemini", label: text("Gemini 系", "Gemini family") },
     { id: "capabilities", label: text("能力边界", "Capabilities") },
     { id: "quickstart", label: text("快速开始", "Quickstart") },
-    { id: "sdk-center", label: text("SDK 示例", "SDK Examples") },
     { id: "payload", label: text("请求与返回", "Payload & Response") },
     { id: "errors", label: text("错误与排查", "Errors") },
     { id: "rate-limit", label: text("限流策略", "Rate Limits") },
@@ -633,8 +870,8 @@ console.log(await response.json());`,
         "Why do I still need an AppKey if I already have a console login?"
       ),
       answer: text(
-        "因为当前控制台 JWT 和网关调用是两套认证边界。JWT 用于控制台管理接口；AppKey 用于 SDK Base URL `https://www.itoken.group`，以及 OpenAI 的 `.../gateway/v1/chat/completions` / Claude 的 `.../gateway/v1/messages` 网关接口。",
-        "Because console JWT and gateway calls are separate auth boundaries. JWT is for console management APIs, while AppKeys are used for the SDK Base URL `https://www.itoken.group` plus the OpenAI `.../gateway/v1/chat/completions` and Claude `.../gateway/v1/messages` gateway endpoints."
+        "因为当前控制台 JWT 和网关调用是两套认证边界。JWT 用于控制台管理接口；AppKey 用于统一 Base URL `https://www.itoken.group` 及网关调用。手写 HTTP 时：OpenAI 与 Gemini 共用 `.../gateway/v1/chat/completions`，Claude 使用 `.../gateway/v1/messages`。",
+        "Because console JWT and gateway calls are separate auth boundaries. JWT is for console management APIs, while AppKeys are used for the unified Base URL `https://www.itoken.group` and gateway calls. For raw HTTP, OpenAI and Gemini share `.../gateway/v1/chat/completions`, while Claude uses `.../gateway/v1/messages`."
       ),
     },
     {
@@ -693,8 +930,8 @@ console.log(await response.json());`,
         "Which endpoint should end users actually use?"
       ),
       answer: text(
-        "如果你接的是 OpenAI SDK 或 Anthropic SDK，就统一把 Base URL 配成 `https://www.itoken.group`。如果你自己发 HTTP 请求，OpenAI 模型调用 `https://www.itoken.group/gateway/v1/chat/completions`，Claude 模型调用 `https://www.itoken.group/gateway/v1/messages`。后续 Images、Video 等能力会继续放在 `https://www.itoken.group/gateway/v1/...` 下面。",
-        "If you use the OpenAI or Anthropic SDK, point the Base URL to `https://www.itoken.group`. If you send HTTP yourself, OpenAI models should call `https://www.itoken.group/gateway/v1/chat/completions`, while Claude models should call `https://www.itoken.group/gateway/v1/messages`. Future Images, Video, and similar APIs will continue under `https://www.itoken.group/gateway/v1/...`."
+        "SDK 与兼容客户端：统一 Base URL 为 `https://www.itoken.group`。自己发 HTTP 时：OpenAI 与 Gemini 均 POST `https://www.itoken.group/gateway/v1/chat/completions`（Gemini 无第三 URL）；Claude POST `https://www.itoken.group/gateway/v1/messages`。后续多模态仍在 `gateway/v1/...` 规划。",
+        "For SDKs and compatible clients, use Base URL `https://www.itoken.group`. For raw HTTP, both OpenAI and Gemini POST `https://www.itoken.group/gateway/v1/chat/completions` (there is no third Gemini URL); Claude POSTs `https://www.itoken.group/gateway/v1/messages`. Future multimodal APIs remain planned under `gateway/v1/...`."
       ),
     },
     {
@@ -720,6 +957,17 @@ console.log(await response.json());`,
   ];
 
   const changelogItems = [
+    {
+      version: "v1.5",
+      date: "2026-04-24",
+      summary: text("文档中心按供应商族分栏", "Docs reorganized by vendor family"),
+      items: [
+        text("首屏只突出单一 Base URL，并增加 Claude Code 类 JSON 配置示例可复制。", "Hero now highlights a single Base URL plus a copyable Claude Code–style JSON settings sample."),
+        text("新增 OpenAI / Claude / Gemini 三族分块：各族独立完整 URL、鉴权说明、请求体示例与代码片段。", "Added OpenAI, Claude, and Gemini sections, each with its own full URL, auth notes, payload sample, and code snippets."),
+        text("Gemini 明确与 OpenAI 共用 chat/completions 路径；示例与文案避免「第三 URL」误解。", "Gemini is documented as sharing the chat/completions path with OpenAI to avoid a mistaken “third URL”."),
+        text("快速开始、请求规范、环境变量与 FAQ 与新的信息架构对齐。", "Quickstart, request contract, environment variable hints, and FAQ align with the new IA."),
+      ],
+    },
     {
       version: "v1.4",
       date: "2026-04-20",
@@ -788,8 +1036,14 @@ console.log(await response.json());`,
           <h1>{text("SDK 文档中心", "SDK Docs Center")}</h1>
           <p>
             {text(
-              "这是给租户开发者的一站式正式接入中心。当前版本同时支持 OpenAI 的 `chat completions` 与 Claude 的 `messages` 两种主流接入形态，示例会按协议分别展示，不再混用。",
-              "This is the official one-stop integration hub for tenant developers. The current version supports both OpenAI `chat completions` and Claude `messages`, and the examples are now separated by protocol instead of mixing them together."
+              "首屏只需记住一个 Base URL：OpenAI SDK、Anthropic SDK、Claude Code 及多数兼容客户端都填根域名即可。完整 HTTP path（`chat/completions` 与 `messages`）按下方「供应商族」分块查看，避免多 URL 并列混淆。",
+              "You only need one Base URL on this screen: OpenAI SDK, Anthropic SDK, Claude Code, and most compatible clients should use the root origin. Full HTTP paths (`chat/completions` vs `messages`) are documented per vendor family below so multiple URLs are not competing for attention."
+            )}
+          </p>
+          <p className="muted integration-hero-note">
+            {text(
+              "后续 Images、Video 等多模态能力仍规划在 `gateway/v1/...` 家族下，路径以上线公告为准。",
+              "Future multimodal capabilities (Images, Video, etc.) are still planned under the `gateway/v1/...` family; exact paths will ship with release notes."
             )}
           </p>
           <div className="integration-hero-actions">
@@ -799,94 +1053,52 @@ console.log(await response.json());`,
             <Link to="/api-keys" className="btn btn-primary">
               {text("返回 API 密钥", "Back to API Keys")}
             </Link>
-            <button
-              type="button"
-              className="btn btn-ghost"
-              onClick={() => void handleCopy("endpoint", chatEndpoint)}
-            >
-              {copiedId === "endpoint"
-                ? text("OpenAI 地址已复制", "OpenAI API copied")
-                : text("复制 OpenAI API", "Copy OpenAI API")}
-            </button>
           </div>
         </div>
-        <div className="integration-hero-panel">
-          <div className="integration-mini-card">
-            <span>{text("SDK Base URL", "SDK Base URL")}</span>
-            <code>{sdkBaseUrl}</code>
-          </div>
-          <div className="integration-mini-card">
-            <span>{text("OpenAI Chat API", "OpenAI Chat API")}</span>
-            <code>{chatEndpoint}</code>
-          </div>
-          <div className="integration-mini-card">
-            <span>{text("Claude Messages API", "Claude Messages API")}</span>
-            <code>{messagesEndpoint}</code>
-          </div>
-          <div className="integration-mini-card">
-            <span>{text("未来 API 家族", "Future API family")}</span>
-            <code>{futureApiFamily}</code>
-          </div>
-          <div className="integration-mini-card">
-            <span>{text("认证方式", "Authentication")}</span>
-            <code>{text("Bearer 或 x-api-key", "Bearer or x-api-key")}</code>
-          </div>
+        <div className="integration-hero-panel integration-hero-panel--single">
+          <article className="integration-hero-base-card">
+            <div className="integration-hero-base-head">
+              <strong>{text("统一 Base URL（SDK / Claude Code）", "Unified Base URL (SDK / Claude Code)")}</strong>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => void handleCopy("sdk-base-url", sdkBaseUrl)}
+              >
+                {copiedId === "sdk-base-url"
+                  ? text("已复制", "Copied")
+                  : text("复制 Base URL", "Copy Base URL")}
+              </button>
+            </div>
+            <code className="integration-hero-base-url">{sdkBaseUrl}</code>
+            <p className="muted integration-hero-base-hint">
+              {text(
+                "下方按 OpenAI 系、Claude 系、Gemini（Google）系展开完整 URL、鉴权与示例；Gemini 与 OpenAI 共用同一 `chat/completions` 路径，仅 model 与参数习惯不同。",
+                "The sections below expand full URLs, auth, and examples per family. Gemini shares the same `chat/completions` path as OpenAI; only the model id and some parameter habits differ."
+              )}
+            </p>
+          </article>
+          <article className="integration-hero-json-card">
+            <div className="integration-hero-base-head">
+              <strong>{text("Claude Code 类配置示例（JSON）", "Claude Code–style config (JSON)")}</strong>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => void handleCopy("claude-code-json", claudeCodeSettingsJson)}
+              >
+                {copiedId === "claude-code-json"
+                  ? text("已复制", "Copied")
+                  : text("复制 JSON", "Copy JSON")}
+              </button>
+            </div>
+            <p className="muted integration-hero-json-note">
+              {text(
+                "环境变量名因工具版本可能不同；将占位密钥换成你的 AppKey。Anthropic 系完整 path 见「Claude 系」一节。",
+                "Environment variable names may differ by tool version; replace the placeholder with your AppKey. The full Anthropic path is in the Claude family section."
+              )}
+            </p>
+            <pre className="integration-code-block integration-code-block--compact">{claudeCodeSettingsJson}</pre>
+          </article>
         </div>
-      </section>
-
-      <section id="endpoints" className="integration-endpoint-grid">
-        <EndpointCard
-          title={text("SDK Base URL", "SDK Base URL")}
-          badge={text("推荐给 SDK", "For SDKs")}
-          endpoint={sdkBaseUrl}
-          copyLabel={text("复制 Base URL", "Copy Base URL")}
-          copiedLabel={text("已复制", "Copied")}
-          isCopied={copiedId === "sdk-base-url"}
-          onCopy={() => void handleCopy("sdk-base-url", sdkBaseUrl)}
-          note={text(
-            "用于 OpenAI SDK 与 Anthropic SDK 的基础地址。当前统一填写根域名 `https://www.itoken.group`；如果你自己直接发 HTTP，请继续使用下面列出的网关完整路径。",
-            "Use the root origin `https://www.itoken.group` as the base URL for both OpenAI and Anthropic SDKs. For raw HTTP requests, continue using the full gateway paths listed below."
-          )}
-        />
-        <EndpointCard
-          title={text("OpenAI Chat Completions 直连接口", "Direct OpenAI Chat Completions endpoint")}
-          badge={text("OpenAI / 原生 HTTP", "OpenAI / raw HTTP")}
-          endpoint={chatEndpoint}
-          copyLabel={text("复制 Chat API", "Copy Chat API")}
-          copiedLabel={text("已复制", "Copied")}
-          isCopied={copiedId === "chat-api-url"}
-          onCopy={() => void handleCopy("chat-api-url", chatEndpoint)}
-          note={text(
-            "用于 OpenAI 风格的原生 HTTP 调用，如 `fetch`、`requests`、`curl`、Java HttpClient 等。",
-            "Use this for OpenAI-style raw HTTP calls such as `fetch`, `requests`, `curl`, or Java HttpClient."
-          )}
-        />
-        <EndpointCard
-          title={text("Claude Messages 直连接口", "Direct Claude Messages endpoint")}
-          badge={text("Claude / 原生 HTTP", "Claude / raw HTTP")}
-          endpoint={messagesEndpoint}
-          copyLabel={text("复制 Claude API", "Copy Claude API")}
-          copiedLabel={text("已复制", "Copied")}
-          isCopied={copiedId === "messages-api-url"}
-          onCopy={() => void handleCopy("messages-api-url", messagesEndpoint)}
-          note={text(
-            "用于 Claude / Anthropic 风格的原生 HTTP 调用。请求头建议使用 `x-api-key` 与 `anthropic-version`，请求体保持 Messages 结构。",
-            "Use this for Claude / Anthropic-style raw HTTP calls. Prefer `x-api-key` plus `anthropic-version` headers and keep the Messages payload shape."
-          )}
-        />
-        <EndpointCard
-          title={text("未来多模态 API 地址族", "Future multimodal API family")}
-          badge={text("规划中", "Planned")}
-          endpoint={futureApiFamily}
-          copyLabel={text("复制地址族", "Copy API family")}
-          copiedLabel={text("已复制", "Copied")}
-          isCopied={copiedId === "future-api-family"}
-          onCopy={() => void handleCopy("future-api-family", futureApiFamily)}
-          note={text(
-            "后续 Images API、Video API 等会继续收敛在 `gateway/v1` 家族下统一管理，具体路径以上线公告和正式文档为准。",
-            "Future Images API, Video API, and other multimodal capabilities will continue to live under the unified `gateway/v1` family. Exact paths will be announced when they are released."
-          )}
-        />
       </section>
 
       <nav
@@ -900,13 +1112,214 @@ console.log(await response.json());`,
         ))}
       </nav>
 
+      <section id="family-openai" className="integration-family-section">
+        <div className="integration-family-head">
+          <h2>{text("OpenAI 系", "OpenAI family")}</h2>
+          <p className="muted">
+            {text(
+              "适用于 GPT 及 OpenAI 兼容客户端：SDK 只配 Base URL；原生 HTTP 使用下方完整 URL。",
+              "For GPT and OpenAI-compatible clients: SDKs only need the Base URL; raw HTTP uses the full URL below."
+            )}
+          </p>
+        </div>
+        <div className="integration-family-body">
+          <div className="integration-family-meta">
+            <div className="integration-family-url-row">
+              <span className="integration-family-label">{text("完整请求 URL", "Full request URL")}</span>
+              <code className="integration-family-url">{chatEndpoint}</code>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => void handleCopy("fo-chat", chatEndpoint)}
+              >
+                {copiedId === "fo-chat" ? text("已复制", "Copied") : text("复制", "Copy")}
+              </button>
+            </div>
+            <ul className="integration-family-bullets">
+              <li>
+                <strong>{text("鉴权", "Auth")}</strong>
+                {text("：`Authorization: Bearer <AppKey>`", ": `Authorization: Bearer <AppKey>`")}
+              </li>
+              <li>
+                <strong>{text("请求体", "Body")}</strong>
+                {text(
+                  "：OpenAI `chat/completions` 形态，`messages` 支持 `system` / `user` / `assistant` 等角色。",
+                  ": OpenAI `chat/completions` shape; `messages` supports `system` / `user` / `assistant` roles."
+                )}
+              </li>
+            </ul>
+            <div className="integration-family-payload">
+              <div className="integration-section-head integration-section-head--tight">
+                <strong>{text("示例请求体（OpenAI）", "Sample payload (OpenAI)")}</strong>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={() => void handleCopy("fo-payload", payloadJson)}
+                >
+                  {copiedId === "fo-payload"
+                    ? text("已复制", "Copied")
+                    : text("复制请求体", "Copy payload")}
+                </button>
+              </div>
+              <pre className="integration-code-block integration-code-block--compact">{payloadJson}</pre>
+            </div>
+          </div>
+          <FamilySdkPanel
+            panelId="openai"
+            tabs={OPENAI_FAMILY_TABS}
+            snippets={snippets}
+            copiedId={copiedId}
+            onCopySnippet={handleCopy}
+            onCopyInstall={handleCopy}
+            text={text}
+            resolveExampleModel={resolveExampleModel}
+          />
+        </div>
+      </section>
+
+      <section id="family-claude" className="integration-family-section">
+        <div className="integration-family-head">
+          <h2>{text("Claude 系（Anthropic）", "Claude family (Anthropic)")}</h2>
+          <p className="muted">
+            {text(
+              "适用于 Claude 模型：Anthropic SDK 同样只配 Base URL；不要使用 OpenAI 的 `chat/completions` 形态调用 Claude。",
+              "For Claude models: the Anthropic SDK also uses the Base URL only; do not call Claude through the OpenAI `chat/completions` shape."
+            )}
+          </p>
+        </div>
+        <div className="integration-family-body">
+          <div className="integration-family-meta">
+            <div className="integration-family-url-row">
+              <span className="integration-family-label">{text("完整请求 URL", "Full request URL")}</span>
+              <code className="integration-family-url">{messagesEndpoint}</code>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => void handleCopy("fc-msg", messagesEndpoint)}
+              >
+                {copiedId === "fc-msg" ? text("已复制", "Copied") : text("复制", "Copy")}
+              </button>
+            </div>
+            <ul className="integration-family-bullets">
+              <li>
+                <strong>{text("鉴权与头", "Auth & headers")}</strong>
+                {text(
+                  "：`x-api-key: <AppKey>`，并携带 `anthropic-version`（例如 `2023-06-01`）。",
+                  ": use `x-api-key: <AppKey>` plus `anthropic-version` (for example `2023-06-01`)."
+                )}
+              </li>
+              <li>
+                <strong>{text("请求体", "Body")}</strong>
+                {text(
+                  "：Anthropic Messages 结构（`model`、`system`、 `messages[]`、`max_tokens` 等）。",
+                  ": Anthropic Messages shape (`model`, `system`, `messages[]`, `max_tokens`, etc.)."
+                )}
+              </li>
+            </ul>
+            <div className="integration-family-payload">
+              <div className="integration-section-head integration-section-head--tight">
+                <strong>{text("示例请求体（Claude）", "Sample payload (Claude)")}</strong>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={() => void handleCopy("fc-payload", anthropicPayloadJson)}
+                >
+                  {copiedId === "fc-payload"
+                    ? text("已复制", "Copied")
+                    : text("复制请求体", "Copy payload")}
+                </button>
+              </div>
+              <pre className="integration-code-block integration-code-block--compact">{anthropicPayloadJson}</pre>
+            </div>
+          </div>
+          <FamilySdkPanel
+            panelId="claude"
+            tabs={CLAUDE_FAMILY_TABS}
+            snippets={snippets}
+            copiedId={copiedId}
+            onCopySnippet={handleCopy}
+            onCopyInstall={handleCopy}
+            text={text}
+            resolveExampleModel={resolveExampleModel}
+          />
+        </div>
+      </section>
+
+      <section id="family-gemini" className="integration-family-section">
+        <div className="integration-family-head">
+          <h2>{text("Gemini（Google）系", "Gemini (Google) family")}</h2>
+          <p className="muted">
+            {text(
+              "本平台无独立 `/v1/gemini/...`：Gemini 走与 OpenAI 相同的 `chat/completions` 路径与 Base URL，区别主要在 `model`（`gemini-*`）及部分可选参数习惯。",
+              "There is no separate `/v1/gemini/...` on this platform: Gemini uses the same `chat/completions` path and Base URL as OpenAI; the main difference is the `gemini-*` model id and some optional parameter habits."
+            )}
+          </p>
+        </div>
+        <div className="integration-family-body">
+          <div className="integration-family-meta">
+            <div className="integration-family-url-row">
+              <span className="integration-family-label">{text("完整请求 URL", "Full request URL")}</span>
+              <code className="integration-family-url">{chatEndpoint}</code>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => void handleCopy("fg-chat", chatEndpoint)}
+              >
+                {copiedId === "fg-chat" ? text("已复制", "Copied") : text("复制", "Copy")}
+              </button>
+            </div>
+            <p className="muted integration-family-same-as">
+              {text("与 OpenAI 系相同 path；请勿在文档外自行假设第三条网关 URL。", "Same path as the OpenAI family; do not assume a third gateway URL beyond this documentation.")}
+            </p>
+            <ul className="integration-family-bullets">
+              <li>
+                <strong>{text("鉴权", "Auth")}</strong>
+                {text("：与 OpenAI 系一致，`Authorization: Bearer <AppKey>`。", ": same as OpenAI, `Authorization: Bearer <AppKey>`.")}
+              </li>
+              <li>
+                <strong>{text("请求体", "Body")}</strong>
+                {text(
+                  "：仍为 OpenAI 兼容 `messages`；将 `model` 设为控制台已开通的 `gemini-*`。未支持字段请勿依赖本文档臆造。",
+                  ": still OpenAI-compatible `messages`; set `model` to an enabled `gemini-*` id from the console. Do not rely on undocumented fields."
+                )}
+              </li>
+            </ul>
+            <div className="integration-family-payload">
+              <div className="integration-section-head integration-section-head--tight">
+                <strong>{text("示例请求体（Gemini）", "Sample payload (Gemini)")}</strong>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={() => void handleCopy("fg-payload", geminiPayloadJson)}
+                >
+                  {copiedId === "fg-payload"
+                    ? text("已复制", "Copied")
+                    : text("复制请求体", "Copy payload")}
+                </button>
+              </div>
+              <pre className="integration-code-block integration-code-block--compact">{geminiPayloadJson}</pre>
+            </div>
+          </div>
+          <FamilySdkPanel
+            panelId="gemini"
+            tabs={GEMINI_FAMILY_TABS}
+            snippets={snippets}
+            copiedId={copiedId}
+            onCopySnippet={handleCopy}
+            onCopyInstall={handleCopy}
+            text={text}
+            resolveExampleModel={resolveExampleModel}
+          />
+        </div>
+      </section>
+
       <section className="integration-capability-grid">
         <CapabilityCard
           title={text("协议兼容", "Protocol")}
-          value={text("OpenAI + Claude", "OpenAI + Claude")}
+          value={text("OpenAI + Claude + Gemini", "OpenAI + Claude + Gemini")}
           note={text(
-            "同时支持 Chat Completions 与 Messages 两种主流协议，按模型类型分别接入。",
-            "Supports both Chat Completions and Messages so you can integrate by model family."
+            "OpenAI 与 Gemini（Google）共用 `chat/completions`；Claude 使用独立 `messages`。按下方「供应商族」分块接入。",
+            "OpenAI and Gemini (Google) share `chat/completions`; Claude uses dedicated `messages`. Integrate per vendor family below."
           )}
         />
         <CapabilityCard
@@ -921,8 +1334,8 @@ console.log(await response.json());`,
           title={text("当前交付形态", "Delivery mode")}
           value={text("非流式 Chat", "Non-streaming Chat")}
           note={text(
-            "当前版本支持同步的 OpenAI `chat completions` 与 Claude `messages`；流式能力请以后续版本公告为准。",
-            "The current version supports synchronous OpenAI `chat completions` and Claude `messages`; streaming support remains future roadmap unless announced otherwise."
+            "当前版本支持同步的 OpenAI `chat completions`（Gemini 同路径）与 Claude `messages`；流式能力请以后续版本公告为准。",
+            "The current version supports synchronous OpenAI `chat completions` (Gemini uses the same path) and Claude `messages`; streaming support remains future roadmap unless announced otherwise."
           )}
         />
       </section>
@@ -932,21 +1345,21 @@ console.log(await response.json());`,
           <h2>{text("能力与边界", "Capabilities and boundaries")}</h2>
           <div className="integration-support-list">
             <SupportRow
-              feature={text("地址体系已分层", "Layered endpoint design")}
+              feature={text("单 Base + 按族 path", "Single base + per-family paths")}
               status="available"
               statusLabel={text("可用", "Available")}
               detail={text(
-                "`https://www.itoken.group` 用于 SDK Base URL；OpenAI 原生 HTTP 走 `.../gateway/v1/chat/completions`，Claude 原生 HTTP 走 `.../gateway/v1/messages`。",
-                "`https://www.itoken.group` is the SDK Base URL; OpenAI raw HTTP uses `.../gateway/v1/chat/completions`, while Claude raw HTTP uses `.../gateway/v1/messages`."
+                "SDK 与多数客户端只填 `https://www.itoken.group`；OpenAI / Gemini 原生 HTTP 使用同一 `.../gateway/v1/chat/completions`，Claude 使用 `.../gateway/v1/messages`。",
+                "SDKs and most clients only need `https://www.itoken.group`; OpenAI / Gemini raw HTTP share `.../gateway/v1/chat/completions`, while Claude uses `.../gateway/v1/messages`."
               )}
             />
             <SupportRow
-              feature={text("OpenAI Chat Completions", "OpenAI Chat Completions")}
+              feature={text("OpenAI / Gemini Chat Completions", "OpenAI / Gemini Chat Completions")}
               status="available"
               statusLabel={text("可用", "Available")}
               detail={text(
-                "OpenAI 系模型继续使用 `chat completions` 形态，适合现有 OpenAI SDK 与兼容客户端。",
-                "OpenAI-family models continue to use the `chat completions` shape, ideal for existing OpenAI SDKs and compatible clients."
+                "OpenAI 与 Gemini 模型均走 `chat completions` 形态与同一 HTTP path；Gemini 仅 model 命名与部分参数习惯不同。",
+                "OpenAI and Gemini models both use the `chat completions` shape and the same HTTP path; Gemini mainly differs by model naming and some parameter habits."
               )}
             />
             <SupportRow
@@ -999,8 +1412,8 @@ console.log(await response.json());`,
               status="planned"
               statusLabel={text("规划中", "Planned")}
               detail={text(
-                "当前正式文档请按非流式能力接入：OpenAI 走 `chat completions`，Claude 走 `messages`。",
-                "For now, integrate against non-streaming capabilities only: `chat completions` for OpenAI and `messages` for Claude."
+                "当前正式文档请按非流式能力接入：OpenAI / Gemini 走 `chat completions`，Claude 走 `messages`。",
+                "For now, integrate against non-streaming capabilities only: `chat completions` for OpenAI / Gemini and `messages` for Claude."
               )}
             />
           </div>
@@ -1011,8 +1424,8 @@ console.log(await response.json());`,
           <ul className="integration-bullet-list">
             <li>
               {text(
-                "OpenAI 风格请求使用 `Authorization: Bearer <AppKey>`；Claude 风格请求推荐使用 `x-api-key: <AppKey>`。",
-                "Use `Authorization: Bearer <AppKey>` for OpenAI-style requests; for Claude-style requests, prefer `x-api-key: <AppKey>`."
+                "OpenAI / Gemini 风格请求使用 `Authorization: Bearer <AppKey>`；Claude 风格请求推荐使用 `x-api-key: <AppKey>` 并携带 `anthropic-version`。",
+                "Use `Authorization: Bearer <AppKey>` for OpenAI / Gemini-style requests; for Claude-style requests, prefer `x-api-key: <AppKey>` plus `anthropic-version`."
               )}
             </li>
             <li>
@@ -1048,17 +1461,17 @@ console.log(await response.json());`,
               <strong>{text("优先走现有 SDK", "Prefer your existing SDK")}</strong>
               <span>
                 {text(
-                  "如果你已使用 OpenAI SDK 或 Anthropic SDK，通常只需切换 Base URL 与 AppKey；如果走原生 HTTP，请按模型协议选择 `chat/completions` 或 `messages`。",
-                  "If you already use the OpenAI or Anthropic SDK, you usually only need to change the Base URL and AppKey; for raw HTTP, choose `chat/completions` or `messages` based on the model protocol."
+                  "OpenAI SDK / Anthropic SDK / 多数兼容客户端：只改 Base URL（根域名）与 AppKey。Gemini 在本平台仍用 OpenAI SDK 的 `chat.completions`。原生 HTTP 再按族选择 path。",
+                  "OpenAI SDK, Anthropic SDK, and most compatible clients only need the root Base URL and AppKey. Gemini on this platform still uses the OpenAI SDK `chat.completions`. Use raw HTTP paths per family when not using an SDK."
                 )}
               </span>
             </li>
             <li>
-              <strong>{text("不要把两个地址混用", "Do not mix the two endpoint types")}</strong>
+              <strong>{text("先 Base，再按族选 path", "Base first, then pick the path")}</strong>
               <span>
                 {text(
-                  "`https://www.itoken.group` 是 SDK Base URL；如果你自己手写 HTTP 请求，OpenAI 模型走 `.../gateway/v1/chat/completions`，Claude 模型走 `.../gateway/v1/messages`。",
-                  "`https://www.itoken.group` is the SDK Base URL; for handcrafted HTTP calls, use `.../gateway/v1/chat/completions` for OpenAI models and `.../gateway/v1/messages` for Claude models."
+                  "`https://www.itoken.group` 是统一 Base URL。手写 HTTP 时：OpenAI 与 Gemini 均 POST `.../gateway/v1/chat/completions`；仅 Claude POST `.../gateway/v1/messages`。",
+                  "`https://www.itoken.group` is the unified Base URL. For handcrafted HTTP: both OpenAI and Gemini POST `.../gateway/v1/chat/completions`; only Claude POSTs `.../gateway/v1/messages`."
                 )}
               </span>
             </li>
@@ -1076,24 +1489,62 @@ console.log(await response.json());`,
 
         <article className="integration-card">
           <h2>{text("请求规范", "Request contract")}</h2>
-          <div className="integration-spec-list">
-            <SpecItem label={text("方法", "Method")} value="POST" />
-            <SpecItem label={text("SDK Base URL", "SDK Base URL")} value={sdkBaseUrl} />
-            <SpecItem label={text("Chat Completions API", "Chat Completions API")} value={chatEndpoint} />
-            <SpecItem label={text("Claude Messages API", "Claude Messages API")} value={messagesEndpoint} />
-            <SpecItem label={text("鉴权", "Auth")} value={text("Bearer AppKey 或 x-api-key", "Bearer AppKey or x-api-key")} />
-            <SpecItem label={text("内容类型", "Content-Type")} value="application/json" />
-            <SpecItem
-              label={text("必填字段", "Required fields")}
-              value={text("messages[]（建议至少包含一条 user）", "messages[] (include at least one user message)")}
-            />
-            <SpecItem
-              label={text("model 字段", "model field")}
-              value={text("可选（若 AppKey 已绑定模型）", "Optional when AppKey binds model(s)")}
-            />
+          <p className="muted">
+            {text(
+              "所有族均使用 POST、`Content-Type: application/json`。先确认 Base URL，再按下表选择 path 与鉴权。",
+              "All families use POST with `Content-Type: application/json`. Confirm the Base URL first, then pick the path and auth headers from the tables below."
+            )}
+          </p>
+          <div className="integration-contract-grid">
+            <div className="integration-contract-block">
+              <h3 className="integration-contract-title">
+                {text("OpenAI 系 / Gemini（Google）系", "OpenAI / Gemini (Google) family")}
+              </h3>
+              <div className="integration-spec-list">
+                <SpecItem label={text("Path", "Path")} value="/gateway/v1/chat/completions" />
+                <SpecItem label={text("完整 URL", "Full URL")} value={chatEndpoint} />
+                <SpecItem
+                  label={text("鉴权", "Auth")}
+                  value={text("Authorization: Bearer <AppKey>", "Authorization: Bearer <AppKey>")}
+                />
+                <SpecItem
+                  label={text("必填字段", "Required fields")}
+                  value={text("messages[]（建议至少一条 user）", "messages[] (at least one user message recommended)")}
+                />
+                <SpecItem
+                  label={text("model", "model")}
+                  value={text(
+                    "OpenAI：`gpt-*` 等；Gemini：`gemini-*`（与 OpenAI 同一路径）。可选若 AppKey 已绑定模型。",
+                    "OpenAI: `gpt-*`, etc.; Gemini: `gemini-*` (same path as OpenAI). Optional when AppKey binds model(s)."
+                  )}
+                />
+              </div>
+            </div>
+            <div className="integration-contract-block">
+              <h3 className="integration-contract-title">{text("Claude 系", "Claude family")}</h3>
+              <div className="integration-spec-list">
+                <SpecItem label={text("Path", "Path")} value="/gateway/v1/messages" />
+                <SpecItem label={text("完整 URL", "Full URL")} value={messagesEndpoint} />
+                <SpecItem
+                  label={text("鉴权与版本头", "Auth & version")}
+                  value={text(
+                    "x-api-key: <AppKey>；anthropic-version: 2023-06-01（示例）",
+                    "x-api-key: <AppKey>; anthropic-version: 2023-06-01 (example)"
+                  )}
+                />
+                <SpecItem
+                  label={text("必填字段", "Required fields")}
+                  value={text("model、messages[]、max_tokens", "model, messages[], max_tokens")}
+                />
+                <SpecItem
+                  label={text("system", "system")}
+                  value={text("可选顶层字段，与 OpenAI 的 messages 内 system 角色不同。", "Optional top-level field; not the same as a `system` role inside OpenAI `messages`.")}
+                />
+              </div>
+            </div>
           </div>
           <div className="integration-role-box">
-            <strong>{text("messages[].role 字段说明", "messages[].role guidance")}</strong>
+            <strong>{text("OpenAI / Gemini：messages[].role", "OpenAI / Gemini: messages[].role")}</strong>
             <ul className="integration-bullet-list integration-bullet-list--tight">
               <li>
                 {text(
@@ -1125,103 +1576,14 @@ console.log(await response.json());`,
 
         <article className="integration-card">
           <h2>{text("环境变量参考", "Environment variables")}</h2>
-          <pre className="integration-code-block">{`export TAAS_BASE_URL="${sdkBaseUrl}"
+          <pre className="integration-code-block">{`# 统一 Base（SDK / Claude Code / 兼容客户端）
+export TAAS_BASE_URL="${sdkBaseUrl}"
+# 按族选手写 HTTP 完整 URL（OpenAI 与 Gemini 共用 CHAT）
 export TAAS_CHAT_URL="${chatEndpoint}"
 export TAAS_MESSAGES_URL="${messagesEndpoint}"
 export TAAS_APP_KEY="sk-your-app-key"
 export TAAS_MODEL="${exampleModel}" # optional when AppKey binds model(s)`}</pre>
         </article>
-      </section>
-
-      <section id="sdk-center" className="integration-sdk-card">
-        <div className="integration-section-head">
-          <div>
-            <h2>{text("SDK 示例中心", "SDK examples center")}</h2>
-            <p className="muted">
-              {text(
-                "按你的技术栈直接复制可运行示例。OpenAI 和 Claude 现在分别提供独立协议示例，原生 HTTP 也按接口族拆开。",
-                "Copy a working snippet for your stack. OpenAI and Claude now have separate protocol examples, and raw HTTP samples are split by endpoint family as well."
-              )}
-            </p>
-          </div>
-          <button
-            type="button"
-            className="btn btn-ghost"
-            onClick={() => void handleCopy(activeTab, activeSnippet.code)}
-          >
-            {copiedId === activeTab
-              ? text("代码已复制", "Code copied")
-              : text("复制当前示例", "Copy current snippet")}
-          </button>
-        </div>
-
-        <div className="integration-sdk-shell">
-          <div
-            className="integration-sdk-tabs"
-            role="tablist"
-            aria-label={text("SDK 示例切换", "SDK snippet tabs")}
-          >
-            {(Object.entries(snippets) as [SdkTabId, (typeof snippets)[SdkTabId]][]).map(
-              ([id, item]) => (
-                <button
-                  key={id}
-                  type="button"
-                  role="tab"
-                  aria-selected={activeTab === id}
-                  className={`integration-sdk-tab${
-                    activeTab === id ? " integration-sdk-tab--active" : ""
-                  }`}
-                  onClick={() => setActiveTab(id)}
-                >
-                  <span>{item.label}</span>
-                </button>
-              )
-            )}
-          </div>
-
-          <div className="integration-sdk-view">
-            <div className="integration-sdk-meta">
-              <div>
-                <h3>{activeSnippet.title}</h3>
-                <p>{activeSnippet.summary}</p>
-              </div>
-              <div className="integration-sdk-badges">
-                <span className="integration-chip">
-                  {text("示例模型", "Example model")}:{" "}
-                  {activeTab === "anthropic-python" || activeTab === "anthropic-curl"
-                    ? anthropicExampleModel
-                    : openAiExampleModel}
-                </span>
-                <span className="integration-chip">
-                  {text("调用方式", "Mode")}: {text("非流式", "Non-streaming")}
-                </span>
-                <span className="integration-chip">
-                  {text("model", "model")}: {text("原生 HTTP 可省略", "Optional for raw HTTP")}
-                </span>
-              </div>
-            </div>
-            {activeSnippet.install ? (
-              <div className="integration-install-box">
-                <span className="integration-install-label">
-                  {text("安装依赖", "Install dependency")}
-                </span>
-                <div className="integration-install-row">
-                  <code>{activeSnippet.install}</code>
-                  <button
-                    type="button"
-                    className="btn btn-ghost"
-                    onClick={() => void handleCopy(`${activeTab}-install`, activeSnippet.install ?? "")}
-                  >
-                    {copiedId === `${activeTab}-install`
-                      ? text("已复制", "Copied")
-                      : text("复制安装命令", "Copy install command")}
-                  </button>
-                </div>
-              </div>
-            ) : null}
-            <pre className="integration-code-block">{activeSnippet.code}</pre>
-          </div>
-        </div>
       </section>
 
       <section id="payload" className="integration-grid">
@@ -1242,8 +1604,8 @@ export TAAS_MODEL="${exampleModel}" # optional when AppKey binds model(s)`}</pre
               </p>
               <p className="muted">
                 {text(
-                  "下面这一段展示的是 OpenAI `chat completions` 请求体；如果你接的是 Claude，请直接看上面的 Anthropic SDK / Claude cURL 示例，使用 `/v1/messages`。",
-                  "The payload below shows the OpenAI `chat completions` shape. If you integrate Claude, use the Anthropic SDK / Claude cURL examples above and call `/v1/messages`."
+                  "以下为 OpenAI 兼容 `chat completions` 返回形态示例；Claude 的 Messages 返回与请求体见「Claude 系」分块。",
+                  "Below is a sample OpenAI-compatible `chat completions` response shape; Claude Messages request/response samples live in the Claude family section."
                 )}
               </p>
               <p className="muted">
