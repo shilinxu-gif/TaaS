@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### 2026-04-24 16:15 部署手册：journalctl 与文件日志分工、说明 stop 退出码 143
+
+- 改动内容：在 `docs/ALIBABA_CLOUD_LINUX_DEPLOYMENT.md` 的 systemd 示例中注明 `SuccessExitStatus=0 143` 可选配置，避免将 `systemctl stop` 时 Java 因 SIGTERM 退出码 143 误判为异常崩溃；在「查看日志」中明确 `journalctl` 主要反映服务启停，**应用 stdout/stderr 已重定向到** `/srv/taas/logs/backend.out.log` 与 `backend.err.log`，并说明默认 Spring 不会在 INFO 下逐条打印每个 HTTP 请求。
+- 影响范围：`docs/ALIBABA_CLOUD_LINUX_DEPLOYMENT.md`、`CHANGELOG.md`。
+- 验证情况：已人工核对与文中 `StandardOutput`/`StandardError` 配置一致。
+- 运维动作：无；纯文档。可选：在现网 unit 中按需增加 `SuccessExitStatus=0 143` 后 `systemctl daemon-reload`（以实际 unit 名为准）。
+- 线上数据影响：无。
+- 风险控制：无。
+
 ### 2026-04-24 16:00 网关流式改为 HttpServletResponse 直写，彻底规避 SSE 消息转换器 500
 
 - 改动内容：`GatewayController` 的 `completions` / `anthropicMessages` 改为 `void`，通过 `HttpServletResponse` 写出 JSON 与 `text/event-stream`：非流式与流式下的 JSON 错误体使用 `ObjectMapper` 写 `OutputStream`；流式成功分支设置 SSE 相关响应头后直接调用 `StreamingResponseBody.writeTo(response.getOutputStream())`，不再把 `StreamingResponseBody` 作为 MVC 返回值交给 `RequestResponseBodyMethodProcessor`，从根上避免部分运行环境仍报 `No converter for … GatewayService$$Lambda … text/event-stream`。构造函数注入 `ObjectMapper`；`GatewayControllerTest` 改为 `MockHttpServletResponse` 断言。

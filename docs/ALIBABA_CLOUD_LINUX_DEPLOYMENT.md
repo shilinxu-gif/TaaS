@@ -291,6 +291,10 @@ Restart=always
 RestartSec=5
 StandardOutput=append:/srv/taas/logs/backend.out.log
 StandardError=append:/srv/taas/logs/backend.err.log
+# 可选：systemctl stop/restart 时主进程会收到 SIGTERM，Java 常以退出码 143（128+15）结束，
+# systemd 会记一条 “Failed with result exit-code”，属正常停机信号，并非应用自崩溃。
+# 若希望停服时 unit 不显示为 failed，可取消下行注释：
+# SuccessExitStatus=0 143
 
 [Install]
 WantedBy=multi-user.target
@@ -307,8 +311,15 @@ systemctl status taas-backend
 查看日志：
 
 ```bash
+# systemd：主要看服务启停、是否反复重启（不含 Spring 业务 INFO 正文）
 journalctl -u taas-backend -f
+
+# 应用本体日志：unit 里已把 stdout/stderr 追加到文件，接口与异常栈在这里
+tail -f /srv/taas/logs/backend.out.log
+tail -f /srv/taas/logs/backend.err.log
 ```
+
+说明：默认 Spring Boot 不会在 INFO 下逐条打印「每个 HTTP 请求的 URL + 状态码」；`backend.out.log` 里常见的是启动日志、业务 `log.info`、以及出错时的堆栈。若需要类似 Nginx access 的逐请求行，需在应用内开启 Tomcat access log 或请求日志过滤器（另行配置）。
 
 健康检查：
 
@@ -564,7 +575,7 @@ docker compose start postgres redis
 ```bash
 cd /srv/taas/app/TaaS
 pwd
-git pull origin prod
+v
 
 docker compose up -d postgres redis
 
