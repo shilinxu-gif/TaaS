@@ -18,8 +18,13 @@ public class GatewayController {
     this.gatewayService = gatewayService;
   }
 
+  /**
+   * 返回类型使用 {@code ResponseEntity<Object>} 而非 {@code ResponseEntity<?>}，避免 Spring 在流式分支将
+   * {@link StreamingResponseBody} 误判为需 HttpMessageConverter 序列化的对象，从而抛出 “No converter for …
+   * Lambda … text/event-stream”（参见 Spring Framework #25996）。
+   */
   @PostMapping({"/v1/chat/completions", "/gateway/v1/chat/completions"})
-  public ResponseEntity<?> completions(
+  public ResponseEntity<Object> completions(
       @RequestHeader(value = "Authorization", required = false) String authorization,
       @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
       @RequestHeader(value = "X-Forwarded-For", required = false) String forwardedFor,
@@ -37,7 +42,7 @@ public class GatewayController {
   }
 
   @PostMapping({"/v1/messages", "/gateway/v1/messages"})
-  public ResponseEntity<?> anthropicMessages(
+  public ResponseEntity<Object> anthropicMessages(
       @RequestHeader(value = "Authorization", required = false) String authorization,
       @RequestHeader(value = "x-api-key", required = false) String xApiKey,
       @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
@@ -56,7 +61,7 @@ public class GatewayController {
     return builder.body(response.body());
   }
 
-  private ResponseEntity<?> toResponse(GatewayService.GatewayStreamResponse response) {
+  private ResponseEntity<Object> toResponse(GatewayService.GatewayStreamResponse response) {
     ResponseEntity.BodyBuilder builder = ResponseEntity.status(response.status());
     response.headers().forEach(builder::header);
     if (response.body() != null) {

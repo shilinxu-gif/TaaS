@@ -24,7 +24,7 @@ class GatewayControllerTest {
                 Map.of("error", "QPS limit exceeded"),
                 Map.of("Retry-After", "1")));
 
-    ResponseEntity<?> response =
+    ResponseEntity<Object> response =
         controller.completions(
             "Bearer app-key", "idem-1", "10.0.0.1, 127.0.0.1", Map.of("model", "gpt-4o-mini"));
 

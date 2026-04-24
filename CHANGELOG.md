@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### 2026-04-23 22:30 修复流式网关 ResponseEntity 通配符导致 SSE 500
+
+- 改动内容：Claude Code 等客户端在 `stream: true` 下访问 `/v1/messages` 或 Chat Completions 时，Spring 报 `No converter for [GatewayService$$Lambda…] with preset Content-Type 'text/event-stream'` 并返回 500；根因为控制器方法声明为 `ResponseEntity<?>` 时，框架无法将 `StreamingResponseBody` 交给流式写出处理器而误走 `HttpMessageConverter`（与 Spring Framework #25996 同类问题）。将 `GatewayController` 中流式相关入口与 `toResponse` 的返回类型改为 `ResponseEntity<Object>`，使流式体按 `StreamingResponseBody` 正常写出。
+- 影响范围：`backend-java/src/main/java/com/taas/gateway/GatewayController.java`、`backend-java/src/test/java/com/taas/gateway/GatewayControllerTest.java`、`CHANGELOG.md`。
+- 验证情况：已执行 `mvn -f backend-java/pom.xml -DskipTests compile` 与 `mvn -f backend-java/pom.xml -Dtest=GatewayControllerTest,GatewayServiceTest test` 通过。
+- 运维动作：发布后端并重启 `taas-backend`（或等价网关进程）使新控制器签名生效；无需 SQL、迁移或清缓存。
+- 线上数据影响：无。
+- 风险控制：仅变更 MVC 返回类型声明与测试变量类型，不改变网关鉴权、路由、流式协议与错误体结构。
+
 ### 2026-04-23 22:05 工作台最近请求表支持排序
 
 - 改动内容：在租户「工作台」的「最近请求」表格上，为时间、模型、供应商、Token、延迟、缓存列增加与用量页一致的 `UsageSortTh` 双箭头排序；数据仍为接口返回日志截取前 10 条后再在浏览器内排序，不改变接口；`useMemo` / `useState` 置于工作台摘要查询的提前 `return` 之前，避免 Hooks 顺序问题。
