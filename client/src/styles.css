@@ -2542,6 +2542,59 @@ ul.saas-chart {
   align-items: end;
 }
 
+/* 租户用量页：筛选控件同一行（标签在左、控件在右） */
+.usage-filter-grid--tenant-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem 1.1rem;
+}
+
+.usage-filter-grid--tenant-row .usage-filter-block--row {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem 0.55rem;
+}
+
+.usage-filter-grid--tenant-row .usage-filter-field--row {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0;
+}
+
+.usage-filter-grid--tenant-row .usage-filter-label {
+  margin: 0;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.usage-filter-grid--tenant-row .usage-date-row {
+  flex-wrap: nowrap;
+}
+
+.usage-filter-grid--tenant-row .usage-input--date {
+  flex: 0 1 auto;
+  min-width: 8.5rem;
+  max-width: 10.5rem;
+}
+
+.usage-filter-grid--tenant-row .usage-preset-row--inline {
+  flex-wrap: nowrap;
+}
+
+.usage-filter-grid--tenant-row .usage-select-inline {
+  min-width: 7.5rem;
+  max-width: 12rem;
+}
+
+/* 与 date/select 控件垂直对齐 */
+.usage-filter-grid--tenant-row .input-plain {
+  box-sizing: border-box;
+  min-height: 2.375rem;
+}
+
 @media (max-width: 960px) {
   .model-hub-hero,
   .model-hub-filter-bar,
@@ -2555,6 +2608,27 @@ ul.saas-chart {
   .usage-filter-grid {
     grid-template-columns: 1fr 1fr;
   }
+
+  .usage-filter-grid--tenant-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .usage-filter-grid--tenant-row .usage-filter-block--row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .usage-filter-grid--tenant-row .usage-filter-field--row {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .usage-filter-grid--tenant-row .usage-select-inline {
+    max-width: none;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
 }
 
 @media (max-width: 560px) {
@@ -2566,6 +2640,12 @@ ul.saas-chart {
 
   .usage-filter-grid {
     grid-template-columns: 1fr;
+  }
+
+  .usage-filter-grid--tenant-row .usage-input--date {
+    max-width: none;
+    flex: 1 1 44%;
+    min-width: 0;
   }
 }
 
@@ -2619,6 +2699,10 @@ ul.saas-chart {
 .usage-filter-meta {
   margin: 0.75rem 0 0;
   font-size: 0.82rem;
+}
+
+.usage-filters:has(.usage-filter-grid--tenant-row) .usage-filter-meta {
+  margin-top: 0.55rem;
 }
 
 .usage-table-card {

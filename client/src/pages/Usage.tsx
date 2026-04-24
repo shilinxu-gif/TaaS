@@ -242,13 +242,13 @@ export function Usage() {
       </header>
 
       <section className="usage-filters" aria-label={text("筛选条件", "Filters")}>
-        <div className="usage-filter-grid">
-          <div className="usage-filter-block">
+        <div className="usage-filter-grid usage-filter-grid--tenant-row">
+          <div className="usage-filter-block usage-filter-block--row">
             <span className="usage-filter-label">{text("时间范围", "Date Range")}</span>
             <div className="usage-date-row">
               <input
                 type="date"
-                className="input-plain usage-input"
+                className="input-plain usage-input usage-input--date"
                 value={dateFrom}
                 onChange={(e) => setDateFrom(e.target.value)}
                 aria-label={text("开始日期", "Start date")}
@@ -256,13 +256,13 @@ export function Usage() {
               <span className="usage-date-sep">{text("至", "to")}</span>
               <input
                 type="date"
-                className="input-plain usage-input"
+                className="input-plain usage-input usage-input--date"
                 value={dateTo}
                 onChange={(e) => setDateTo(e.target.value)}
                 aria-label={text("结束日期", "End date")}
               />
             </div>
-            <div className="usage-preset-row">
+            <div className="usage-preset-row usage-preset-row--inline">
               <button type="button" className="btn btn-ghost usage-chip" onClick={() => setPresetRange(7)}>
                 {text("近 7 天", "Last 7 days")}
               </button>
@@ -274,10 +274,10 @@ export function Usage() {
               </button>
             </div>
           </div>
-          <label className="usage-filter-field">
+          <label className="usage-filter-field usage-filter-field--row">
             <span className="usage-filter-label">{text("模型", "Model")}</span>
             <select
-              className="input-plain"
+              className="input-plain usage-select-inline"
               value={modelFilter}
               onChange={(e) => setModelFilter(e.target.value)}
             >
@@ -289,10 +289,10 @@ export function Usage() {
               ))}
             </select>
           </label>
-          <label className="usage-filter-field">
+          <label className="usage-filter-field usage-filter-field--row">
             <span className="usage-filter-label">AppKey</span>
             <select
-              className="input-plain"
+              className="input-plain usage-select-inline"
               value={appKeyFilter}
               onChange={(e) => setAppKeyFilter(e.target.value)}
             >
@@ -304,10 +304,10 @@ export function Usage() {
               ))}
             </select>
           </label>
-          <label className="usage-filter-field">
+          <label className="usage-filter-field usage-filter-field--row">
             <span className="usage-filter-label">{text("缓存命中", "Cache")}</span>
             <select
-              className="input-plain"
+              className="input-plain usage-select-inline"
               value={cacheFilter}
               onChange={(e) =>
                 setCacheFilter(e.target.value as "all" | "hit" | "miss")

@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### 2026-04-24 用量页筛选区单行对齐
+
+- 改动内容：`Usage.tsx` 筛选容器增加 `usage-filter-grid--tenant-row` 等修饰类；`styles.css` 中用量筛选改为横向 flex（标签与日期/下拉同一基线），时间快捷按钮与日期同一行；窄屏（≤960px）恢复纵向堆叠以便可操作。
+- 影响范围：`client/src/pages/Usage.tsx`、`client/src/styles.css`、`CHANGELOG.md`。
+- 验证情况：已人工核对 DOM 结构与样式选择器；`:has(.usage-filter-grid--tenant-row)` 仅作用于用量筛选卡片。
+- 运维动作：仅需发版前端静态资源；无数据库与后端依赖。
+- 线上数据影响：无。
+- 风险控制：极旧浏览器不支持 CSS `:has` 时「共 N 条」上行距略回退为默认，不影响功能。
+
 ### 2026-04-24 19:40 网关：无幂等键时非流式 chat 请求体指纹缓存（第三方零改）
 
 - 改动内容：对 **非流式** `chat/completions`，在租户缓存策略开启、且未传 `Idempotency-Key` 时，对白名单字段（`model`、`messages`、`temperature`、`tools` 等）做稳定规范化 JSON 后 **SHA-256**，Redis 键 `bodyfp:{appKeyId}:{sha}` 读写响应；**仍优先** `idem:{appKeyId}:{Idempotency-Key}`。新增 `ChatCompletionBodyFingerprint`、`GatewayCacheService` 的 bodyfp 读写；`taas.gateway.body-fingerprint-cache-enabled`（`TAAS_GATEWAY_BODY_FINGERPRINT_CACHE`，默认 true）可关闭。`stream: true` 不使用指纹缓存。部署文档与集成文档 FAQ 已补充。
