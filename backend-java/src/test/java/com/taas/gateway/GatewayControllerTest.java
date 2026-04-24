@@ -6,17 +6,20 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
+import org.springframework.mock.web.MockHttpServletResponse;
 
 class GatewayControllerTest {
   private final GatewayService gatewayService = mock(GatewayService.class);
-  private final GatewayController controller = new GatewayController(gatewayService);
+  private final ObjectMapper objectMapper = new ObjectMapper();
+  private final GatewayController controller = new GatewayController(gatewayService, objectMapper);
 
   @Test
-  void completionsShouldPropagateHeadersFromGatewayResponse() {
+  void completionsShouldPropagateHeadersFromGatewayResponse() throws Exception {
     when(gatewayService.chatCompletions(eq("Bearer app-key"), eq("idem-1"), eq("10.0.0.1"), any()))
         .thenReturn(
             new GatewayService.GatewayResponse(
@@ -24,15 +27,16 @@ class GatewayControllerTest {
                 Map.of("error", "QPS limit exceeded"),
                 Map.of("Retry-After", "1")));
 
-    Object raw =
-        controller.completions(
-            "Bearer app-key", "idem-1", "10.0.0.1, 127.0.0.1", Map.of("model", "gpt-4o-mini"));
-    @SuppressWarnings("unchecked")
-    ResponseEntity<Map<String, Object>> response = (ResponseEntity<Map<String, Object>>) raw;
+    MockHttpServletResponse httpResponse = new MockHttpServletResponse();
+    controller.completions(
+        "Bearer app-key", "idem-1", "10.0.0.1, 127.0.0.1", Map.of("model", "gpt-4o-mini"), httpResponse);
 
-    assertEquals(HttpStatus.TOO_MANY_REQUESTS, response.getStatusCode());
-    assertEquals("1", response.getHeaders().getFirst("Retry-After"));
-    Map<String, Object> responseBody = (Map<String, Object>) response.getBody();
+    assertEquals(HttpStatus.TOO_MANY_REQUESTS.value(), httpResponse.getStatus());
+    assertEquals("1", httpResponse.getHeader("Retry-After"));
+    @SuppressWarnings("unchecked")
+    Map<String, Object> responseBody =
+        objectMapper.readValue(
+            httpResponse.getContentAsString(StandardCharsets.UTF_8), Map.class);
     assertEquals("QPS limit exceeded", responseBody.get("error"));
   }
 }

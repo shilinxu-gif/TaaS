@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### 2026-04-24 16:00 网关流式改为 HttpServletResponse 直写，彻底规避 SSE 消息转换器 500
+
+- 改动内容：`GatewayController` 的 `completions` / `anthropicMessages` 改为 `void`，通过 `HttpServletResponse` 写出 JSON 与 `text/event-stream`：非流式与流式下的 JSON 错误体使用 `ObjectMapper` 写 `OutputStream`；流式成功分支设置 SSE 相关响应头后直接调用 `StreamingResponseBody.writeTo(response.getOutputStream())`，不再把 `StreamingResponseBody` 作为 MVC 返回值交给 `RequestResponseBodyMethodProcessor`，从根上避免部分运行环境仍报 `No converter for … GatewayService$$Lambda … text/event-stream`。构造函数注入 `ObjectMapper`；`GatewayControllerTest` 改为 `MockHttpServletResponse` 断言。
+- 影响范围：`backend-java/src/main/java/com/taas/gateway/GatewayController.java`、`backend-java/src/test/java/com/taas/gateway/GatewayControllerTest.java`、`CHANGELOG.md`。
+- 验证情况：已执行 `mvn -f backend-java/pom.xml -Dtest=GatewayControllerTest,GatewayServiceTest test` 通过。
+- 运维动作：发布新后端 jar 并重启 `taas-backend`（或等价服务）；无需 SQL、迁移或清缓存。若仍见同类 500，在服务器用 `journalctl -u taas-backend -n 300 --no-pager` 查完整栈，并核对 `ps aux`/`readlink` 实际加载的 jar 与发版 commit 是否一致。
+- 线上数据影响：无。
+- 风险控制：响应头与状态码仍由 `GatewayService` 提供字段驱动，协议与鉴权逻辑未改；直写路径需注意后续若增加全局响应包装过滤器，应确认不与已提交响应冲突。
+
 ### 2026-04-24 15:50 网关流式入口返回 Object 并分流 ResponseEntity 泛型
 
 - 改动内容：`GatewayController` 的 `completions` / `anthropicMessages` 公开方法返回类型由 `ResponseEntity<Object>` 改为 `Object`；`stream: true` 且上游错误等需返回 JSON 时走 `ResponseEntity<Map<String, Object>>`（`streamJsonEntity`），正常 SSE 时返回 `ResponseEntity<StreamingResponseBody>`（`streamSseEntity`），避免部分 Spring 版本仍将 `Object` 体误判为需 `HttpMessageConverter`、对已预设 `text/event-stream` 的 `StreamingResponseBody` lambda 报 `No converter for …`。同步调整 `GatewayControllerTest` 中对控制器返回值的强转方式。
