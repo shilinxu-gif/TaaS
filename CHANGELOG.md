@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### 2026-04-24 管理员：新增模型供应商（POST /providers）
+
+- 改动内容：后端 `ConsoleController` 增加 `POST /providers`，`ConsoleService#createProvider` 校验名称/slug/协议类型、slug 唯一性，写入 `providers` 表并写审计；`normalizeProviderSlug` 规范化 slug。前端 `AdminProviders.tsx` 增加「新增供应商」按钮与创建弹窗（名称、slug、openai/anthropic/google、启用、优先级、超时、可选 Base URL、健康状态、流式开关、可选 API Key、模型目录 JSON），空列表时展示占位说明；创建成功后选中新建项并刷新列表相关 query。
+- 影响范围：`backend-java/src/main/java/com/taas/console/ConsoleController.java`、`ConsoleService.java`、`client/src/pages/AdminProviders.tsx`、`CHANGELOG.md`。
+- 验证情况：已执行 `mvn -f backend-java/pom.xml test`、`npm run build --prefix client`。
+- 运维动作：发版并重启后端；发版前端静态资源；无需数据库迁移（沿用现有 `providers` 表结构）。
+- 线上数据影响：仅新增管理员在控制台创建的 `providers` 行；不修改存量行。
+- 风险控制：slug 冲突返回 409；API Key 仍走既有加密存储；未配置 Key 的供应商在网关侧行为与既有「未配置」逻辑一致。
+
 ### 2026-04-24 SDK 文档中心：单 Base URL + 按供应商族分栏
 
 - 改动内容：`IntegrationDocs.tsx` 首屏改为单一可复制 Base URL，并增加 Claude Code 类 JSON 配置示例；移除原四宫格 Endpoint 卡与独立「SDK 示例中心」单页大 Tab；新增 OpenAI / Claude / Gemini 三族分节（锚点 `family-openai` / `family-claude` / `family-gemini`），各族含完整 URL、鉴权说明、独立请求体示例与 `FamilySdkPanel` 栈级 Tab（含 Gemini 专用 Python/Node/requests/cURL 示例，仍指向 `chat/completions`）；`sectionLinks`、能力概览、快速开始、请求规范、环境变量示例、FAQ、`changelogItems` v1.5 与「请求与返回」文案同步；`openAiExampleModel` 排除 `gemini-*` 以免误入 OpenAI 示例。`styles.css` 增补 `integration-hero-*`、`integration-family-*`、`integration-contract-*` 等样式。

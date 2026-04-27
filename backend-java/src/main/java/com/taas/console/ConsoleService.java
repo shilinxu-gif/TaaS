@@ -20,6 +20,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import org.springframework.jdbc.core.RowMapper;
@@ -1044,6 +1045,96 @@ public class ConsoleService {
                 "supportsStreaming", rs.getBoolean("supports_streaming"),
                 "modelCatalog", jsons.readObjectList(rs.getString("model_catalog")),
                 "lastCheckedAt", rs.getTimestamp("last_checked_at") == null ? null : rs.getTimestamp("last_checked_at").toInstant()));
+  }
+
+  public Map<String, Object> createProvider(JwtPrincipal principal, Map<String, Object> body, String ip) {
+    requireRole(principal.role(), ADMIN_ROLES);
+    String name = nullableTrim(body.get("name"));
+    if (name == null || name.length() < 2 || name.length() > 120) {
+      throw new ApiException(400, "name is invalid");
+    }
+    String slug = normalizeProviderSlug(body.get("slug"));
+    if (slug == null || slug.length() < 2 || slug.length() > 64) {
+      throw new ApiException(400, "slug is invalid");
+    }
+    if (!slug.matches("[a-z0-9]+(?:-[a-z0-9]+)*")) {
+      throw new ApiException(400, "slug is invalid");
+    }
+    String providerType = nullableTrim(body.get("providerType"));
+    if (providerType == null || !List.of("openai", "anthropic", "google").contains(providerType)) {
+      throw new ApiException(400, "providerType is invalid");
+    }
+    Integer slugCount =
+        jdbcTemplate.queryForObject(
+            "select count(*)::int from providers where slug = :slug", Map.of("slug", slug), Integer.class);
+    if (slugCount != null && slugCount > 0) {
+      throw new ApiException(409, "该 slug 已被占用，请更换后再试");
+    }
+    Map<String, Object> validation = new LinkedHashMap<>();
+    validation.put("priority", body.getOrDefault("priority", 100));
+    validation.put("timeoutMs", body.getOrDefault("timeoutMs", 30000));
+    validation.put("healthStatus", body.getOrDefault("healthStatus", "unknown"));
+    String baseUrl = nullableTrim(body.get("baseUrl"));
+    if (baseUrl != null) {
+      validation.put("baseUrl", baseUrl);
+    }
+    String apiKeyPlain = nullableTrim(body.get("apiKey"));
+    if (apiKeyPlain != null) {
+      validation.put("apiKey", apiKeyPlain);
+    }
+    Object modelCatalog = body.get("modelCatalog");
+    validation.put("modelCatalog", modelCatalog == null ? List.of() : modelCatalog);
+    validateProviderBody(validation);
+
+    boolean enabled = booleanValue(body.get("enabled"), true);
+    int priority = intValue(body.get("priority"), 100);
+    int timeoutMs = intValue(body.get("timeoutMs"), 30000);
+    String healthStatus = blankDefault(body.get("healthStatus"), "unknown");
+    boolean supportsStreaming = booleanValue(body.get("supportsStreaming"), true);
+    String modelCatalogJson = jsons.stringify(modelCatalog == null ? List.of() : modelCatalog);
+    String apiKeyCipher = null;
+    if (apiKeyPlain != null && !apiKeyPlain.isEmpty()) {
+      apiKeyCipher = cryptoUtils.encryptSecret(apiKeyPlain);
+    }
+    String id = Ids.cuidLike("prov");
+    Instant now = Instant.now();
+    jdbcTemplate.update(
+        """
+        insert into providers (
+          id, name, slug, provider_type, status, enabled, priority, timeout_ms, base_url,
+          health_status, api_key_ciphertext, model_catalog, supports_streaming, created_at
+        ) values (
+          :id, :name, :slug, :providerType, 'active', :enabled, :priority, :timeoutMs, :baseUrl,
+          :healthStatus, :apiKeyCipher, cast(:modelCatalog as jsonb), :supportsStreaming, :createdAt
+        )
+        """,
+        new MapSqlParameterSource()
+            .addValue("id", id)
+            .addValue("name", name)
+            .addValue("slug", slug)
+            .addValue("providerType", providerType)
+            .addValue("enabled", enabled)
+            .addValue("priority", priority)
+            .addValue("timeoutMs", timeoutMs)
+            .addValue("baseUrl", baseUrl)
+            .addValue("healthStatus", healthStatus)
+            .addValue("apiKeyCipher", apiKeyCipher)
+            .addValue("modelCatalog", modelCatalogJson)
+            .addValue("supportsStreaming", supportsStreaming)
+            .addValue("createdAt", ts(now)));
+    auditService.write(
+        principal.tenantId(),
+        principal.userId(),
+        "user",
+        "provider.create",
+        "provider",
+        id,
+        ip,
+        Map.of("name", name, "slug", slug, "providerType", providerType));
+    return providers(principal).stream()
+        .filter(row -> id.equals(row.get("id")))
+        .findFirst()
+        .orElseThrow(() -> new ApiException(500, "Provider create failed"));
   }
 
   public Map<String, Object> updateProvider(JwtPrincipal principal, String id, Map<String, Object> body, String ip) {
@@ -2362,6 +2453,21 @@ public class ConsoleService {
 
   private static String stringValue(Object value) {
     return value == null ? "" : String.valueOf(value).trim();
+  }
+
+  private static String normalizeProviderSlug(Object raw) {
+    String s = nullableTrim(raw);
+    if (s == null) {
+      return null;
+    }
+    s = s.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9-]+", "-").replaceAll("-{2,}", "-");
+    while (s.startsWith("-")) {
+      s = s.substring(1);
+    }
+    while (s.endsWith("-")) {
+      s = s.substring(0, s.length() - 1);
+    }
+    return s.isEmpty() ? null : s;
   }
 
   private static String nullableTrim(Object value) {

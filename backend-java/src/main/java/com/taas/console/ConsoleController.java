@@ -167,6 +167,14 @@ public class ConsoleController {
     return consoleService.providers(principal());
   }
 
+  @PostMapping("/providers")
+  @ResponseStatus(HttpStatus.CREATED)
+  public Map<String, Object> createProvider(
+      @RequestBody Map<String, Object> body,
+      @RequestHeader(value = "X-Forwarded-For", required = false) String forwardedFor) {
+    return consoleService.createProvider(principal(), body, clientIp(forwardedFor));
+  }
+
   @GetMapping("/admin/users")
   public List<Map<String, Object>> adminUsers() {
     return consoleService.adminUsers(principal());
