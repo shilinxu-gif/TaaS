@@ -20,6 +20,20 @@ type SdkTabId =
   | "gemini-requests"
   | "gemini-curl";
 
+type DocSectionId =
+  | "overview"
+  | "family-openai"
+  | "family-claude"
+  | "family-gemini"
+  | "capabilities"
+  | "quickstart"
+  | "payload"
+  | "errors"
+  | "rate-limit"
+  | "faq"
+  | "changelog"
+  | "go-live";
+
 type SnippetEntry = {
   label: string;
   title: string;
@@ -286,6 +300,7 @@ export function IntegrationDocs() {
   const language = i18n.resolvedLanguage;
   const text = (zhCN: string, enUS: string) => pickText(language, zhCN, enUS);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [activeSectionId, setActiveSectionId] = useState<DocSectionId>("overview");
 
   const modelsQuery = useQuery({
     queryKey: ["app-keys", "available-models"],
@@ -785,7 +800,7 @@ print(response.json())`,
     return openAiExampleModel;
   };
 
-  const sectionLinks = [
+  const sectionLinks: Array<{ id: DocSectionId; label: string }> = [
     { id: "overview", label: text("概览", "Overview") },
     { id: "family-openai", label: text("OpenAI 系", "OpenAI family") },
     { id: "family-claude", label: text("Claude 系", "Claude family") },
@@ -1030,7 +1045,30 @@ print(response.json())`,
 
   return (
     <div className="integration-page">
-      <section id="overview" className="integration-hero">
+      <nav
+        className="integration-section-nav"
+        aria-label={text("文档分区", "Documentation sections")}
+      >
+        {sectionLinks.map((section) => (
+          <button
+            key={section.id}
+            type="button"
+            className={`integration-section-link${
+              activeSectionId === section.id ? " integration-section-link--active" : ""
+            }`}
+            aria-pressed={activeSectionId === section.id}
+            onClick={() => setActiveSectionId(section.id)}
+          >
+            {section.label}
+          </button>
+        ))}
+      </nav>
+
+      <section
+        id="overview"
+        className="integration-hero"
+        hidden={activeSectionId !== "overview"}
+      >
         <div className="integration-hero-copy">
           <span className="integration-kicker">{text("SDK Docs Center", "SDK Docs Center")}</span>
           <h1>{text("SDK 文档中心", "SDK Docs Center")}</h1>
@@ -1101,18 +1139,11 @@ print(response.json())`,
         </div>
       </section>
 
-      <nav
-        className="integration-section-nav"
-        aria-label={text("文档分区", "Documentation sections")}
+      <section
+        id="family-openai"
+        className="integration-family-section"
+        hidden={activeSectionId !== "family-openai"}
       >
-        {sectionLinks.map((section) => (
-          <a key={section.id} href={`#${section.id}`} className="integration-section-link">
-            {section.label}
-          </a>
-        ))}
-      </nav>
-
-      <section id="family-openai" className="integration-family-section">
         <div className="integration-family-head">
           <h2>{text("OpenAI 系", "OpenAI family")}</h2>
           <p className="muted">
@@ -1177,7 +1208,11 @@ print(response.json())`,
         </div>
       </section>
 
-      <section id="family-claude" className="integration-family-section">
+      <section
+        id="family-claude"
+        className="integration-family-section"
+        hidden={activeSectionId !== "family-claude"}
+      >
         <div className="integration-family-head">
           <h2>{text("Claude 系（Anthropic）", "Claude family (Anthropic)")}</h2>
           <p className="muted">
@@ -1245,7 +1280,11 @@ print(response.json())`,
         </div>
       </section>
 
-      <section id="family-gemini" className="integration-family-section">
+      <section
+        id="family-gemini"
+        className="integration-family-section"
+        hidden={activeSectionId !== "family-gemini"}
+      >
         <div className="integration-family-head">
           <h2>{text("Gemini（Google）系", "Gemini (Google) family")}</h2>
           <p className="muted">
@@ -1313,7 +1352,7 @@ print(response.json())`,
         </div>
       </section>
 
-      <section className="integration-capability-grid">
+      <section className="integration-capability-grid" hidden={activeSectionId !== "overview"}>
         <CapabilityCard
           title={text("协议兼容", "Protocol")}
           value={text("OpenAI + Claude + Gemini", "OpenAI + Claude + Gemini")}
@@ -1340,7 +1379,11 @@ print(response.json())`,
         />
       </section>
 
-      <section id="capabilities" className="integration-grid">
+      <section
+        id="capabilities"
+        className="integration-grid"
+        hidden={activeSectionId !== "capabilities"}
+      >
         <article className="integration-card integration-card--wide">
           <h2>{text("能力与边界", "Capabilities and boundaries")}</h2>
           <div className="integration-support-list">
@@ -1444,7 +1487,11 @@ print(response.json())`,
         </article>
       </section>
 
-      <section id="quickstart" className="integration-grid integration-grid--triple">
+      <section
+        id="quickstart"
+        className="integration-grid integration-grid--quickstart"
+        hidden={activeSectionId !== "quickstart"}
+      >
         <article className="integration-card">
           <h2>{text("5 分钟快速开始", "5-minute quickstart")}</h2>
           <ol className="integration-step-list">
@@ -1487,7 +1534,7 @@ print(response.json())`,
           </ol>
         </article>
 
-        <article className="integration-card">
+        <article className="integration-card integration-card--contract">
           <h2>{text("请求规范", "Request contract")}</h2>
           <p className="muted">
             {text(
@@ -1586,7 +1633,7 @@ export TAAS_MODEL="${exampleModel}" # optional when AppKey binds model(s)`}</pre
         </article>
       </section>
 
-      <section id="payload" className="integration-grid">
+      <section id="payload" className="integration-grid" hidden={activeSectionId !== "payload"}>
         <article className="integration-card integration-card--wide">
           <div className="integration-section-head">
             <div>
@@ -1645,7 +1692,7 @@ export TAAS_MODEL="${exampleModel}" # optional when AppKey binds model(s)`}</pre
         </article>
       </section>
 
-      <section id="errors" className="integration-grid">
+      <section id="errors" className="integration-grid" hidden={activeSectionId !== "errors"}>
         <article className="integration-card">
           <h2>{text("常见错误矩阵", "Common error matrix")}</h2>
           <div className="integration-support-list">
@@ -1737,7 +1784,11 @@ export TAAS_MODEL="${exampleModel}" # optional when AppKey binds model(s)`}</pre
         </article>
       </section>
 
-      <section id="rate-limit" className="integration-grid">
+      <section
+        id="rate-limit"
+        className="integration-grid"
+        hidden={activeSectionId !== "rate-limit"}
+      >
         <article className="integration-card integration-card--wide">
           <h2>{text("错误码表", "Error code table")}</h2>
           <div className="integration-error-list">
@@ -1787,7 +1838,7 @@ export TAAS_MODEL="${exampleModel}" # optional when AppKey binds model(s)`}</pre
         </article>
       </section>
 
-      <section id="faq" className="integration-grid">
+      <section id="faq" className="integration-grid" hidden={activeSectionId !== "faq"}>
         <article className="integration-card integration-card--wide">
           <h2>{text("FAQ", "FAQ")}</h2>
           <div className="integration-faq-list">
@@ -1800,8 +1851,14 @@ export TAAS_MODEL="${exampleModel}" # optional when AppKey binds model(s)`}</pre
             ))}
           </div>
         </article>
+      </section>
 
-        <article className="integration-card">
+      <section
+        id="changelog"
+        className="integration-grid"
+        hidden={activeSectionId !== "changelog"}
+      >
+        <article className="integration-card integration-card--wide">
           <h2>{text("版本更新记录", "Version history")}</h2>
           <div className="integration-changelog-list">
             {changelogItems.map((item) => (
@@ -1817,7 +1874,7 @@ export TAAS_MODEL="${exampleModel}" # optional when AppKey binds model(s)`}</pre
         </article>
       </section>
 
-      <section id="go-live" className="integration-grid">
+      <section id="go-live" className="integration-grid" hidden={activeSectionId !== "go-live"}>
         <article className="integration-card">
           <h2>{text("上线前建议", "Before you go live")}</h2>
           <ul className="integration-bullet-list">

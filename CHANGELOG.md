@@ -2,6 +2,42 @@
 
 ## Unreleased
 
+### 2026-04-27 19:51 SDK 文档中心：快速开始页两列等分铺满
+
+- 改动内容：`IntegrationDocs.tsx` 将快速开始标签页从通用三列网格改为 `integration-grid--quickstart` 专用布局；`styles.css` 增加两列等分、等高撑满样式，使“5 分钟快速开始”和“环境变量参考”在宽屏下平均占据页面宽度，请求规范模块继续作为下方全宽独立模块展示。
+- 影响范围：`client/src/pages/IntegrationDocs.tsx`、`client/src/styles.css`、`CHANGELOG.md`。
+- 验证情况：已执行 `npm run build --prefix client` 通过；`ReadLints` 检查 `IntegrationDocs.tsx` 与 `styles.css` 无新增诊断。
+- 运维动作：仅需发版前端静态资源；本地开发环境需重启前端服务生效。无数据库与后端依赖。
+- 线上数据影响：无。
+- 风险控制：变更仅影响 SDK 文档中心快速开始标签页排版；窄屏仍回退单列，避免横向溢出。
+
+### 2026-04-27 19:50 SDK 文档中心：请求规范改为全宽独立模块
+
+- 改动内容：`IntegrationDocs.tsx` 将快速开始标签页内的“请求规范”卡片标记为独立全宽模块；`styles.css` 让该模块跨越整行、排在快速开始与环境变量之后，并将内部 OpenAI/Gemini 与 Claude 两组协议规范改为纵向排列，同时限制卡片、协议块和角色说明区域的最大宽度与溢出。
+- 影响范围：`client/src/pages/IntegrationDocs.tsx`、`client/src/styles.css`、`CHANGELOG.md`。
+- 验证情况：已执行 `npm run build --prefix client` 通过；`ReadLints` 检查 `IntegrationDocs.tsx` 与 `styles.css` 无新增诊断。
+- 运维动作：仅需发版前端静态资源；本地开发环境需重启前端服务生效。无数据库与后端依赖。
+- 线上数据影响：无。
+- 风险控制：变更仅影响 SDK 文档中心快速开始标签页的请求规范排版；接口地址、鉴权方式和示例文案不变。
+
+### 2026-04-27 19:45 SDK 文档中心：改为标签页分区并锁定横向溢出
+
+- 改动内容：`IntegrationDocs.tsx` 新增文档分区状态，将原本全部顺序堆叠的 SDK 文档中心改为顶部标签切换展示；概览、OpenAI 系、Claude 系、Gemini 系、能力边界、快速开始、请求与返回、错误与排查、限流策略、FAQ、更新记录、上线建议按标签独立显示。`styles.css` 增加文档页、卡片、网格、供应商族面板、代码块的 `min-width` / `max-width` / `overflow-x` 约束，代码块允许换行，避免横向布局撑出页面滚动。
+- 影响范围：`client/src/pages/IntegrationDocs.tsx`、`client/src/styles.css`、`CHANGELOG.md`。
+- 验证情况：已执行 `npm run build --prefix client` 通过；`ReadLints` 检查 `IntegrationDocs.tsx` 与 `styles.css` 无新增诊断。
+- 运维动作：仅需发版前端静态资源；本地开发环境需重启前端服务生效。无数据库与后端依赖。
+- 线上数据影响：无。
+- 风险控制：仅调整 SDK 文档中心的展示结构与响应式布局，不改变实际接口地址、鉴权方式和示例内容；标签页隐藏非当前分区，减少单页内容过长与横向溢出风险。
+
+### 2026-04-27 19:39 SDK 文档中心：修复请求规范模块窄屏布局重叠
+
+- 改动内容：调整 `IntegrationDocs` 请求规范模块相关样式：`integration-contract-grid` 在中等宽度下避免两列过窄，`integration-contract-block` 与 `integration-spec-item` 增加可收缩约束，规范项由 flex 改为网格布局，长 URL/鉴权字段使用 `overflow-wrap: anywhere` 断行；小屏下规范项改为纵向展示，避免内容互相覆盖。
+- 影响范围：`client/src/styles.css`、`CHANGELOG.md`。
+- 验证情况：已执行 `npm run build --prefix client` 通过；`ReadLints` 检查 `client/src/styles.css` 无新增诊断。
+- 运维动作：仅需发版前端静态资源；本地开发环境需重启前端服务生效。无数据库与后端依赖。
+- 线上数据影响：无。
+- 风险控制：变更限定在 SDK 文档中心请求规范及其响应式样式；长字符串改为断行展示，不改变文档内容和接口示例。
+
 ### 2026-04-24 管理员：新增模型供应商（POST /providers）
 
 - 改动内容：后端 `ConsoleController` 增加 `POST /providers`，`ConsoleService#createProvider` 校验名称/slug/协议类型、slug 唯一性，写入 `providers` 表并写审计；`normalizeProviderSlug` 规范化 slug。前端 `AdminProviders.tsx` 增加「新增供应商」按钮与创建弹窗（名称、slug、openai/anthropic/google、启用、优先级、超时、可选 Base URL、健康状态、流式开关、可选 API Key、模型目录 JSON），空列表时展示占位说明；创建成功后选中新建项并刷新列表相关 query。
