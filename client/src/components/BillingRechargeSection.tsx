@@ -212,10 +212,10 @@ export function BillingRechargeSection({
       setDrawerOpen(false);
       if (res.flow === "bank" && res.bankAccount) {
         setFollowUp({ kind: "bank", row: res, bank: res.bankAccount });
-        showToast(res.hint ?? text("对公充值申请已创建，请按指引打款。", "The bank-transfer recharge request has been created. Please complete the transfer as instructed."));
+        showToast(res.hint ?? text("对公充值申请已创建，请按指引打款", "The bank-transfer recharge request has been created. Please complete the transfer as instructed."));
       } else {
         setFollowUp(null);
-        showToast(res.hint ?? text("充值申请已提交。", "Recharge request submitted."));
+        showToast(res.hint ?? text("充值申请已提交", "Recharge request submitted."));
       }
     },
   });
@@ -273,7 +273,7 @@ export function BillingRechargeSection({
               </h2>
               <p className="rc-sub muted">
                 {text(
-                  "购买余额与套餐的入口；当前页面按生产占位流程记录申请与到账状态。",
+                  "购买余额与套餐的入口；当前页面按生产占位流程记录申请与到账状态",
                   "Entry point for purchasing balance and plans. The current production-placeholder flow records requests and crediting status.",
                 )}
               </p>
@@ -308,7 +308,7 @@ export function BillingRechargeSection({
           <div className="rc-card-label">{text("充值入口", "Recharge Entry")}</div>
           <p className="rc-entry-desc muted">
             {text(
-              "推荐优先使用对公打款；其他支付方式保留为接入占位，提交后生成待处理申请。",
+              "推荐优先使用对公打款；其他支付方式保留为接入占位，提交后生成待处理申请",
               "Bank transfer is recommended first. Other payment methods are reserved as integration placeholders and create pending requests after submission.",
             )}
           </p>
@@ -355,7 +355,7 @@ export function BillingRechargeSection({
             <strong>{formatMoneyRow(followUp.row)}</strong>
             {text("，附言请填写订单号；打款后预计 ", " to the following account and include the order number in the memo. Funds are expected to be credited within ")}
             <strong>{text("1 个工作日内", "1 business day")}</strong>
-            {text("到账，当前为「待审核」状态。", ". Current status: pending review.")}
+            {text("到账，当前为「待审核」状态", ". Current status: pending review.")}
           </p>
           <dl className="rc-bank-dl">
             <div>
@@ -483,27 +483,27 @@ export function BillingRechargeSection({
           <li>
             <strong className="rc-instructions-strong">{text("对公打款", "Bank transfer")}</strong>
             {text(
-              "：适合合同框架内付款；请按页面户名、开户行、账号打款，并备注订单号或合同编号。",
+              "：适合合同框架内付款；请按页面户名、开户行、账号打款，并备注订单号或合同编号",
               ": Suitable for payments under a contract. Transfer to the displayed account name, bank, and account number, and include the order or contract number in the memo.",
             )}
           </li>
           <li>
             <strong className="rc-instructions-strong">{text("微信支付 / 支付宝", "WeChat Pay / Alipay")}</strong>
             {text(
-              "：支付通道保留接入位，当前提交后会生成待支付申请，由后续真实支付回调或人工复核完成到账。",
+              "：支付通道保留接入位，当前提交后会生成待支付申请，由后续真实支付回调或人工复核完成到账",
               ": Payment channels are reserved integration slots. Submitting now creates a pending payment request that will be credited after a real payment callback or manual review.",
             )}
           </li>
           <li>
             <strong className="rc-instructions-strong">Apple Pay / Google Pay</strong>
             {text(
-              "：适用于国际卡与海外主体；当前仅保留订单受理能力，待后续接入真实支付通道。",
+              "：适用于国际卡与海外主体；当前仅保留订单受理能力，待后续接入真实支付通道",
               ": Suitable for international cards and overseas entities. Currently only order intake is kept until real payment channels are integrated.",
             )}
           </li>
           <li>
             {text(
-              "发票：勾选「需要发票」后，可在「自动化开票」模块补充抬头与邮寄信息。",
+              "发票：勾选「需要发票」后，可在「自动化开票」模块补充抬头与邮寄信息",
               "Invoice: after checking “Need invoice”, complete the title and delivery information in the invoicing module.",
             )}
           </li>
@@ -623,7 +623,7 @@ export function BillingRechargeSection({
               {(payChannel === "apple_pay" || payChannel === "google_pay") ? (
                 <p className="muted-sm">
                   {text(
-                    "当前渠道仍在接入中。提交后会先登记充值申请，不会自动加款。",
+                    "当前渠道仍在接入中提交后会先登记充值申请，不会自动加款",
                     "This channel is still being integrated. Submission records a recharge request first and will not automatically add balance.",
                   )}
                 </p>

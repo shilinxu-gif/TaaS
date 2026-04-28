@@ -99,7 +99,7 @@ export function Contacts() {
             </div>
           </>
         ) : (
-          <p className="muted">{text("请选择左侧联系人。", "Select a contact on the left.")}</p>
+          <p className="muted">{text("请选择左侧联系人", "Select a contact on the left.")}</p>
         )}
       </section>
     </div>

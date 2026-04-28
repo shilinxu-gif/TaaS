@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### 2026-04-28 前端：移除中文展示文案中的全角句号
+
+- 改动内容：在 `client/src` 内对含用户可见中文的页面与组件（含 `IntegrationDocs`、`ModelHub`、`ApiKeys`、`AdminProviders`、`BillingRechargeSection`、`i18n/resources.ts` 等）统一去掉全角句号 `。`，英文句点与代码逻辑不变。
+- 影响范围：`client/src/pages/IntegrationDocs.tsx`、`ModelHub.tsx`、`ApiKeys.tsx`、`AdminProviders.tsx`、`AdminUsers.tsx`、`AdminUsage.tsx`、`Billing.tsx`、`Dashboard.tsx`、`Routing.tsx`、`Recharge.tsx`、`Invoices.tsx`、`Customers.tsx`、`Accounts.tsx`、`Contacts.tsx`、`Leads.tsx`、`client/src/components/BillingRechargeSection.tsx`、`client/src/i18n/resources.ts`、`CHANGELOG.md`。
+- 验证情况：已执行 `npm run build --prefix client` 通过；`client/src` 内已无 `。` 字符。
+- 运维动作：仅需发版前端静态资源；本地可依赖 Vite HMR。
+- 线上数据影响：无。
+- 风险控制：纯展示层标点调整，不涉及接口与业务规则。
+
 ### 2026-04-28 SDK 文档中心：精简概览首段 Base URL 引导文案
 
 - 改动内容：`IntegrationDocs.tsx` 概览区首段去掉「首屏只需记住一个 Base URL：」前缀，其余关于根域名、按供应商族查看 path、以及多模态 `gateway/v1/...` 的说明保持不变。

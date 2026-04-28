@@ -105,7 +105,7 @@ export function Routing() {
           ))}
         </div>
         <p className="rt-strategy-hint muted">
-          {text("切换后下方「供应商优先级」表格会按对应规则重新排序。", "After switching, the provider priority table below will be re-sorted according to the selected rule.")}
+          {text("切换后下方「供应商优先级」表格会按对应规则重新排序", "After switching, the provider priority table below will be re-sorted according to the selected rule.")}
         </p>
         {strategyMut.error ? (
           <p className="error rt-strategy-err">

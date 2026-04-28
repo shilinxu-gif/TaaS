@@ -121,7 +121,7 @@ export function Dashboard() {
       return {
         title: text("余额偏低", "Low Balance"),
         detail: text(
-          `当前余额约 ${d.tenant.balanceTokens} tokens，建议关注充值或配额，避免影响生产调用。`,
+          `当前余额约 ${d.tenant.balanceTokens} tokens，建议关注充值或配额，避免影响生产调用`,
           `Current balance is about ${d.tenant.balanceTokens} tokens. Monitor recharge or quota to avoid impacting production calls.`,
         ),
       };
@@ -130,7 +130,7 @@ export function Dashboard() {
       return {
         title: text("今日 Token 用量较高", "High Token Usage Today"),
         detail: text(
-          `今日已用 ${formatNumber(today.tokens, i18n.resolvedLanguage)} tokens，接近当月套餐日均可用的参考阈值。`,
+          `今日已用 ${formatNumber(today.tokens, i18n.resolvedLanguage)} tokens，接近当月套餐日均可用的参考阈值`,
           `${formatNumber(today.tokens, i18n.resolvedLanguage)} tokens used today, close to the reference daily threshold for the monthly plan.`,
         ),
       };
@@ -139,7 +139,7 @@ export function Dashboard() {
       return {
         title: text("近期存在失败请求", "Recent Failed Requests"),
         detail: text(
-          `近 24 小时内有 ${d.kpis.failedRequests24h} 条 HTTP≥400 的请求日志，建议在「用量」中排查。`,
+          `近 24 小时内有 ${d.kpis.failedRequests24h} 条 HTTP≥400 的请求日志，建议在「用量」中排查`,
           `${d.kpis.failedRequests24h} HTTP >= 400 request logs occurred in the last 24 hours. Check the Usage page for details.`,
         ),
       };
@@ -148,7 +148,7 @@ export function Dashboard() {
       return {
         title: text("暂无异常", "No Anomalies"),
         detail: text(
-          "路由与计费链路运行正常，可持续观察用量与余额。",
+          "路由与计费链路运行正常，可持续观察用量与余额",
           "Routing and billing pipelines are running normally. Continue monitoring usage and balance.",
         ),
       };

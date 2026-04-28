@@ -214,7 +214,7 @@ export function AdminProviders() {
     onSuccess: (updated) => {
       setJsonError("");
       // 必须用接口返回值更新表单：invalidate 后 refetch 尚未完成时，rows 仍是旧缓存，
-      // 用 rows.find 会误把 modelCatalogText 覆盖成保存前的 JSON。
+      // 用 rows.find 会误把 modelCatalogText 覆盖成保存前的 JSON
       if (updated) {
         setForm(buildForm(updated));
         qc.setQueryData(["admin", "providers"], (old: ProviderConfigRow[] | undefined) => {
@@ -375,7 +375,7 @@ export function AdminProviders() {
                 <tr>
                   <td colSpan={6} className="muted" style={{ padding: "1.25rem", textAlign: "center" }}>
                     {text(
-                      "暂无供应商配置，请点击「新增供应商」创建第一条上游。",
+                      "暂无供应商配置，请点击「新增供应商」创建第一条上游",
                       "No provider configuration yet. Click “Create provider” to add the first upstream.",
                     )}
                   </td>
@@ -558,7 +558,7 @@ export function AdminProviders() {
               />
               <p className="muted" style={{ margin: "0.35rem 0 0" }}>
                 {text(
-                  "可在每个模型项配置 capabilityTags，例如：\"capabilityTags\": [\"chat\", \"reasoning\", \"text_to_image\"]。",
+                  "可在每个模型项配置 capabilityTags，例如：\"capabilityTags\": [\"chat\", \"reasoning\", \"text_to_image\"]",
                   "You can configure capabilityTags per model item, for example: \"capabilityTags\": [\"chat\", \"reasoning\", \"text_to_image\"].",
                 )}
               </p>
@@ -622,7 +622,7 @@ export function AdminProviders() {
             <div className="keys-form">
               <p className="muted" style={{ marginTop: 0 }}>
                 {text(
-                  "创建后可在列表中选中该供应商，补充或修改 API Key、模型目录与 Base URL。slug 用于内部标识，仅支持小写字母、数字与连字符，且全局唯一。",
+                  "创建后可在列表中选中该供应商，补充或修改 API Key、模型目录与 Base URLslug 用于内部标识，仅支持小写字母、数字与连字符，且全局唯一",
                   "After creation, select this provider in the list to add or update its API key, model catalog, and Base URL. The slug is an internal unique identifier and only supports lowercase letters, numbers, and hyphens.",
                 )}
               </p>
@@ -732,7 +732,7 @@ export function AdminProviders() {
                   </datalist>
                   <p className="muted" style={{ margin: "0.35rem 0 0" }}>
                     {text(
-                      "可从已有模型供应商地址中选择，也可以直接输入新的 Base URL。",
+                      "可从已有模型供应商地址中选择，也可以直接输入新的 Base URL",
                       "Choose from existing model provider addresses, or enter a new Base URL directly.",
                     )}
                   </p>
@@ -804,7 +804,7 @@ export function AdminProviders() {
                   />
                   <p className="muted" style={{ margin: "0.35rem 0 0" }}>
                     {text(
-                      "可在每个模型项配置 capabilityTags，例如：\"capabilityTags\": [\"chat\", \"reasoning\", \"text_to_image\"]。",
+                      "可在每个模型项配置 capabilityTags，例如：\"capabilityTags\": [\"chat\", \"reasoning\", \"text_to_image\"]",
                       "You can configure capabilityTags per model item, for example: \"capabilityTags\": [\"chat\", \"reasoning\", \"text_to_image\"].",
                     )}
                   </p>
@@ -863,14 +863,14 @@ export function AdminProviders() {
                 </p>
                 <p className="muted provider-delete-text">
                   {text(
-                    "删除后将移除该上游配置与模型目录；如果该供应商已有历史调用记录，系统会拒绝删除。",
+                    "删除后将移除该上游配置与模型目录；如果该供应商已有历史调用记录，系统会拒绝删除",
                     "Deleting removes this upstream configuration and model catalog. If the provider has historical request logs, the system will reject the deletion.",
                   )}
                 </p>
                 <p className="muted provider-delete-text">
                   {text("为避免误操作，确认按钮将在 ", "To prevent mistakes, the confirm button will be enabled in ")}
                   <strong>{deleteCountdown}</strong>
-                  {text(" 秒后可点击。", " seconds.")}
+                  {text(" 秒后可点击", " seconds.")}
                 </p>
               </div>
               {deleteMut.error ? (

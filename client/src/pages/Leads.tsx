@@ -260,7 +260,7 @@ export function Leads() {
           ) : (
             <p className="muted">
               {text(
-                "时间轴与跟进记录在完整页面维护。",
+                "时间轴与跟进记录在完整页面维护",
                 "Timeline and follow-up records are managed on the full page."
               )}
               <br />
@@ -269,7 +269,7 @@ export function Leads() {
           )
         ) : (
           <p className="muted">
-            {text("请从左侧选择一条线索，或点击「+」新建。", "Select a lead on the left, or click + to create one.")}
+            {text("请从左侧选择一条线索，或点击「+」新建", "Select a lead on the left, or click + to create one.")}
           </p>
         )}
       </section>

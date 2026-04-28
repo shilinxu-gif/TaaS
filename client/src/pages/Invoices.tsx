@@ -168,7 +168,7 @@ export function Invoices() {
         <h2 className="fin-section-title">{text("开票申请列表", "Invoice Request List")}</h2>
         <p className="fin-section-desc muted">
           {text(
-            `共 ${rows.length} 条。点击行查看详情；状态将由真实开票系统或后台流程推进。`,
+            `共 ${rows.length} 条点击行查看详情；状态将由真实开票系统或后台流程推进`,
             `${rows.length} records. Click a row to view details. Status will be advanced by the real invoicing system or back-office workflow.`,
           )}
         </p>

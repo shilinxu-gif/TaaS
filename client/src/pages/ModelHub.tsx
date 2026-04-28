@@ -115,7 +115,7 @@ export function ModelHub() {
   }, [capabilityFilter, providerFilter, rows, search, vendorFilter]);
 
   const exampleUserPrompt = text(
-    "请用一句话介绍这个模型的定位。",
+    "请用一句话介绍这个模型的定位",
     "Introduce this model in one sentence."
   );
 
@@ -221,7 +221,7 @@ print(resp.model_dump_json(indent=2))`;
           <h1>{text("模型广场", "Model Hub")}</h1>
           <p>
             {text(
-              "你可以快速查看模型 ID、输入/输出价格、流式能力、计费规则。",
+              "你可以快速查看模型 ID、输入/输出价格、流式能力、计费规则",
               "Quickly view model IDs, input/output pricing, streaming support, and billing rules."
             )}
           </p>
@@ -325,7 +325,7 @@ print(resp.model_dump_json(indent=2))`;
             <h2>{text("暂无匹配模型", "No matching models")}</h2>
             <p className="muted">
               {text(
-                "请调整筛选条件，或者先让管理员在供应商管理中完成模型与 API Key 配置。",
+                "请调整筛选条件，或者先让管理员在供应商管理中完成模型与 API Key 配置",
                 "Adjust your filters, or ask an administrator to finish provider and API key setup first."
               )}
             </p>
@@ -399,8 +399,8 @@ print(resp.model_dump_json(indent=2))`;
                   <p className="muted">
                     {text(
                       row.providerType === "anthropic"
-                        ? "Claude / Anthropic 模型建议直接走 `/v1/messages`；如果使用 SDK，Base URL 仍然配置为 `/v1`。"
-                        : "OpenAI 系模型继续使用 `/v1/chat/completions`；如果使用 SDK，Base URL 配置为 `/v1`。",
+                        ? "Claude / Anthropic 模型建议直接走 `/v1/messages`；如果使用 SDK，Base URL 仍然配置为 `/v1`"
+                        : "OpenAI 系模型继续使用 `/v1/chat/completions`；如果使用 SDK，Base URL 配置为 `/v1`",
                       row.providerType === "anthropic"
                         ? "Claude / Anthropic models should use `/v1/messages`; if you use an SDK, keep the Base URL at `/v1`."
                         : "OpenAI-family models continue to use `/v1/chat/completions`; if you use an SDK, set the Base URL to `/v1`."
@@ -449,7 +449,7 @@ print(resp.model_dump_json(indent=2))`;
           <h2>{text("如何理解协议差异", "How to interpret protocol differences")}</h2>
           <p>
             {text(
-              "OpenAI、Anthropic、Google 的原生接口形态并不相同。现在模型广场会按协议分别展示推荐入口，其中 Claude 使用 `/v1/messages`，OpenAI 系继续使用 `/v1/chat/completions`，避免把不同协议混成同一种示例。",
+              "OpenAI、Anthropic、Google 的原生接口形态并不相同现在模型广场会按协议分别展示推荐入口，其中 Claude 使用 `/v1/messages`，OpenAI 系继续使用 `/v1/chat/completions`，避免把不同协议混成同一种示例",
               "OpenAI, Anthropic, and Google do not share the same native request shape. This page now shows protocol-specific entrypoints, so Claude uses `/v1/messages` while OpenAI-family models continue to use `/v1/chat/completions`."
             )}
           </p>
@@ -458,7 +458,7 @@ print(resp.model_dump_json(indent=2))`;
           <h2>{text("如何理解计费", "How billing works")}</h2>
           <p>
             {text(
-              "目录价按输入 Token 与输出 Token 分开展示，并与当前网关实际计费口径保持一致。若后续某模型扩展为图像、视频等多模态能力，模型广场会继续补充对应规则。",
+              "目录价按输入 Token 与输出 Token 分开展示，并与当前网关实际计费口径保持一致若后续某模型扩展为图像、视频等多模态能力，模型广场会继续补充对应规则",
               "Catalog pricing is displayed separately for input and output tokens and is aligned with the gateway's current billing behavior. If a model later expands into multimodal capabilities such as image or video generation, this page can be extended with the matching rules."
             )}
           </p>

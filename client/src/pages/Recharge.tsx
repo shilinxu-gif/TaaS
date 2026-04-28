@@ -12,7 +12,7 @@ export function Recharge() {
         <div>
           <h1 className="fin-title">{text("在线充值", "Recharge")}</h1>
           <p className="fin-subtitle muted">
-            {text("与「计费中心」共用同一套余额与订单；当前展示生产占位版充值流程。", "Shares the same balance and orders with Billing; currently shows the production-placeholder recharge flow.")}
+            {text("与「计费中心」共用同一套余额与订单；当前展示生产占位版充值流程", "Shares the same balance and orders with Billing; currently shows the production-placeholder recharge flow.")}
           </p>
         </div>
       </header>

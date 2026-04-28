@@ -228,14 +228,14 @@ export function Billing() {
             <PlanCard plan={d.currentPlan} current language={i18n.resolvedLanguage} />
           </div>
         ) : (
-          <p className="muted bill-empty-hint">{text("未关联套餐，请联系商务配置。", "No plan is assigned yet. Please contact sales.")}</p>
+          <p className="muted bill-empty-hint">{text("未关联套餐，请联系商务配置", "No plan is assigned yet. Please contact sales.")}</p>
         )}
       </section>
 
       <section className="bill-section">
         <h2 className="bill-section-title">{text("可选套餐", "Available Plans")}</h2>
         <p className="bill-section-desc muted">
-          {text("以下为平台标准报价。升级可联系销售或在控制台提交工单。", "The options below are the platform's standard pricing. Contact sales or open a ticket in the console to upgrade.")}
+          {text("以下为平台标准报价升级可联系销售或在控制台提交工单", "The options below are the platform's standard pricing. Contact sales or open a ticket in the console to upgrade.")}
         </p>
         <div className="bill-plans-grid">
           {d.plans.map((p) => (

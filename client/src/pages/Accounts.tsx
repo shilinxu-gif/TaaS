@@ -90,14 +90,14 @@ export function Accounts() {
             </div>
             <p className="muted" style={{ marginTop: "1rem" }}>
               {text(
-                "公司记录可由线索「转化为商机」时自动创建。",
+                "公司记录可由线索「转化为商机」时自动创建",
                 "Company records can be created automatically when a lead is converted into an opportunity."
               )}
             </p>
           </>
         ) : (
           <p className="muted">
-            {text("请选择左侧公司查看详情。", "Select a company on the left to view details.")}
+            {text("请选择左侧公司查看详情", "Select a company on the left to view details.")}
           </p>
         )}
       </section>

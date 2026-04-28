@@ -49,7 +49,7 @@ export function ApiKeys() {
   const [model, setModel] = useState("");
   const [idem, setIdem] = useState("");
   const [playMessage, setPlayMessage] = useState(
-    text("你好，请返回一条连通性测试结果。", "Hello, please return a connectivity test result.")
+    text("你好，请返回一条连通性测试结果", "Hello, please return a connectivity test result.")
   );
   const [playResult, setPlayResult] = useState<string | null>(null);
   const [playErr, setPlayErr] = useState<string | null>(null);
@@ -352,7 +352,7 @@ export function ApiKeys() {
         <p className="muted keys-details-hint">
           {text("粘贴完整 ", "Paste the full ")}<code className="keys-inline-code">sk-…</code>{" "}
           {text(
-            "密钥。现在 model 可留空：若 AppKey 只绑定一个模型会自动使用；若绑定多个白名单模型，网关会自动随机选择当前可用模型。",
+            "密钥现在 model 可留空：若 AppKey 只绑定一个模型会自动使用；若绑定多个白名单模型，网关会自动随机选择当前可用模型",
             "key. You can now leave model unset: if the AppKey binds one model, the gateway uses it automatically; if it binds multiple allowed models, the gateway randomly picks a currently available model."
           )}
         </p>
@@ -449,13 +449,13 @@ export function ApiKeys() {
                 </p>
                 <p className="muted provider-delete-text">
                   {text(
-                    "删除后该密钥将无法继续调用网关，且不能恢复；历史调用日志与账单记录不会被删除。",
+                    "删除后该密钥将无法继续调用网关，且不能恢复；历史调用日志与账单记录不会被删除",
                     "After deletion, this key can no longer call the gateway and cannot be restored. Historical logs and billing records remain unchanged."
                   )}
                 </p>
                 <p className="muted provider-delete-text">
                   {text(
-                    `为避免误操作，确认按钮将在 ${deleteCountdown} 秒后可点击。`,
+                    `为避免误操作，确认按钮将在 ${deleteCountdown} 秒后可点击`,
                     `To avoid accidental deletion, the confirm button will be enabled in ${deleteCountdown} seconds.`
                   )}
                 </p>
@@ -651,7 +651,7 @@ export function ApiKeys() {
               {text("请保存密钥", "Save this key")}
             </h2>
             <p className="muted keys-reveal-hint">
-              {text("完整密钥仅显示这一次，关闭后请在列表中通过前缀辨认。", "The full key is shown only once. After closing, identify it by its prefix in the list.")}
+              {text("完整密钥仅显示这一次，关闭后请在列表中通过前缀辨认", "The full key is shown only once. After closing, identify it by its prefix in the list.")}
             </p>
             <div className="keys-reveal-box">
               <code className="keys-reveal-token">{revealToken}</code>

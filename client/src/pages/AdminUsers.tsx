@@ -423,7 +423,7 @@ export function AdminUsers() {
                 </p>
                 <p className="muted provider-delete-text">
                   {text(
-                    "支持两种方式：1）自动创建一个新租户并绑定给该账号；2）加入已有租户。这里配置的 Token 余额实际属于租户余额，如果选择已有租户，保存时会同步更新该租户当前余额。",
+                    "支持两种方式：1）自动创建一个新租户并绑定给该账号；2）加入已有租户这里配置的 Token 余额实际属于租户余额，如果选择已有租户，保存时会同步更新该租户当前余额",
                     "Two modes are supported: create a new tenant for the account, or join an existing tenant. The token balance configured here belongs to the tenant. If you choose an existing tenant, saving will update that tenant's current balance."
                   )}
                 </p>
@@ -577,7 +577,7 @@ export function AdminUsers() {
                 />
                 <span className="muted">
                   {text(
-                    "该值会写入租户当前 token 余额。创建新租户时表示初始余额；加入已有租户时表示更新后的租户余额。",
+                    "该值会写入租户当前 token 余额创建新租户时表示初始余额；加入已有租户时表示更新后的租户余额",
                     "This value will be stored as the tenant's current token balance. For a new tenant, it becomes the initial balance. For an existing tenant, it becomes the updated balance."
                   )}
                 </span>
@@ -643,7 +643,7 @@ export function AdminUsers() {
                 </p>
                 <p className="muted provider-delete-text">
                   {text(
-                    "这里修改的是租户当前 Token 余额，保存后该租户下所有成员都会看到新的余额。",
+                    "这里修改的是租户当前 Token 余额，保存后该租户下所有成员都会看到新的余额",
                     "This updates the tenant's current token balance. All members in the tenant will see the new balance after saving."
                   )}
                 </p>
@@ -728,7 +728,7 @@ export function AdminUsers() {
                 </p>
                 <p className="muted provider-delete-text">
                   {text(
-                    "弹窗会默认勾选全部模型，表示该用户在当前租户下默认可使用全部模型；如果你想排除某个模型，直接取消勾选即可。保存后，用户新建 AppKey 时会自动继承这里配置的模型范围。",
+                    "弹窗会默认勾选全部模型，表示该用户在当前租户下默认可使用全部模型；如果你想排除某个模型，直接取消勾选即可保存后，用户新建 AppKey 时会自动继承这里配置的模型范围",
                     "This dialog checks all models by default, which means the user can access all models in this tenant. If you want to exclude a model, simply uncheck it. New AppKeys created by this user will inherit this model scope automatically."
                   )}
                 </p>
@@ -739,7 +739,7 @@ export function AdminUsers() {
               ) : modelOptions.length === 0 ? (
                 <div className="keys-models-empty muted">
                   {text(
-                    "当前没有可配置的模型，请先完成供应商模型配置。",
+                    "当前没有可配置的模型，请先完成供应商模型配置",
                     "No models are available to configure yet. Please finish provider model setup first."
                   )}
                 </div>

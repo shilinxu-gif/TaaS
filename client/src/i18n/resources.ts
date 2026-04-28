@@ -49,15 +49,15 @@ export const resources = {
           title: "登录",
           loginPlaceholder: "用户名或邮箱",
           passwordPlaceholder: "密码",
-          trialHint: "企业试用默认 14 天，注册后自动创建租户、预算与路由策略。",
+          trialHint: "企业试用默认 14 天，注册后自动创建租户、预算与路由策略",
           createAccount: "创建账户",
           forgotPassword: "忘记密码？",
           heroLead: "AI is changing the world…",
           heroSub: "Multi-model routing · Enterprise billing · Auditable AI gateway",
           forgotTitle: "找回密码",
-          forgotBody1: "当前版本还没有接入自助找回密码流程。",
+          forgotBody1: "当前版本还没有接入自助找回密码流程",
           forgotBody2:
-            "请联系平台管理员或运维人员重置密码；如果你是平台管理员，请让运维检查当前部署环境中的管理员初始化配置。",
+            "请联系平台管理员或运维人员重置密码；如果你是平台管理员，请让运维检查当前部署环境中的管理员初始化配置",
           forgotAcknowledge: "我知道了",
         },
         register: {
@@ -77,7 +77,7 @@ export const resources = {
       api: {
         backendUnavailable:
           "无法连接后端（请确认已启动 Java API：根目录执行 npm run dev:server，默认端口 3001）",
-        serverHint: "请确认 Java API 已启动（端口 3001），且 PostgreSQL / Redis 可用。",
+        serverHint: "请确认 Java API 已启动（端口 3001），且 PostgreSQL / Redis 可用",
       },
     },
   },

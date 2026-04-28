@@ -755,7 +755,7 @@ export function AdminUsage() {
         </div>
         <p className="usage-filter-meta muted">
           {text(
-            `当前区间：${filtered.from} 至 ${filtered.to}，默认按 UTC 自然日统计。`,
+            `当前区间：${filtered.from} 至 ${filtered.to}，默认按 UTC 自然日统计`,
             `Current range: ${filtered.from} to ${filtered.to}. Statistics use UTC calendar days by default.`,
           )}
         </p>
@@ -796,7 +796,7 @@ export function AdminUsage() {
         </h2>
         <p className="bill-section-desc muted">
           {text(
-            "可快速切换运营视角，观察请求量、Token 用量与充值结果。",
+            "可快速切换运营视角，观察请求量、Token 用量与充值结果",
             "Switch operational perspectives quickly to observe request volume, token usage, and recharge results.",
           )}
         </p>
@@ -1007,7 +1007,7 @@ export function AdminUsage() {
       <TrendChart
         title={text("AppKey 调用趋势", "AppKey Call Trend")}
         description={text(
-          "展示当前筛选区间内请求量最高的 AppKey 日趋势。",
+          "展示当前筛选区间内请求量最高的 AppKey 日趋势",
           "Daily trend for the AppKeys with the highest request volume in the current filter range.",
         )}
         series={filtered.appKeyTrends}
@@ -1016,7 +1016,7 @@ export function AdminUsage() {
       <TrendChart
         title={text("模型调用趋势", "Model Call Trend")}
         description={text(
-          "展示当前筛选区间内调用量最高的模型日趋势。",
+          "展示当前筛选区间内调用量最高的模型日趋势",
           "Daily trend for the models with the highest call volume in the current filter range.",
         )}
         series={filtered.modelTrends}
@@ -1584,7 +1584,7 @@ export function AdminUsage() {
                               {tenantOrders.length === 0 ? (
                                 <p className="muted admin-usage-detail-empty">
                                   {text(
-                                    "当前租户在此筛选条件下没有充值单明细。",
+                                    "当前租户在此筛选条件下没有充值单明细",
                                     "This tenant has no recharge order details for the current filters.",
                                   )}
                                 </p>

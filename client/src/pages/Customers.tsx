@@ -278,7 +278,7 @@ export function Customers() {
         ) : (
           <p className="muted">
             {text(
-              "在此登记的客户用于销售跟进与统计，信息仅本人可见。",
+              "在此登记的客户用于销售跟进与统计，信息仅本人可见",
               "Customers registered here are used for sales follow-up and statistics. Information is visible only to you."
             )}
           </p>
