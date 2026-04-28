@@ -92,7 +92,7 @@ export function ModelHub() {
   );
   const filteredRows = useMemo(() => {
     const keyword = search.trim().toLowerCase();
-    return rows.filter((row) => {
+    const filtered = rows.filter((row) => {
       if (providerFilter !== "all" && row.providerType !== providerFilter) {
         return false;
       }
@@ -112,6 +112,11 @@ export function ModelHub() {
         row.providerName.toLowerCase().includes(keyword)
       );
     });
+    return [...filtered].sort((a, b) =>
+      a.priority !== b.priority
+        ? a.priority - b.priority
+        : a.providerName.localeCompare(b.providerName) || a.modelId.localeCompare(b.modelId),
+    );
   }, [capabilityFilter, providerFilter, rows, search, vendorFilter]);
 
   const exampleUserPrompt = text(

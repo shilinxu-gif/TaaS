@@ -91,6 +91,12 @@ function defaultCreateForm(): CreateProviderForm {
   };
 }
 
+function sortProviderRows(list: ProviderConfigRow[]): ProviderConfigRow[] {
+  return [...list].sort((a, b) =>
+    a.priority !== b.priority ? a.priority - b.priority : a.name.localeCompare(b.name),
+  );
+}
+
 function buildForm(row: ProviderConfigRow): ProviderForm {
   return {
     enabled: row.enabled,
@@ -123,8 +129,9 @@ export function AdminProviders() {
   const [createForm, setCreateForm] = useState<CreateProviderForm>(() => defaultCreateForm());
   const [createJsonError, setCreateJsonError] = useState("");
   const rows = providersQuery.data ?? [];
+  const sortedRows = useMemo(() => sortProviderRows(rows), [rows]);
   const selected =
-    rows.find((row) => row.id === selectedId) ?? rows[0] ?? null;
+    sortedRows.find((row) => row.id === selectedId) ?? sortedRows[0] ?? null;
   const baseUrlOptions = useMemo(() => {
     const options = new Map<string, Set<string>>();
     for (const row of rows) {
@@ -229,6 +236,77 @@ export function AdminProviders() {
       void qc.invalidateQueries({ queryKey: ["admin", "providers"] });
       void qc.invalidateQueries({ queryKey: ["routing"] });
       void qc.invalidateQueries({ queryKey: ["ops", "overview"] });
+      void qc.invalidateQueries({ queryKey: ["model-catalog"] });
+    },
+  });
+
+  const reorderMut = useMutation({
+    mutationFn: async ({ id, dir }: { id: string; dir: "up" | "down" }) => {
+      const list = qc.getQueryData<ProviderConfigRow[]>(["admin", "providers"]) ?? [];
+      const sorted = sortProviderRows(list);
+      const i = sorted.findIndex((r) => r.id === id);
+      if (i < 0) throw new Error("provider not found");
+      const j = dir === "up" ? i - 1 : i + 1;
+      if (j < 0 || j >= sorted.length) throw new Error("cannot reorder");
+      const cur = sorted[i];
+      const neighbor = sorted[j];
+      const out: ProviderConfigRow[] = [];
+      if (cur.priority !== neighbor.priority) {
+        out.push(
+          await api<ProviderConfigRow>(`/providers/${cur.id}`, {
+            method: "PATCH",
+            body: JSON.stringify({ priority: neighbor.priority }),
+          }),
+        );
+        out.push(
+          await api<ProviderConfigRow>(`/providers/${neighbor.id}`, {
+            method: "PATCH",
+            body: JSON.stringify({ priority: cur.priority }),
+          }),
+        );
+        return out;
+      }
+      if (dir === "up") {
+        const orig = neighbor.priority;
+        out.push(
+          await api<ProviderConfigRow>(`/providers/${neighbor.id}`, {
+            method: "PATCH",
+            body: JSON.stringify({ priority: Math.min(999, orig + 1) }),
+          }),
+        );
+        out.push(
+          await api<ProviderConfigRow>(`/providers/${cur.id}`, {
+            method: "PATCH",
+            body: JSON.stringify({ priority: orig }),
+          }),
+        );
+        return out;
+      }
+      out.push(
+        await api<ProviderConfigRow>(`/providers/${cur.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ priority: Math.min(999, neighbor.priority + 1) }),
+        }),
+      );
+      return out;
+    },
+    onSuccess: (updated) => {
+      if (!updated?.length) return;
+      qc.setQueryData(["admin", "providers"], (old: ProviderConfigRow[] | undefined) => {
+        if (!old?.length) return old;
+        const byId = new Map(updated.map((r) => [r.id, r] as const));
+        return old.map((r) => byId.get(r.id) ?? r);
+      });
+      if (selectedId) {
+        const mine = updated.find((r) => r.id === selectedId);
+        if (mine) {
+          setForm((prev) => (prev ? { ...prev, priority: String(mine.priority) } : prev));
+        }
+      }
+      void qc.invalidateQueries({ queryKey: ["admin", "providers"] });
+      void qc.invalidateQueries({ queryKey: ["routing"] });
+      void qc.invalidateQueries({ queryKey: ["ops", "overview"] });
+      void qc.invalidateQueries({ queryKey: ["model-catalog"] });
     },
   });
 
@@ -251,6 +329,7 @@ export function AdminProviders() {
       void qc.invalidateQueries({ queryKey: ["routing"] });
       void qc.invalidateQueries({ queryKey: ["ops", "overview"] });
       void qc.invalidateQueries({ queryKey: ["app-keys", "available-models"] });
+      void qc.invalidateQueries({ queryKey: ["model-catalog"] });
     },
   });
 
@@ -297,6 +376,7 @@ export function AdminProviders() {
       void qc.invalidateQueries({ queryKey: ["routing"] });
       void qc.invalidateQueries({ queryKey: ["ops", "overview"] });
       void qc.invalidateQueries({ queryKey: ["app-keys", "available-models"] });
+      void qc.invalidateQueries({ queryKey: ["model-catalog"] });
     },
   });
 
@@ -332,8 +412,8 @@ export function AdminProviders() {
           <h1 className="usage-title">{text("供应商与模型接入", "Providers & Models")}</h1>
           <p className="usage-subtitle muted">
             {text(
-              "平台管理员可在这里维护上游供应商、API Key、模型目录和超时策略",
-              "Platform admins can manage upstream providers, API keys, model catalogs, and timeout policies here.",
+              "平台管理员可在这里维护上游供应商、API Key、模型目录和超时策略；列表中的「优先级」与上移/下移会决定模型广场里各供应商模型的合并顺序（同模型 ID 以先出现的供应商为准）",
+              "Platform admins manage upstream providers, API keys, model catalogs, and timeouts here. Priority and the move controls determine how the model hub merges catalogs across providers (duplicate model IDs keep the first provider in this order).",
             )}
           </p>
         </div>
@@ -362,6 +442,7 @@ export function AdminProviders() {
           <table className="bill-table">
             <thead>
               <tr>
+                <th>{text("排序", "Reorder")}</th>
                 <th>{text("供应商", "Provider")}</th>
                 <th>{text("模型厂商", "Model Vendor")}</th>
                 <th>{text("类型", "Type")}</th>
@@ -373,7 +454,7 @@ export function AdminProviders() {
             <tbody>
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="muted" style={{ padding: "1.25rem", textAlign: "center" }}>
+                  <td colSpan={7} className="muted" style={{ padding: "1.25rem", textAlign: "center" }}>
                     {text(
                       "暂无供应商配置，请点击「新增供应商」创建第一条上游",
                       "No provider configuration yet. Click “Create provider” to add the first upstream.",
@@ -381,7 +462,7 @@ export function AdminProviders() {
                   </td>
                 </tr>
               ) : (
-                rows.map((row) => (
+                sortedRows.map((row, index) => (
                   <tr
                     key={row.id}
                     onClick={() => {
@@ -395,6 +476,33 @@ export function AdminProviders() {
                         selected?.id === row.id ? "rgba(40, 120, 255, 0.08)" : "",
                     }}
                   >
+                    <td
+                      onClick={(e) => e.stopPropagation()}
+                      style={{ whiteSpace: "nowrap", verticalAlign: "middle" }}
+                    >
+                      <button
+                        type="button"
+                        className="btn btn-ghost"
+                        style={{ padding: "0.1rem 0.35rem", minWidth: "auto", lineHeight: 1.2 }}
+                        disabled={reorderMut.isPending || index === 0}
+                        title={text("上移（更早出现在模型广场）", "Move up (earlier in model hub)")}
+                        aria-label={text("上移", "Move up")}
+                        onClick={() => reorderMut.mutate({ id: row.id, dir: "up" })}
+                      >
+                        ↑
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-ghost"
+                        style={{ padding: "0.1rem 0.35rem", minWidth: "auto", lineHeight: 1.2 }}
+                        disabled={reorderMut.isPending || index === sortedRows.length - 1}
+                        title={text("下移（更晚出现在模型广场）", "Move down (later in model hub)")}
+                        aria-label={text("下移", "Move down")}
+                        onClick={() => reorderMut.mutate({ id: row.id, dir: "down" })}
+                      >
+                        ↓
+                      </button>
+                    </td>
                     <td>{row.name}</td>
                     <td>{row.modelVendor || text("未填写", "Not set")}</td>
                     <td>{row.providerType}</td>
@@ -450,6 +558,12 @@ export function AdminProviders() {
             </div>
             <div className="field" style={{ marginBottom: 0 }}>
               <label>{text("优先级", "Priority")}</label>
+              <p className="muted" style={{ margin: "0 0 0.35rem", fontSize: "0.85rem" }}>
+                {text(
+                  "数值越小越靠前，模型广场按此顺序合并各供应商的模型；也可用列表中的 ↑↓ 快速调整",
+                  "Lower numbers appear first; the model hub merges catalogs in this order. Use ↑/↓ in the list for quick moves.",
+                )}
+              </p>
               <input
                 type="number"
                 min={1}
@@ -693,6 +807,12 @@ export function AdminProviders() {
                 </div>
                 <div className="field" style={{ marginBottom: 0 }}>
                   <label>{text("优先级", "Priority")}</label>
+                  <p className="muted" style={{ margin: "0 0 0.35rem", fontSize: "0.85rem" }}>
+                    {text(
+                      "数值越小越靠前，影响模型广场中该供应商模型的展示顺序",
+                      "Lower numbers appear first and control this provider’s position in the model hub merge order.",
+                    )}
+                  </p>
                   <input
                     type="number"
                     min={1}

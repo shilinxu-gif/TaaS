@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### 2026-04-28 管理员供应商：列表上移/下移调整模型广场顺序
+
+- 改动内容：后端 `modelCatalog` 已按供应商 `priority` 升序合并模型目录；前端 `AdminProviders.tsx` 将列表按优先级与名称排序展示，新增「排序」列的上移/下移按钮，通过 PATCH 仅更新 `priority`（含与相邻行优先级相同时的避让逻辑）完成重排；页头与「优先级」表单项补充说明其与模型广场合并顺序的关系；保存/新增/删除供应商及重排成功后失效 `model-catalog` 查询；`ModelHub.tsx` 对筛选结果按 `priority`、供应商名、模型 ID 排序以与后台一致
+- 影响范围：`client/src/pages/AdminProviders.tsx`、`client/src/pages/ModelHub.tsx`、`CHANGELOG.md`
+- 验证情况：已执行 `ReadLints`（上述 TSX 无新增诊断）、`npm run build --prefix client` 通过
+- 运维动作：仅需发版前端静态资源；无需数据库迁移或后端接口变更
+- 线上数据影响：无；仍仅更新既有 `providers.priority` 字段，不写新表
+- 风险控制：重排为两次顺序 PATCH，极端同优先级且均为 999 时上移可能受 `priority` 上限约束，管理员仍可通过数字输入微调
+
 ### 2026-04-28 前端：移除中文展示文案中的全角句号
 
 - 改动内容：在 `client/src` 内对含用户可见中文的页面与组件（含 `IntegrationDocs`、`ModelHub`、`ApiKeys`、`AdminProviders`、`BillingRechargeSection`、`i18n/resources.ts` 等）统一去掉全角句号 `。`，英文句点与代码逻辑不变。
