@@ -19,6 +19,7 @@ import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -368,6 +369,8 @@ public class ConsoleService {
                 blankDefault(item.get("providerType"), providerType);
             boolean supportsStreaming =
                 booleanValue(item.get("supportsStreaming"), providerSupportsStreaming);
+            List<String> capabilityTags =
+                capabilityTags(item.get("capabilityTags"), supportsStreaming);
             ProviderCatalog.Entry pricing = ProviderCatalog.find(modelId);
             byModel.put(
                 modelId,
@@ -391,7 +394,7 @@ public class ConsoleService {
                     "gatewayEndpoint", gatewayEndpoint(normalizedProviderType),
                     "upstreamEndpointPath", upstreamEndpointPath(normalizedProviderType, modelId),
                     "integrationFormatNote", integrationFormatNote(normalizedProviderType),
-                    "capabilityTags", capabilityTags(supportsStreaming),
+                    "capabilityTags", capabilityTags,
                     "status", "available"));
           }
           return null;
@@ -2569,13 +2572,32 @@ public class ConsoleService {
     };
   }
 
-  private static List<String> capabilityTags(boolean supportsStreaming) {
-    ArrayList<String> tags = new ArrayList<>();
-    tags.add("chat");
-    if (supportsStreaming) {
-      tags.add("streaming");
+  private static List<String> capabilityTags(Object configured, boolean supportsStreaming) {
+    LinkedHashSet<String> tags = new LinkedHashSet<>();
+    if (configured != null) {
+      if (configured instanceof String raw) {
+        for (String part : raw.split("[,，/]")) {
+          String tag = nullableTrim(part);
+          if (tag != null) {
+            tags.add(tag);
+          }
+        }
+      } else if (configured instanceof List<?> list) {
+        for (Object value : list) {
+          String tag = nullableTrim(value);
+          if (tag != null) {
+            tags.add(tag);
+          }
+        }
+      }
     }
-    return tags;
+    if (tags.isEmpty()) {
+      tags.add("chat");
+      if (supportsStreaming) {
+        tags.add("streaming");
+      }
+    }
+    return new ArrayList<>(tags);
   }
 
   private List<String> memberAllowedModels(String tenantId, String userId) {
@@ -2728,6 +2750,17 @@ public class ConsoleService {
         if (!List.of("openai", "anthropic", "google")
             .contains(String.valueOf(item.get("providerType")))) {
           throw new ApiException(400, "modelCatalog is invalid");
+        }
+        if (item.containsKey("capabilityTags")) {
+          Object rawTags = item.get("capabilityTags");
+          if (!(rawTags instanceof String) && !(rawTags instanceof List<?>)) {
+            throw new ApiException(400, "modelCatalog is invalid");
+          }
+          for (String tag : capabilityTags(rawTags, false)) {
+            if (tag.trim().isEmpty() || tag.length() > 32) {
+              throw new ApiException(400, "modelCatalog is invalid");
+            }
+          }
         }
       }
     }

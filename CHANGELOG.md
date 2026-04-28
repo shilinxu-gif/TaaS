@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### 2026-04-28 补提交：ConsoleService modelCatalog 能力标签逻辑入库
+
+- 改动内容：将此前未提交的 `ConsoleService.java` 变更纳入版本控制，包括 `modelCatalog` 从 `modelCatalog` JSON 项读取 `capabilityTags`（数组或逗号分隔字符串）、空配置时回退 `chat`/`streaming`，以及创建/更新供应商时对 `capabilityTags` 类型与单标签长度的校验
+- 影响范围：`backend-java/src/main/java/com/taas/console/ConsoleService.java`、`CHANGELOG.md`
+- 验证情况：已执行 `mvn -f backend-java/pom.xml test` 通过
+- 运维动作：发版并重启 Java 后端生效；无需新增迁移或手工 SQL
+- 线上数据影响：无；仅改变读取与校验逻辑，不写新表
+- 风险控制：与既有「模型能力标签」发版说明一致；非法 `capabilityTags` 仍会在保存供应商时被拒绝
+
 ### 2026-04-28 管理员供应商：列表上移/下移调整模型广场顺序
 
 - 改动内容：后端 `modelCatalog` 已按供应商 `priority` 升序合并模型目录；前端 `AdminProviders.tsx` 将列表按优先级与名称排序展示，新增「排序」列的上移/下移按钮，通过 PATCH 仅更新 `priority`（含与相邻行优先级相同时的避让逻辑）完成重排；页头与「优先级」表单项补充说明其与模型广场合并顺序的关系；保存/新增/删除供应商及重排成功后失效 `model-catalog` 查询；`ModelHub.tsx` 对筛选结果按 `priority`、供应商名、模型 ID 排序以与后台一致
