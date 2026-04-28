@@ -1074,8 +1074,8 @@ print(response.json())`,
           <h1>{text("SDK 文档中心", "SDK Docs Center")}</h1>
           <p>
             {text(
-              "首屏只需记住一个 Base URL：OpenAI SDK、Anthropic SDK、Claude Code 及多数兼容客户端都填根域名即可。完整 HTTP path（`chat/completions` 与 `messages`）按下方「供应商族」分块查看，避免多 URL 并列混淆。",
-              "You only need one Base URL on this screen: OpenAI SDK, Anthropic SDK, Claude Code, and most compatible clients should use the root origin. Full HTTP paths (`chat/completions` vs `messages`) are documented per vendor family below so multiple URLs are not competing for attention."
+              "OpenAI SDK、Anthropic SDK、Claude Code 及多数兼容客户端都填根域名即可。完整 HTTP path（`chat/completions` 与 `messages`）按下方「供应商族」分块查看，避免多 URL 并列混淆。",
+              "OpenAI SDK, Anthropic SDK, Claude Code, and most compatible clients should use the root origin. Full HTTP paths (`chat/completions` vs `messages`) are documented per vendor family below so multiple URLs are not competing for attention."
             )}
           </p>
           <p className="muted integration-hero-note">

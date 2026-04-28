@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### 2026-04-28 SDK 文档中心：精简概览首段 Base URL 引导文案
+
+- 改动内容：`IntegrationDocs.tsx` 概览区首段去掉「首屏只需记住一个 Base URL：」前缀，其余关于根域名、按供应商族查看 path、以及多模态 `gateway/v1/...` 的说明保持不变。
+- 影响范围：`client/src/pages/IntegrationDocs.tsx`、`CHANGELOG.md`。
+- 验证情况：已执行 `ReadLints`（`IntegrationDocs.tsx` 无新增诊断）、`npm run build --prefix client` 通过。
+- 运维动作：仅需发版前端静态资源；本地可依赖 Vite HMR。
+- 线上数据影响：无。
+- 风险控制：纯文案。
+
 ### 2026-04-28 模型广场：精简首页说明与推荐接入形态展示文案
 
 - 改动内容：`ModelHub.tsx` 将模型广场首段说明改为仅强调可快速查看模型 ID、输入/输出价格、流式能力与计费规则；统计卡片「推荐接入形态」下方由「OpenAI / Claude 分开展示」改为展示「OpenAI / Claude」。
