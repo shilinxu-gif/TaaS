@@ -6,6 +6,34 @@ import { api, type ModelCatalogRow } from "../api";
 import { pickText } from "../i18n/inline";
 import { copyText } from "../utils/clipboard";
 
+function capabilityLabel(value: string, language: string | undefined) {
+  return value === "chat" || value === "对话"
+    ? pickText(language, "对话", "Chat")
+    : value === "thinking" || value === "思考"
+      ? pickText(language, "思考", "Thinking")
+      : value === "text_to_image" || value === "文生图"
+        ? pickText(language, "文生图", "Text-to-Image")
+        : value === "image_to_image" || value === "图生图"
+          ? pickText(language, "图生图", "Image-to-Image")
+          : value === "copywriting_generation" || value === "文案生成"
+            ? pickText(language, "文案生成", "Copywriting Generation")
+            : value === "image_generation" || value === "图片生成"
+              ? pickText(language, "图片生成", "Image Generation")
+              : value === "reasoning" || value === "推理"
+                ? pickText(language, "推理", "Reasoning")
+                : value === "coding" || value === "代码能力"
+                  ? pickText(language, "代码能力", "Coding")
+                  : value === "image_to_video" || value === "图生视频"
+                    ? pickText(language, "图生视频", "Image-to-Video")
+                    : value === "video_generation" || value === "视频生产"
+                      ? pickText(language, "视频生产", "Video Generation")
+                      : value === "copywriting_skill" || value === "文案能力"
+                        ? pickText(language, "文案能力", "Copywriting")
+                        : value === "streaming" || value === "流式"
+                          ? pickText(language, "流式", "Streaming")
+                          : value;
+}
+
 function CapabilityPill({
   value,
   language,
@@ -13,12 +41,7 @@ function CapabilityPill({
   value: string;
   language: string | undefined;
 }) {
-  const label =
-    value === "chat"
-      ? pickText(language, "对话", "Chat")
-      : value === "streaming"
-        ? pickText(language, "流式", "Streaming")
-        : value;
+  const label = capabilityLabel(value, language);
   return <span className="model-hub-pill">{label}</span>;
 }
 
@@ -61,8 +84,11 @@ export function ModelHub() {
     [rows]
   );
   const capabilityOptions = useMemo(
-    () => Array.from(new Set(rows.flatMap((row) => row.capabilityTags))),
-    [rows]
+    () =>
+      Array.from(new Set(rows.flatMap((row) => row.capabilityTags))).sort((left, right) =>
+        capabilityLabel(left, language).localeCompare(capabilityLabel(right, language))
+      ),
+    [language, rows]
   );
   const filteredRows = useMemo(() => {
     const keyword = search.trim().toLowerCase();
@@ -195,8 +221,8 @@ print(resp.model_dump_json(indent=2))`;
           <h1>{text("模型广场", "Model Hub")}</h1>
           <p>
             {text(
-              "这里展示当前平台已配置且可用的模型目录。你可以快速查看模型 ID、输入/输出价格、流式能力、计费规则，以及平台统一网关与原生上游协议的差异说明。",
-              "Browse every model currently configured and available on the platform. Compare model IDs, input/output pricing, streaming support, billing rules, and the difference between the unified TaaS gateway and each upstream protocol family."
+              "你可以快速查看模型 ID、输入/输出价格、流式能力、计费规则。",
+              "Quickly view model IDs, input/output pricing, streaming support, and billing rules."
             )}
           </p>
           <div className="model-hub-hero-actions">
@@ -219,7 +245,7 @@ print(resp.model_dump_json(indent=2))`;
           </article>
           <article className="model-hub-stat-card">
             <span>{text("推荐接入形态", "Recommended protocol")}</span>
-            <code>{text("OpenAI / Claude 分开展示", "OpenAI / Claude shown separately")}</code>
+            <code>{text("OpenAI / Claude", "OpenAI / Claude")}</code>
           </article>
         </div>
       </section>
@@ -286,11 +312,7 @@ print(resp.model_dump_json(indent=2))`;
             <option value="all">{text("全部能力", "All capabilities")}</option>
             {capabilityOptions.map((capability) => (
               <option key={capability} value={capability}>
-                {capability === "chat"
-                  ? text("对话", "Chat")
-                  : capability === "streaming"
-                    ? text("流式", "Streaming")
-                    : capability}
+                {capabilityLabel(capability, language)}
               </option>
             ))}
           </select>

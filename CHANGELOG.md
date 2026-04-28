@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### 2026-04-28 模型广场：精简首页说明与推荐接入形态展示文案
+
+- 改动内容：`ModelHub.tsx` 将模型广场首段说明改为仅强调可快速查看模型 ID、输入/输出价格、流式能力与计费规则；统计卡片「推荐接入形态」下方由「OpenAI / Claude 分开展示」改为展示「OpenAI / Claude」。
+- 影响范围：`client/src/pages/ModelHub.tsx`、`CHANGELOG.md`。
+- 验证情况：已执行 `ReadLints`（`ModelHub.tsx` 无新增诊断）、`npm run build --prefix client` 通过。
+- 运维动作：仅需发版前端静态资源；本地开发环境可依赖 Vite HMR，无 SQL 与后端依赖。
+- 线上数据影响：无；仅用户可见文案调整。
+- 风险控制：纯文案，不涉及接口与路由逻辑。
+
 ### 2026-04-28 管理员供应商：保存后模型目录 JSON 不再被旧缓存覆盖
 
 - 改动内容：`AdminProviders.tsx` 中保存供应商的 `onSuccess` 改为用 PATCH 返回的最新 `ProviderConfigRow` 调用 `buildForm` 更新表单，并对 `["admin","providers"]` 执行 `setQueryData` 合并该行；移除在 refetch 完成前用 `rows.find` 重建表单的逻辑，避免保存成功后界面上的模型目录 JSON 短暂回退为旧内容。
