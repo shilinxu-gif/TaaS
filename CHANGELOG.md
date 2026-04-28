@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+### 2026-04-28 11:31 后端：移除 DeepSeek 组合供应商种子
+
+- 改动内容：`SeedDataRunner` 移除默认种子供应商 `deepseek-v3-1-terminus`，避免管理员删除该供应商后在后端重启时再次自动补建；其他默认供应商与单模型种子保持不变。
+- 影响范围：`backend-java/src/main/java/com/taas/boot/SeedDataRunner.java`、`CHANGELOG.md`。
+- 验证情况：已执行 `mvn -f backend-java/pom.xml test` 通过；`ReadLints` 检查 `SeedDataRunner.java` 与 `CHANGELOG.md` 无新增诊断。
+- 运维动作：发版并重启后端服务生效；无需执行 SQL、迁移或清缓存。
+- 线上数据影响：不会自动删除线上已有 `providers.slug = 'deepseek-v3-1-terminus'` 行；仅影响后续服务启动时不再自动新增该种子行。若线上已存在且需要移除，仍需管理员在控制台删除或按明确范围手工删除该供应商。
+- 风险控制：变更仅删除一个启动种子声明，不修改网关路由、模型匹配、计费或已存在供应商配置。
+
+### 2026-04-28 11:24 管理员：新增供应商 Base URL 支持选择已有地址
+
+- 改动内容：`AdminProviders.tsx` 在新增供应商弹窗中为 Base URL 输入框增加已有供应商 Base URL 的下拉候选，候选文案带上供应商与模型信息；输入框仍保留自由输入能力，可直接填写新的上游地址。
+- 影响范围：`client/src/pages/AdminProviders.tsx`、`CHANGELOG.md`。
+- 验证情况：已执行 `npm run build --prefix client` 通过；`ReadLints` 检查 `AdminProviders.tsx` 与 `CHANGELOG.md` 无新增诊断。
+- 运维动作：仅需发版前端静态资源；本地开发环境需重启前端服务生效。无数据库与后端依赖。
+- 线上数据影响：无；仅影响管理员新建供应商时的表单交互，不改写存量 `providers` 数据。
+- 风险控制：变更限定在新增供应商弹窗的 Base URL 输入控件；选择候选和手动输入共用原有提交字段，后端保存逻辑不变。
+
 ### 2026-04-27 19:51 SDK 文档中心：快速开始页两列等分铺满
 
 - 改动内容：`IntegrationDocs.tsx` 将快速开始标签页从通用三列网格改为 `integration-grid--quickstart` 专用布局；`styles.css` 增加两列等分、等高撑满样式，使“5 分钟快速开始”和“环境变量参考”在宽屏下平均占据页面宽度，请求规范模块继续作为下方全宽独立模块展示。

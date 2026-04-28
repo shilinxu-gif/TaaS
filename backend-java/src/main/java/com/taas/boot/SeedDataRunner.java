@@ -94,32 +94,6 @@ public class SeedDataRunner implements CommandLineRunner {
         30,
         30000);
     seedProvider(
-        "deepseek-v3-1-terminus",
-        "DeepSeek-V3.1-Terminus",
-        "openai",
-        null,
-        List.of(
-            Map.of(
-                "model", "deepseek-ai/DeepSeek-V3.1-Terminus",
-                "providerType", "openai",
-                "inputUsdPerMillion", "0",
-                "outputUsdPerMillion", "0",
-                "supportsStreaming", true),
-            Map.of(
-                "model", "Qwen3.5-397B-A17B",
-                "providerType", "openai",
-                "inputUsdPerMillion", "0",
-                "outputUsdPerMillion", "0",
-                "supportsStreaming", true),
-            Map.of(
-                "model", "Qwen/Qwen3-32B",
-                "providerType", "openai",
-                "inputUsdPerMillion", "0",
-                "outputUsdPerMillion", "0",
-                "supportsStreaming", true)),
-        15,
-        120000);
-    seedProvider(
         "deepseek-v3-1-terminus-single",
         "DeepSeek-V3.1-Terminus（单模型）",
         "openai",

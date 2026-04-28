@@ -29,6 +29,7 @@ type CreateProviderForm = {
 };
 
 const API_KEY_MASK = "••••••••••••••••";
+const BASE_URL_DATALIST_ID = "provider-base-url-options";
 
 function defaultCatalogForType(providerType: CreateProviderForm["providerType"]): string {
   const model =
@@ -99,6 +100,24 @@ export function AdminProviders() {
   const rows = providersQuery.data ?? [];
   const selected =
     rows.find((row) => row.id === selectedId) ?? rows[0] ?? null;
+  const baseUrlOptions = useMemo(() => {
+    const options = new Map<string, Set<string>>();
+    for (const row of rows) {
+      const url = row.baseUrl?.trim();
+      if (!url) continue;
+      const labels = options.get(url) ?? new Set<string>();
+      const models = row.modelCatalog
+        .map((item) => (typeof item.model === "string" ? item.model.trim() : ""))
+        .filter(Boolean)
+        .slice(0, 3);
+      labels.add(models.length ? `${row.name}：${models.join("、")}` : row.name);
+      options.set(url, labels);
+    }
+    return Array.from(options, ([url, labels]) => ({
+      url,
+      label: Array.from(labels).join(" / "),
+    }));
+  }, [rows]);
 
   useEffect(() => {
     if (!selected) {
@@ -595,12 +614,21 @@ export function AdminProviders() {
                 <div className="field" style={{ marginBottom: 0, gridColumn: "1 / -1" }}>
                   <label>Base URL（可选）</label>
                   <input
+                    list={BASE_URL_DATALIST_ID}
                     placeholder="https://api.openai.com/v1"
                     value={createForm.baseUrl}
                     onChange={(e) =>
                       setCreateForm((prev) => ({ ...prev, baseUrl: e.target.value }))
                     }
                   />
+                  <datalist id={BASE_URL_DATALIST_ID}>
+                    {baseUrlOptions.map((option) => (
+                      <option key={option.url} value={option.url} label={option.label} />
+                    ))}
+                  </datalist>
+                  <p className="muted" style={{ margin: "0.35rem 0 0" }}>
+                    可从已有模型供应商地址中选择，也可以直接输入新的 Base URL。
+                  </p>
                 </div>
                 <div className="field" style={{ marginBottom: 0 }}>
                   <label>健康状态</label>
