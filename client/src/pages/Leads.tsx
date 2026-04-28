@@ -1,18 +1,22 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { api, type Lead } from "../api";
+import { pickText } from "../i18n/inline";
 
 const STATUSES = [
-  { value: "", label: "全部" },
-  { value: "new", label: "新建" },
-  { value: "contacting", label: "联系中" },
-  { value: "qualified", label: "已确认" },
-  { value: "converted", label: "已转化" },
-  { value: "disqualified", label: "无效" },
+  { value: "", zhCN: "全部", enUS: "All" },
+  { value: "new", zhCN: "新建", enUS: "New" },
+  { value: "contacting", zhCN: "联系中", enUS: "Contacting" },
+  { value: "qualified", zhCN: "已确认", enUS: "Qualified" },
+  { value: "converted", zhCN: "已转化", enUS: "Converted" },
+  { value: "disqualified", zhCN: "无效", enUS: "Disqualified" },
 ];
 
 export function Leads() {
+  const { i18n } = useTranslation();
+  const text = (zhCN: string, enUS: string) => pickText(i18n.resolvedLanguage, zhCN, enUS);
   const qc = useQueryClient();
   const [status, setStatus] = useState("");
   const [search, setSearch] = useState("");
@@ -61,11 +65,16 @@ export function Leads() {
 
   const list = data ?? [];
   const n = list.length;
+  const statusText = (value: string) =>
+    text(
+      STATUSES.find((s) => s.value === value)?.zhCN ?? value,
+      STATUSES.find((s) => s.value === value)?.enUS ?? value
+    );
 
   return (
     <div className="workspace-columns">
       <aside className="pane-list">
-        <div className="pane-list-header">线索（{n}）</div>
+        <div className="pane-list-header">{text(`线索（${n}）`, `Leads (${n})`)}</div>
         <div style={{ padding: "0 1rem 0.5rem" }}>
           <select
             value={status}
@@ -79,7 +88,7 @@ export function Leads() {
           >
             {STATUSES.map((s) => (
               <option key={s.value || "all"} value={s.value}>
-                {s.label}
+                {text(s.zhCN, s.enUS)}
               </option>
             ))}
           </select>
@@ -93,7 +102,7 @@ export function Leads() {
               />
             </svg>
             <input
-              placeholder="搜索"
+              placeholder={text("搜索", "Search")}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
@@ -101,7 +110,7 @@ export function Leads() {
           <button
             type="button"
             className="btn-add-green"
-            title="新建线索"
+            title={text("新建线索", "Create lead")}
             onClick={() => {
               setCreating(true);
               setSelectedId(null);
@@ -113,7 +122,9 @@ export function Leads() {
         </div>
         <div className="pane-list-scroll">
           {isLoading ? (
-            <p className="muted" style={{ padding: "1rem" }}>加载中…</p>
+            <p className="muted" style={{ padding: "1rem" }}>
+              {text("加载中…", "Loading...")}
+            </p>
           ) : (
             list.map((l) => (
               <button
@@ -129,8 +140,8 @@ export function Leads() {
                 <span style={{ minWidth: 0 }}>
                   <div className="pane-item-title">{l.name}</div>
                   <div className="pane-item-sub">
-                    <span className="badge">{l.status}</span>{" "}
-                    {l.company ?? "无公司"}
+                    <span className="badge">{statusText(l.status)}</span>{" "}
+                    {l.company ?? text("无公司", "No company")}
                   </div>
                 </span>
               </button>
@@ -146,37 +157,37 @@ export function Leads() {
             className={tab === "info" ? "active" : ""}
             onClick={() => setTab("info")}
           >
-            信息
+            {text("信息", "Info")}
           </button>
           <button
             type="button"
             className={tab === "follow" ? "active" : ""}
             onClick={() => setTab("follow")}
           >
-            跟进
+            {text("跟进", "Follow-up")}
           </button>
         </div>
 
         {creating ? (
           <>
-            <p className="section-cap">新建线索</p>
+            <p className="section-cap">{text("新建线索", "Create lead")}</p>
             <div className="form-grid-2">
               <div className="field" style={{ marginBottom: 0 }}>
-                <label>姓名 *</label>
+                <label>{text("姓名 *", "Name *")}</label>
                 <input
                   value={form.name}
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
                 />
               </div>
               <div className="field" style={{ marginBottom: 0 }}>
-                <label>公司</label>
+                <label>{text("公司", "Company")}</label>
                 <input
                   value={form.company}
                   onChange={(e) => setForm({ ...form, company: e.target.value })}
                 />
               </div>
               <div className="field" style={{ marginBottom: 0 }}>
-                <label>邮箱</label>
+                <label>{text("邮箱", "Email")}</label>
                 <input
                   type="email"
                   value={form.email}
@@ -184,16 +195,16 @@ export function Leads() {
                 />
               </div>
               <div className="field" style={{ marginBottom: 0 }}>
-                <label>手机</label>
+                <label>{text("手机", "Phone")}</label>
                 <input
                   value={form.phone}
                   onChange={(e) => setForm({ ...form, phone: e.target.value })}
                 />
               </div>
               <div className="field" style={{ marginBottom: 0, gridColumn: "1 / -1" }}>
-                <label>来源</label>
+                <label>{text("来源", "Source")}</label>
                 <input
-                  placeholder="官网、展会等"
+                  placeholder={text("官网、展会等", "Website, trade show, etc.")}
                   value={form.source}
                   onChange={(e) => setForm({ ...form, source: e.target.value })}
                 />
@@ -209,32 +220,32 @@ export function Leads() {
                 disabled={create.isPending || !form.name.trim()}
                 onClick={() => create.mutate()}
               >
-                保存
+                {text("保存", "Save")}
               </button>
               <button type="button" className="btn" onClick={() => setCreating(false)}>
-                取消
+                {text("取消", "Cancel")}
               </button>
             </div>
           </>
         ) : selected ? (
           tab === "info" ? (
             <>
-              <p className="section-cap">线索概要</p>
+              <p className="section-cap">{text("线索概要", "Lead summary")}</p>
               <div className="form-grid-2">
                 <div className="field" style={{ marginBottom: 0 }}>
-                  <label>姓名</label>
+                  <label>{text("姓名", "Name")}</label>
                   <input readOnly value={selected.name} />
                 </div>
                 <div className="field" style={{ marginBottom: 0 }}>
-                  <label>状态</label>
-                  <input readOnly value={selected.status} />
+                  <label>{text("状态", "Status")}</label>
+                  <input readOnly value={statusText(selected.status)} />
                 </div>
                 <div className="field" style={{ marginBottom: 0 }}>
-                  <label>公司</label>
+                  <label>{text("公司", "Company")}</label>
                   <input readOnly value={selected.company ?? ""} />
                 </div>
                 <div className="field" style={{ marginBottom: 0 }}>
-                  <label>手机</label>
+                  <label>{text("手机", "Phone")}</label>
                   <input readOnly value={selected.phone ?? ""} />
                 </div>
               </div>
@@ -243,18 +254,23 @@ export function Leads() {
                 style={{ marginTop: "1.25rem", display: "inline-flex" }}
                 to={`/leads/${selected.id}`}
               >
-                打开完整跟进页
+                {text("打开完整跟进页", "Open full follow-up page")}
               </Link>
             </>
           ) : (
             <p className="muted">
-              时间轴与跟进记录在完整页面维护。
+              {text(
+                "时间轴与跟进记录在完整页面维护。",
+                "Timeline and follow-up records are managed on the full page."
+              )}
               <br />
-              <Link to={`/leads/${selected.id}`}>前往跟进 →</Link>
+              <Link to={`/leads/${selected.id}`}>{text("前往跟进 →", "Go to follow-up ->")}</Link>
             </p>
           )
         ) : (
-          <p className="muted">请从左侧选择一条线索，或点击「+」新建。</p>
+          <p className="muted">
+            {text("请从左侧选择一条线索，或点击「+」新建。", "Select a lead on the left, or click + to create one.")}
+          </p>
         )}
       </section>
     </div>

@@ -1,24 +1,28 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { api, type Activity, type Opportunity } from "../api";
+import { pickText } from "../i18n/inline";
 
 const STAGES = [
-  { id: "discovery", label: "初步沟通" },
-  { id: "proposal", label: "方案/报价" },
-  { id: "negotiation", label: "谈判" },
-  { id: "won", label: "赢单" },
-  { id: "lost", label: "输单" },
+  { id: "discovery", zhCN: "初步沟通", enUS: "Discovery" },
+  { id: "proposal", zhCN: "方案/报价", enUS: "Proposal / Quote" },
+  { id: "negotiation", zhCN: "谈判", enUS: "Negotiation" },
+  { id: "won", zhCN: "赢单", enUS: "Won" },
+  { id: "lost", zhCN: "输单", enUS: "Lost" },
 ];
 
 const ACT_TYPES = [
-  { value: "note", label: "备注" },
-  { value: "call", label: "电话" },
-  { value: "email", label: "邮件" },
-  { value: "meeting", label: "会议" },
+  { value: "note", zhCN: "备注", enUS: "Note" },
+  { value: "call", zhCN: "电话", enUS: "Call" },
+  { value: "email", zhCN: "邮件", enUS: "Email" },
+  { value: "meeting", zhCN: "会议", enUS: "Meeting" },
 ];
 
 export function OpportunityDetail() {
+  const { i18n } = useTranslation();
+  const text = (zhCN: string, enUS: string) => pickText(i18n.resolvedLanguage, zhCN, enUS);
   const { id } = useParams<{ id: string }>();
   const qc = useQueryClient();
   const [actType, setActType] = useState("note");
@@ -76,22 +80,27 @@ export function OpportunityDetail() {
   });
 
   if (!id) return null;
-  if (isLoading || !opp) return <p className="muted">加载中…</p>;
+  if (isLoading || !opp) return <p className="muted">{text("加载中…", "Loading...")}</p>;
 
   const currentStage = stage ?? opp.stage;
+  const activityTypeText = (value: string) =>
+    text(
+      ACT_TYPES.find((t) => t.value === value)?.zhCN ?? value,
+      ACT_TYPES.find((t) => t.value === value)?.enUS ?? value
+    );
 
   return (
     <div className="shell-card">
       <div className="page-title">
         <h2>{opp.name}</h2>
         <Link to="/opportunities" className="btn">
-          返回看板
+          {text("返回看板", "Back to board")}
         </Link>
       </div>
       <div className="card" style={{ marginBottom: "1rem" }}>
-        <h3 style={{ marginTop: 0 }}>商机信息</h3>
+        <h3 style={{ marginTop: 0 }}>{text("商机信息", "Opportunity information")}</h3>
         <p>
-          <span className="muted">客户：</span>
+          <span className="muted">{text("客户：", "Account: ")}</span>
           {opp.account ? (
             <Link to={`/accounts`}>{opp.account.name}</Link>
           ) : (
@@ -99,20 +108,20 @@ export function OpportunityDetail() {
           )}
         </p>
         <div className="field">
-          <label>阶段</label>
+          <label>{text("阶段", "Stage")}</label>
           <select
             value={currentStage}
             onChange={(e) => setStage(e.target.value)}
           >
             {STAGES.map((s) => (
               <option key={s.id} value={s.id}>
-                {s.label}
+                {text(s.zhCN, s.enUS)}
               </option>
             ))}
           </select>
         </div>
         <div className="field">
-          <label>金额</label>
+          <label>{text("金额", "Amount")}</label>
           <input
             type="number"
             min={0}
@@ -124,11 +133,11 @@ export function OpportunityDetail() {
         </div>
         {currentStage === "lost" ? (
           <div className="field">
-            <label>输单原因</label>
+            <label>{text("输单原因", "Loss reason")}</label>
             <input
               value={lossReason || opp.lossReason || ""}
               onChange={(e) => setLossReason(e.target.value)}
-              placeholder="记录原因"
+              placeholder={text("记录原因", "Record reason")}
             />
           </div>
         ) : null}
@@ -150,30 +159,30 @@ export function OpportunityDetail() {
             patch.mutate(body);
           }}
         >
-          保存
+          {text("保存", "Save")}
         </button>
       </div>
       <div className="card">
-        <h3 style={{ marginTop: 0 }}>跟进记录</h3>
+        <h3 style={{ marginTop: 0 }}>{text("跟进记录", "Follow-up records")}</h3>
         <div className="field">
-          <label>类型</label>
+          <label>{text("类型", "Type")}</label>
           <select value={actType} onChange={(e) => setActType(e.target.value)}>
             {ACT_TYPES.map((t) => (
               <option key={t.value} value={t.value}>
-                {t.label}
+                {text(t.zhCN, t.enUS)}
               </option>
             ))}
           </select>
         </div>
         <div className="field">
-          <label>内容</label>
+          <label>{text("内容", "Content")}</label>
           <textarea
             value={actBody}
             onChange={(e) => setActBody(e.target.value)}
           />
         </div>
         <div className="field">
-          <label>下次跟进（可选）</label>
+          <label>{text("下次跟进（可选）", "Next follow-up (optional)")}</label>
           <input
             type="datetime-local"
             value={nextFollow}
@@ -189,13 +198,13 @@ export function OpportunityDetail() {
           disabled={addActivity.isPending || !actBody.trim()}
           onClick={() => addActivity.mutate()}
         >
-          添加跟进
+          {text("添加跟进", "Add follow-up")}
         </button>
         <div className="timeline" style={{ marginTop: "1.25rem" }}>
           {(activities ?? []).map((a) => (
             <div key={a.id} className="timeline-item">
               <div className="muted">
-                {new Date(a.occurredAt).toLocaleString()} · {a.type}
+                {new Date(a.occurredAt).toLocaleString()} · {activityTypeText(a.type)}
               </div>
               <div>{a.body}</div>
             </div>

@@ -107,6 +107,18 @@ function PlanCard({
 export function Billing() {
   const { i18n } = useTranslation();
   const text = (zhCN: string, enUS: string) => pickText(i18n.resolvedLanguage, zhCN, enUS);
+  const recordTypeLabel = (type: string, fallback: string) =>
+    type === "cache_hit"
+      ? text("缓存抵扣", "Cache credit")
+      : type === "usage"
+        ? text("用量", "Usage")
+        : fallback;
+  const recordStatusLabel = (status: string) =>
+    status === "已减免" || status === "waived"
+      ? text("已减免", "Waived")
+      : status === "已结算" || status === "settled"
+        ? text("已结算", "Settled")
+        : status;
   const [recordSort, setRecordSort] = useState<{
     field: BillingRecordSortField;
     dir: UsageSortDir;
@@ -350,7 +362,7 @@ export function Billing() {
                       <span
                         className={`bill-type-pill bill-type-pill--${r.type === "cache_hit" ? "cache" : "usage"}`}
                       >
-                        {r.typeLabel}
+                        {recordTypeLabel(r.type, r.typeLabel)}
                       </span>
                     </td>
                     <td className="tabular-nums bill-td-amt">
@@ -361,12 +373,15 @@ export function Billing() {
                     </td>
                     <td>
                       <span
-                        className={`bill-status bill-status--${r.status === "已减免" ? "waived" : "settled"}`}
+                        className={`bill-status bill-status--${r.status === "已减免" || r.status === "waived" ? "waived" : "settled"}`}
                       >
-                        {r.status}
+                        {recordStatusLabel(r.status)}
                       </span>
                     </td>
-                    <td className="bill-td-desc">{r.description}</td>
+                    <td className="bill-td-desc">
+                      {recordTypeLabel(r.type, r.typeLabel)}
+                      {r.model ? ` · ${r.model}` : ""}
+                    </td>
                   </tr>
                 ))
               )}

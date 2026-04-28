@@ -2,6 +2,60 @@
 
 ## Unreleased
 
+### 2026-04-28 12:13 管理员：调整供应商编辑区上间距
+
+- 改动内容：`AdminProviders.tsx` 为供应商编辑区域增加专用样式类，`styles.css` 补充顶部间距，避免编辑标题贴近上方供应商列表。
+- 影响范围：`client/src/pages/AdminProviders.tsx`、`client/src/styles.css`、`CHANGELOG.md`。
+- 验证情况：已执行 `npm run build --prefix client` 通过；已人工核对 `AdminProviders.tsx` 与 `styles.css` 改动位置。
+- 运维动作：仅需发版前端静态资源；本地开发环境需重启前端服务生效。无数据库与后端依赖。
+- 线上数据影响：无；仅调整管理员供应商页面展示间距，不改写任何业务数据。
+- 风险控制：使用页面专用类限制影响范围，不改变通用 `bill-section` 间距，避免影响其他页面布局。
+
+### 2026-04-28 12:06 前端：补齐控制台中英文适配
+
+- 改动内容：补齐管理员供应商、管理员统计、充值、开票、账单、工作台风险提醒、路由说明、品牌图标替代文本，以及旧 CRM 页面（联系人、客户、线索、商机、客户列表）的中英文适配；将可见中文硬编码接入 `pickText` / `useTranslation`，并对部分后端返回的账单、充值、开票、风险提示标签做前端双语兜底展示。
+- 影响范围：`client/src/pages/AdminProviders.tsx`、`AdminUsage.tsx`、`Invoices.tsx`、`Billing.tsx`、`Dashboard.tsx`、`Routing.tsx`、`client/src/components/BillingRechargeSection.tsx`、`client/src/BrandLogo.tsx`、旧 CRM 页面与 `CHANGELOG.md`。
+- 验证情况：已执行 `ReadLints` 检查本轮前端改动文件无新增诊断；已执行 `npm run build --prefix client` 通过，仅保留 Vite 大 chunk 提示。
+- 运维动作：仅需发版前端静态资源；本地开发环境需重启前端服务生效。无需执行 SQL、迁移、清缓存或重启后端。
+- 线上数据影响：无；仅调整前端展示文案和语言选择逻辑，不读写或迁移业务数据。
+- 风险控制：改动限定在用户可见文案与本地标签映射，保留原有 API 字段、筛选、排序、提交和删除逻辑；英文环境缺少后端多语言字段时使用前端兜底，避免继续显示中文状态。
+
+### 2026-04-28 11:54 供应商：新增弹窗不再预填模型厂商
+
+- 改动内容：`AdminProviders.tsx` 将新增供应商弹窗中的模型厂商默认值改为空，切换协议类型时不再自动覆盖模型厂商，避免默认预填 OpenAI。
+- 影响范围：`client/src/pages/AdminProviders.tsx`、`CHANGELOG.md`。
+- 验证情况：已执行 `npm run build --prefix client` 通过；`ReadLints` 检查 `AdminProviders.tsx` 与 `CHANGELOG.md` 无新增诊断。
+- 运维动作：仅需发版前端静态资源；本地开发环境需重启前端服务生效。无数据库与后端依赖。
+- 线上数据影响：无；仅调整新增供应商弹窗默认表单值，不改写 `providers.model_vendor` 存量数据。
+- 风险控制：管理员仍可从下拉候选选择模型厂商或手动填写，不影响编辑已有供应商。
+
+### 2026-04-28 11:51 供应商：模型厂商候选补充 Qwen 与 BAAI
+
+- 改动内容：`AdminProviders.tsx` 在模型厂商预设下拉候选中补充 Qwen、BAAI，新增或编辑供应商时可直接选择；仍支持手动填写其他厂商并加入候选。
+- 影响范围：`client/src/pages/AdminProviders.tsx`、`CHANGELOG.md`。
+- 验证情况：已执行 `npm run build --prefix client` 通过；`ReadLints` 检查 `AdminProviders.tsx` 与 `CHANGELOG.md` 无新增诊断。
+- 运维动作：仅需发版前端静态资源；本地开发环境需重启前端服务生效。无数据库与后端依赖。
+- 线上数据影响：无；仅调整管理员供应商表单候选项，不改写 `providers.model_vendor` 存量数据。
+- 风险控制：候选补充不改变已保存字段值，也不限制自由输入。
+
+### 2026-04-28 11:48 供应商：扩展模型厂商下拉候选
+
+- 改动内容：`AdminProviders.tsx` 将模型厂商预设候选扩展为 Anthropic、Google、OpenAI、DeepSeek、Tongyi、BytePlus、xAI、Zhipu、MiniMax、Kling、Moonshot；下拉列表同时合并已有供应商保存的厂商值和当前手动输入的新值，使新增或编辑时可下拉选择，也可直接填写新厂商并加入候选。
+- 影响范围：`client/src/pages/AdminProviders.tsx`、`CHANGELOG.md`。
+- 验证情况：已执行 `npm run build --prefix client` 通过；`ReadLints` 检查 `AdminProviders.tsx` 与 `CHANGELOG.md` 无新增诊断。
+- 运维动作：仅需发版前端静态资源；本地开发环境需重启前端服务生效。无数据库与后端依赖。
+- 线上数据影响：无；仅调整管理员供应商表单的前端候选项，不改写 `providers.model_vendor` 存量数据。
+- 风险控制：候选扩展不限制自由输入，避免阻断未预设的新模型厂商。
+
+### 2026-04-28 11:43 供应商：新增模型厂商字段与模型广场筛选
+
+- 改动内容：新增 Flyway 迁移为 `providers` 表增加 `model_vendor` 字段，并按既有 slug / provider_type 回填 OpenAI、Anthropic、Google、DeepSeek、Qwen 等默认厂商；后端供应商创建、编辑、列表和模型广场目录接口读写并返回 `modelVendor`；管理员供应商表单支持填写模型厂商，模型广场新增“模型厂商”筛选并在卡片中展示厂商信息。
+- 影响范围：`backend-java/src/main/resources/db/migration/V20260428114500__providers_model_vendor.sql`、`SeedDataRunner.java`、`ConsoleService.java`、`client/src/api.ts`、`AdminProviders.tsx`、`ModelHub.tsx`、`CHANGELOG.md`。
+- 验证情况：已执行 `mvn -f backend-java/pom.xml test`、`npm run build --prefix client` 通过；`ReadLints` 检查后端、前端与 `CHANGELOG.md` 相关改动文件无新增诊断。
+- 运维动作：发版并重启后端以执行 Flyway 迁移；发版前端静态资源。无需手工 SQL，除非目标环境禁用了 Flyway。
+- 线上数据影响：`providers` 表新增可空字段 `model_vendor`；迁移仅回填当前 `model_vendor IS NULL` 的供应商行，不改写已有非空厂商值，不影响请求日志、账单、余额或 AppKey 数据。
+- 风险控制：模型广场筛选仅读新字段做前端过滤；未填写厂商的模型仍可在“全部厂商”下展示，避免隐藏现有可用模型。
+
 ### 2026-04-28 11:31 后端：移除 DeepSeek 组合供应商种子
 
 - 改动内容：`SeedDataRunner` 移除默认种子供应商 `deepseek-v3-1-terminus`，避免管理员删除该供应商后在后端重启时再次自动补建；其他默认供应商与单模型种子保持不变。

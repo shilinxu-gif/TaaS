@@ -1,17 +1,21 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { api, type Opportunity } from "../api";
+import { pickText } from "../i18n/inline";
 
 const STAGES = [
-  { id: "discovery", label: "初步沟通" },
-  { id: "proposal", label: "方案/报价" },
-  { id: "negotiation", label: "谈判" },
-  { id: "won", label: "赢单" },
-  { id: "lost", label: "输单" },
+  { id: "discovery", zhCN: "初步沟通", enUS: "Discovery" },
+  { id: "proposal", zhCN: "方案/报价", enUS: "Proposal / Quote" },
+  { id: "negotiation", zhCN: "谈判", enUS: "Negotiation" },
+  { id: "won", zhCN: "赢单", enUS: "Won" },
+  { id: "lost", zhCN: "输单", enUS: "Lost" },
 ];
 
 export function Opportunities() {
+  const { i18n } = useTranslation();
+  const text = (zhCN: string, enUS: string) => pickText(i18n.resolvedLanguage, zhCN, enUS);
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({
@@ -84,7 +88,7 @@ export function Opportunities() {
       <div className="page-title" style={{ marginTop: 0 }}>
         <div className="tabs-bar" style={{ margin: 0, border: "none", flex: 1 }}>
           <button type="button" className="active">
-            商机看板
+            {text("商机看板", "Opportunity board")}
           </button>
         </div>
         <button
@@ -92,34 +96,34 @@ export function Opportunities() {
           className="btn btn-success"
           onClick={() => setOpen(true)}
         >
-          + 新建商机
+          {text("+ 新建商机", "+ New opportunity")}
         </button>
       </div>
       {open ? (
         <div className="card" style={{ marginBottom: "1rem" }}>
-          <h3 style={{ marginTop: 0 }}>新建商机</h3>
+          <h3 style={{ marginTop: 0 }}>{text("新建商机", "New opportunity")}</h3>
           <div className="field">
-            <label>名称 *</label>
+            <label>{text("名称 *", "Name *")}</label>
             <input
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
             />
           </div>
           <div className="field">
-            <label>阶段</label>
+            <label>{text("阶段", "Stage")}</label>
             <select
               value={form.stage}
               onChange={(e) => setForm({ ...form, stage: e.target.value })}
             >
               {STAGES.map((s) => (
                 <option key={s.id} value={s.id}>
-                  {s.label}
+                  {text(s.zhCN, s.enUS)}
                 </option>
               ))}
             </select>
           </div>
           <div className="field">
-            <label>金额（可选）</label>
+            <label>{text("金额（可选）", "Amount (optional)")}</label>
             <input
               type="number"
               min={0}
@@ -137,15 +141,15 @@ export function Opportunities() {
             disabled={create.isPending || !form.name.trim()}
             onClick={() => create.mutate()}
           >
-            保存
+            {text("保存", "Save")}
           </button>{" "}
           <button type="button" className="btn" onClick={() => setOpen(false)}>
-            取消
+            {text("取消", "Cancel")}
           </button>
         </div>
       ) : null}
       {isLoading ? (
-        <p className="muted">加载中…</p>
+        <p className="muted">{text("加载中…", "Loading...")}</p>
       ) : (
         <div className="kanban">
           {STAGES.map((col) => (
@@ -156,7 +160,10 @@ export function Opportunities() {
               onDrop={(e) => onDrop(e, col.id)}
             >
               <h3>
-                {col.label}（{(byStage.get(col.id) ?? []).length}）
+                {text(
+                  `${col.zhCN}（${(byStage.get(col.id) ?? []).length}）`,
+                  `${col.enUS} (${(byStage.get(col.id) ?? []).length})`
+                )}
               </h3>
               {(byStage.get(col.id) ?? []).map((o) => (
                 <div
@@ -167,7 +174,7 @@ export function Opportunities() {
                 >
                   <Link to={`/opportunities/${o.id}`}>{o.name}</Link>
                   <div className="muted" style={{ marginTop: "0.25rem" }}>
-                    {o.account?.name ?? "无关联客户"}
+                    {o.account?.name ?? text("无关联客户", "No linked account")}
                     {o.amount ? ` · ¥${o.amount}` : ""}
                   </div>
                 </div>

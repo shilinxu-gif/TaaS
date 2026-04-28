@@ -73,6 +73,7 @@ public class SeedDataRunner implements CommandLineRunner {
         "openai",
         "OpenAI",
         "openai",
+        "OpenAI",
         null,
         List.of(Map.of("model", "gpt-4o-mini", "providerType", "openai", "inputUsdPerMillion", "0.15", "outputUsdPerMillion", "0.60", "supportsStreaming", true)),
         10,
@@ -81,6 +82,7 @@ public class SeedDataRunner implements CommandLineRunner {
         "claude",
         "Anthropic",
         "anthropic",
+        "Anthropic",
         null,
         List.of(Map.of("model", "claude-3-5-sonnet-latest", "providerType", "anthropic", "inputUsdPerMillion", "3.00", "outputUsdPerMillion", "15.00", "supportsStreaming", true)),
         20,
@@ -89,6 +91,7 @@ public class SeedDataRunner implements CommandLineRunner {
         "gemini",
         "Google Gemini",
         "google",
+        "Google",
         null,
         List.of(Map.of("model", "gemini-1.5-flash", "providerType", "google", "inputUsdPerMillion", "0.35", "outputUsdPerMillion", "0.70", "supportsStreaming", true)),
         30,
@@ -97,6 +100,7 @@ public class SeedDataRunner implements CommandLineRunner {
         "deepseek-v3-1-terminus-single",
         "DeepSeek-V3.1-Terminus（单模型）",
         "openai",
+        "DeepSeek",
         null,
         List.of(
             Map.of(
@@ -111,6 +115,7 @@ public class SeedDataRunner implements CommandLineRunner {
         "qwen3-5-397b-a17b",
         "Qwen3.5-397B-A17B",
         "openai",
+        "Qwen",
         null,
         List.of(
             Map.of(
@@ -125,6 +130,7 @@ public class SeedDataRunner implements CommandLineRunner {
         "qwen-qwen3-32b",
         "Qwen/Qwen3-32B",
         "openai",
+        "Qwen",
         null,
         List.of(
             Map.of(
@@ -141,6 +147,7 @@ public class SeedDataRunner implements CommandLineRunner {
       String slug,
       String name,
       String providerType,
+      String modelVendor,
       String baseUrl,
       List<Map<String, Object>> catalog,
       int priority,
@@ -156,10 +163,10 @@ public class SeedDataRunner implements CommandLineRunner {
     jdbcTemplate.update(
         """
         insert into providers (
-          id, name, slug, provider_type, status, enabled, base_url, api_key_ciphertext, model_catalog,
+          id, name, slug, provider_type, model_vendor, status, enabled, base_url, api_key_ciphertext, model_catalog,
           priority, timeout_ms, health_status, supports_streaming, created_at
         ) values (
-          :id, :name, :slug, :providerType, 'active', true, :baseUrl, null, cast(:modelCatalog as jsonb),
+          :id, :name, :slug, :providerType, :modelVendor, 'active', true, :baseUrl, null, cast(:modelCatalog as jsonb),
           :priority, :timeoutMs, 'healthy', true, :createdAt
         )
         """,
@@ -168,6 +175,7 @@ public class SeedDataRunner implements CommandLineRunner {
             .addValue("name", name)
             .addValue("slug", slug)
             .addValue("providerType", providerType)
+            .addValue("modelVendor", modelVendor)
             .addValue("baseUrl", baseUrl)
             .addValue("modelCatalog", new com.fasterxml.jackson.databind.ObjectMapper().valueToTree(catalog).toString())
             .addValue("priority", priority)

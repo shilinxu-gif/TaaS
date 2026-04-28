@@ -147,8 +147,10 @@ export function Routing() {
         <div className="rt-card-hd">
           <h2 className="rt-card-title">{text("供应商优先级", "Provider Priority")}</h2>
           <p className="rt-card-desc muted">
-            基于当前「{modes.find((x) => x.id === d.strategyMode)?.label}
-            {text(`」策略排序；延迟与成功率基于租户近 ${d.windowDays} 天日志聚合`, `” strategy. Latency and success rate are aggregated from the tenant's logs over the last ${d.windowDays} days`)}
+            {text(
+              `基于当前「${modes.find((x) => x.id === d.strategyMode)?.label}」策略排序；延迟与成功率基于租户近 ${d.windowDays} 天日志聚合`,
+              `Sorted by the current “${modes.find((x) => x.id === d.strategyMode)?.label}” strategy. Latency and success rate are aggregated from the tenant's logs over the last ${d.windowDays} days`,
+            )}
           </p>
         </div>
         <div className="rt-table-wrap">

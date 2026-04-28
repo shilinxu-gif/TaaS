@@ -293,7 +293,7 @@ public class ConsoleService {
     jdbcTemplate.query(
         """
         select
-          name, slug, provider_type, priority, supports_streaming, model_catalog::text as model_catalog
+          name, slug, provider_type, model_vendor, priority, supports_streaming, model_catalog::text as model_catalog
         from providers
         where enabled = true
           and status = 'active'
@@ -339,7 +339,7 @@ public class ConsoleService {
     jdbcTemplate.query(
         """
         select
-          name, slug, provider_type, priority, supports_streaming, model_catalog::text as model_catalog
+          name, slug, provider_type, model_vendor, priority, supports_streaming, model_catalog::text as model_catalog
         from providers
         where enabled = true
           and status = 'active'
@@ -353,6 +353,7 @@ public class ConsoleService {
           String providerName = rs.getString("name");
           String providerSlug = rs.getString("slug");
           String providerType = rs.getString("provider_type");
+          String modelVendor = rs.getString("model_vendor");
           boolean providerSupportsStreaming = rs.getBoolean("supports_streaming");
           int priority = rs.getInt("priority");
           for (Map<String, Object> item : jsons.readObjectList(rs.getString("model_catalog"))) {
@@ -374,6 +375,7 @@ public class ConsoleService {
                     "modelId", modelId,
                     "displayName", modelId,
                     "providerType", normalizedProviderType,
+                    "modelVendor", modelVendor,
                     "providerName", providerName,
                     "providerSlug", providerSlug,
                     "priority", priority,
@@ -1024,7 +1026,7 @@ public class ConsoleService {
     return jdbcTemplate.query(
         """
         select
-          id, name, slug, provider_type, status, enabled, priority, timeout_ms, base_url, health_status,
+          id, name, slug, provider_type, model_vendor, status, enabled, priority, timeout_ms, base_url, health_status,
           api_key_ciphertext is not null as configured, supports_streaming, model_catalog::text as model_catalog, last_checked_at
         from providers
         order by priority asc, name asc
@@ -1035,6 +1037,7 @@ public class ConsoleService {
                 "name", rs.getString("name"),
                 "slug", rs.getString("slug"),
                 "providerType", rs.getString("provider_type"),
+                "modelVendor", rs.getString("model_vendor"),
                 "status", rs.getString("status"),
                 "enabled", rs.getBoolean("enabled"),
                 "priority", rs.getInt("priority"),
@@ -1074,6 +1077,10 @@ public class ConsoleService {
     validation.put("priority", body.getOrDefault("priority", 100));
     validation.put("timeoutMs", body.getOrDefault("timeoutMs", 30000));
     validation.put("healthStatus", body.getOrDefault("healthStatus", "unknown"));
+    String modelVendor = nullableTrim(body.get("modelVendor"));
+    if (modelVendor != null) {
+      validation.put("modelVendor", modelVendor);
+    }
     String baseUrl = nullableTrim(body.get("baseUrl"));
     if (baseUrl != null) {
       validation.put("baseUrl", baseUrl);
@@ -1101,10 +1108,10 @@ public class ConsoleService {
     jdbcTemplate.update(
         """
         insert into providers (
-          id, name, slug, provider_type, status, enabled, priority, timeout_ms, base_url,
+          id, name, slug, provider_type, model_vendor, status, enabled, priority, timeout_ms, base_url,
           health_status, api_key_ciphertext, model_catalog, supports_streaming, created_at
         ) values (
-          :id, :name, :slug, :providerType, 'active', :enabled, :priority, :timeoutMs, :baseUrl,
+          :id, :name, :slug, :providerType, :modelVendor, 'active', :enabled, :priority, :timeoutMs, :baseUrl,
           :healthStatus, :apiKeyCipher, cast(:modelCatalog as jsonb), :supportsStreaming, :createdAt
         )
         """,
@@ -1113,6 +1120,7 @@ public class ConsoleService {
             .addValue("name", name)
             .addValue("slug", slug)
             .addValue("providerType", providerType)
+            .addValue("modelVendor", modelVendor)
             .addValue("enabled", enabled)
             .addValue("priority", priority)
             .addValue("timeoutMs", timeoutMs)
@@ -1130,7 +1138,7 @@ public class ConsoleService {
         "provider",
         id,
         ip,
-        Map.of("name", name, "slug", slug, "providerType", providerType));
+        Map.of("name", name, "slug", slug, "providerType", providerType, "modelVendor", modelVendor == null ? "" : modelVendor));
     return providers(principal).stream()
         .filter(row -> id.equals(row.get("id")))
         .findFirst()
@@ -1145,6 +1153,7 @@ public class ConsoleService {
     patchSet(sets, params, "enabled", body.get("enabled"));
     patchSet(sets, params, "priority", body.get("priority"));
     patchSet(sets, params, "timeout_ms", body.get("timeoutMs"));
+    patchSet(sets, params, "model_vendor", nullableTrim(body.get("modelVendor")));
     patchSet(sets, params, "base_url", body.get("baseUrl"));
     patchSet(sets, params, "health_status", body.get("healthStatus"));
     if (body.containsKey("apiKey")) {
@@ -2695,6 +2704,12 @@ public class ConsoleService {
         && !List.of("healthy", "degraded", "unknown")
             .contains(String.valueOf(body.get("healthStatus")))) {
       throw new ApiException(400, "healthStatus is invalid");
+    }
+    if (body.containsKey("modelVendor")) {
+      String modelVendor = nullableTrim(body.get("modelVendor"));
+      if (modelVendor != null && modelVendor.length() > 80) {
+        throw new ApiException(400, "modelVendor is invalid");
+      }
     }
     if (body.containsKey("apiKey") && String.valueOf(body.get("apiKey")).trim().length() < 10) {
       throw new ApiException(400, "apiKey is invalid");

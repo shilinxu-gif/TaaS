@@ -1,7 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { api, type Activity, type Lead } from "../api";
+import { pickText } from "../i18n/inline";
 
 const STATUSES = [
   "new",
@@ -12,13 +14,15 @@ const STATUSES = [
 ];
 
 const ACT_TYPES = [
-  { value: "note", label: "备注" },
-  { value: "call", label: "电话" },
-  { value: "email", label: "邮件" },
-  { value: "meeting", label: "会议" },
+  { value: "note", zhCN: "备注", enUS: "Note" },
+  { value: "call", zhCN: "电话", enUS: "Call" },
+  { value: "email", zhCN: "邮件", enUS: "Email" },
+  { value: "meeting", zhCN: "会议", enUS: "Meeting" },
 ];
 
 export function LeadDetail() {
+  const { i18n } = useTranslation();
+  const text = (zhCN: string, enUS: string) => pickText(i18n.resolvedLanguage, zhCN, enUS);
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -94,40 +98,61 @@ export function LeadDetail() {
   });
 
   if (!id) return null;
-  if (isLoading || !lead) return <p className="muted">加载中…</p>;
+  if (isLoading || !lead) return <p className="muted">{text("加载中…", "Loading...")}</p>;
 
   const currentStatus = status ?? lead.status;
+  const statusText = (value: string) => {
+    switch (value) {
+      case "new":
+        return text("新建", "New");
+      case "contacting":
+        return text("联系中", "Contacting");
+      case "qualified":
+        return text("已确认", "Qualified");
+      case "converted":
+        return text("已转化", "Converted");
+      case "disqualified":
+        return text("无效", "Disqualified");
+      default:
+        return value;
+    }
+  };
+  const activityTypeText = (value: string) =>
+    text(
+      ACT_TYPES.find((t) => t.value === value)?.zhCN ?? value,
+      ACT_TYPES.find((t) => t.value === value)?.enUS ?? value
+    );
 
   return (
     <div className="shell-card">
       <div className="page-title">
         <h2>{lead.name}</h2>
         <Link to="/leads" className="btn">
-          返回列表
+          {text("返回列表", "Back to list")}
         </Link>
       </div>
       <div style={{ display: "grid", gap: "1rem", gridTemplateColumns: "1fr 320px" }}>
         <div>
           <div className="card" style={{ marginBottom: "1rem" }}>
-            <h3 style={{ marginTop: 0 }}>基本信息</h3>
+            <h3 style={{ marginTop: 0 }}>{text("基本信息", "Basic information")}</h3>
             <p>
-              <span className="muted">公司：</span>
+              <span className="muted">{text("公司：", "Company: ")}</span>
               {lead.company ?? "—"}
             </p>
             <p>
-              <span className="muted">邮箱：</span>
+              <span className="muted">{text("邮箱：", "Email: ")}</span>
               {lead.email ?? "—"}
             </p>
             <p>
-              <span className="muted">手机：</span>
+              <span className="muted">{text("手机：", "Phone: ")}</span>
               {lead.phone ?? "—"}
             </p>
             <p>
-              <span className="muted">来源：</span>
+              <span className="muted">{text("来源：", "Source: ")}</span>
               {lead.source ?? "—"}
             </p>
             <div className="field" style={{ marginBottom: 0 }}>
-              <label>状态</label>
+              <label>{text("状态", "Status")}</label>
               <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
                 <select
                   value={currentStatus}
@@ -135,7 +160,7 @@ export function LeadDetail() {
                 >
                   {STATUSES.map((s) => (
                     <option key={s} value={s}>
-                      {s}
+                      {statusText(s)}
                     </option>
                   ))}
                 </select>
@@ -145,7 +170,7 @@ export function LeadDetail() {
                   disabled={patch.isPending || currentStatus === lead.status}
                   onClick={() => patch.mutate({ status: currentStatus })}
                 >
-                  保存状态
+                  {text("保存状态", "Save status")}
                 </button>
               </div>
             </div>
@@ -157,20 +182,20 @@ export function LeadDetail() {
                     className="btn btn-primary"
                     onClick={() => setConvertOpen(true)}
                   >
-                    转化为商机
+                    {text("转化为商机", "Convert to opportunity")}
                   </button>
                 ) : (
                   <div>
                     <div className="field">
-                      <label>商机名称（可选）</label>
+                      <label>{text("商机名称（可选）", "Opportunity name (optional)")}</label>
                       <input
                         value={oppName}
                         onChange={(e) => setOppName(e.target.value)}
-                        placeholder="默认使用公司与联系人生成"
+                        placeholder={text("默认使用公司与联系人生成", "Defaults to company and contact")}
                       />
                     </div>
                     <div className="field">
-                      <label>预估金额（可选）</label>
+                      <label>{text("预估金额（可选）", "Estimated amount (optional)")}</label>
                       <input
                         type="number"
                         min={0}
@@ -188,14 +213,14 @@ export function LeadDetail() {
                       disabled={convert.isPending}
                       onClick={() => convert.mutate()}
                     >
-                      确认转化
+                      {text("确认转化", "Confirm conversion")}
                     </button>{" "}
                     <button
                       type="button"
                       className="btn"
                       onClick={() => setConvertOpen(false)}
                     >
-                      取消
+                      {text("取消", "Cancel")}
                     </button>
                   </div>
                 )}
@@ -203,26 +228,26 @@ export function LeadDetail() {
             ) : null}
           </div>
           <div className="card">
-            <h3 style={{ marginTop: 0 }}>跟进记录</h3>
+            <h3 style={{ marginTop: 0 }}>{text("跟进记录", "Follow-up records")}</h3>
             <div className="field">
-              <label>类型</label>
+              <label>{text("类型", "Type")}</label>
               <select value={actType} onChange={(e) => setActType(e.target.value)}>
                 {ACT_TYPES.map((t) => (
                   <option key={t.value} value={t.value}>
-                    {t.label}
+                    {text(t.zhCN, t.enUS)}
                   </option>
                 ))}
               </select>
             </div>
             <div className="field">
-              <label>内容</label>
+              <label>{text("内容", "Content")}</label>
               <textarea
                 value={actBody}
                 onChange={(e) => setActBody(e.target.value)}
               />
             </div>
             <div className="field">
-              <label>下次跟进（可选）</label>
+              <label>{text("下次跟进（可选）", "Next follow-up (optional)")}</label>
               <input
                 type="datetime-local"
                 value={nextFollow}
@@ -238,18 +263,19 @@ export function LeadDetail() {
               disabled={addActivity.isPending || !actBody.trim()}
               onClick={() => addActivity.mutate()}
             >
-              添加跟进
+              {text("添加跟进", "Add follow-up")}
             </button>
             <div className="timeline" style={{ marginTop: "1.25rem" }}>
               {(activities ?? []).map((a) => (
                 <div key={a.id} className="timeline-item">
                   <div className="muted">
-                    {new Date(a.occurredAt).toLocaleString()} · {a.type}
+                    {new Date(a.occurredAt).toLocaleString()} · {activityTypeText(a.type)}
                   </div>
                   <div>{a.body}</div>
                   {a.nextFollowUpAt ? (
                     <div className="muted">
-                      下次跟进：{new Date(a.nextFollowUpAt).toLocaleString()}
+                      {text("下次跟进：", "Next follow-up: ")}
+                      {new Date(a.nextFollowUpAt).toLocaleString()}
                     </div>
                   ) : null}
                 </div>

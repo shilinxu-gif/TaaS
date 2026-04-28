@@ -1,8 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { api, type Contact } from "../api";
+import { pickText } from "../i18n/inline";
 
 export function Contacts() {
+  const { i18n } = useTranslation();
+  const text = (zhCN: string, enUS: string) => pickText(i18n.resolvedLanguage, zhCN, enUS);
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
@@ -25,7 +29,9 @@ export function Contacts() {
   return (
     <div className="workspace-columns">
       <aside className="pane-list">
-        <div className="pane-list-header">联系人（{list.length}）</div>
+        <div className="pane-list-header">
+          {text(`联系人（${list.length}）`, `Contacts (${list.length})`)}
+        </div>
         <div className="pane-list-tools">
           <div className="pane-search">
             <svg width="18" height="18" viewBox="0 0 24 24" style={{ opacity: 0.45 }}>
@@ -35,7 +41,7 @@ export function Contacts() {
               />
             </svg>
             <input
-              placeholder="搜索姓名 / 公司 / 手机"
+              placeholder={text("搜索姓名 / 公司 / 手机", "Search name / company / phone")}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
@@ -43,7 +49,9 @@ export function Contacts() {
         </div>
         <div className="pane-list-scroll">
           {isLoading ? (
-            <p className="muted" style={{ padding: "1rem" }}>加载中…</p>
+            <p className="muted" style={{ padding: "1rem" }}>
+              {text("加载中…", "Loading...")}
+            </p>
           ) : (
             list.map((c) => (
               <button
@@ -65,33 +73,33 @@ export function Contacts() {
       <section className="pane-detail">
         <div className="tabs-bar">
           <button type="button" className="active">
-            信息
+            {text("信息", "Info")}
           </button>
         </div>
         {selected ? (
           <>
-            <p className="section-cap">联系人资料</p>
+            <p className="section-cap">{text("联系人资料", "Contact profile")}</p>
             <div className="form-grid-2">
               <div className="field" style={{ marginBottom: 0 }}>
-                <label>姓名</label>
+                <label>{text("姓名", "Name")}</label>
                 <input readOnly value={selected.name} />
               </div>
               <div className="field" style={{ marginBottom: 0 }}>
-                <label>所属公司</label>
+                <label>{text("所属公司", "Company")}</label>
                 <input readOnly value={selected.account.name} />
               </div>
               <div className="field" style={{ marginBottom: 0 }}>
-                <label>邮箱</label>
+                <label>{text("邮箱", "Email")}</label>
                 <input readOnly value={selected.email ?? ""} />
               </div>
               <div className="field" style={{ marginBottom: 0 }}>
-                <label>手机</label>
+                <label>{text("手机", "Phone")}</label>
                 <input readOnly value={selected.phone ?? ""} />
               </div>
             </div>
           </>
         ) : (
-          <p className="muted">请选择左侧联系人。</p>
+          <p className="muted">{text("请选择左侧联系人。", "Select a contact on the left.")}</p>
         )}
       </section>
     </div>

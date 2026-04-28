@@ -116,6 +116,45 @@ export function Dashboard() {
   const mix = d.modelMix7d ?? [];
   const maxMix = Math.max(1, ...mix.map((m) => m.tokens));
   const risks = d.risks ?? [];
+  const riskText = (risk: { title: string; detail: string }) => {
+    if (risk.title === "余额偏低") {
+      return {
+        title: text("余额偏低", "Low Balance"),
+        detail: text(
+          `当前余额约 ${d.tenant.balanceTokens} tokens，建议关注充值或配额，避免影响生产调用。`,
+          `Current balance is about ${d.tenant.balanceTokens} tokens. Monitor recharge or quota to avoid impacting production calls.`,
+        ),
+      };
+    }
+    if (risk.title === "今日 Token 用量较高") {
+      return {
+        title: text("今日 Token 用量较高", "High Token Usage Today"),
+        detail: text(
+          `今日已用 ${formatNumber(today.tokens, i18n.resolvedLanguage)} tokens，接近当月套餐日均可用的参考阈值。`,
+          `${formatNumber(today.tokens, i18n.resolvedLanguage)} tokens used today, close to the reference daily threshold for the monthly plan.`,
+        ),
+      };
+    }
+    if (risk.title === "近期存在失败请求") {
+      return {
+        title: text("近期存在失败请求", "Recent Failed Requests"),
+        detail: text(
+          `近 24 小时内有 ${d.kpis.failedRequests24h} 条 HTTP≥400 的请求日志，建议在「用量」中排查。`,
+          `${d.kpis.failedRequests24h} HTTP >= 400 request logs occurred in the last 24 hours. Check the Usage page for details.`,
+        ),
+      };
+    }
+    if (risk.title === "暂无异常") {
+      return {
+        title: text("暂无异常", "No Anomalies"),
+        detail: text(
+          "路由与计费链路运行正常，可持续观察用量与余额。",
+          "Routing and billing pipelines are running normally. Continue monitoring usage and balance.",
+        ),
+      };
+    }
+    return risk;
+  };
 
   return (
     <div className="dash-page">
@@ -264,15 +303,18 @@ export function Dashboard() {
         <h2 className="dash-card-title">{text("风险提醒", "Risk Alerts")}</h2>
         <p className="dash-card-desc muted">{text("基于余额、用量与错误率的实时规则", "Real-time rules based on balance, usage, and error rate")}</p>
         <ul className="dash-risk-list">
-          {risks.map((r, i) => (
+          {risks.map((r, i) => {
+            const localizedRisk = riskText(r);
+            return (
             <li
               key={`${r.title}-${i}`}
               className={`dash-risk dash-risk--${r.level}`}
             >
-              <div className="dash-risk-title">{r.title}</div>
-              <p className="dash-risk-detail muted">{r.detail}</p>
+              <div className="dash-risk-title">{localizedRisk.title}</div>
+              <p className="dash-risk-detail muted">{localizedRisk.detail}</p>
             </li>
-          ))}
+            );
+          })}
         </ul>
       </section>
 

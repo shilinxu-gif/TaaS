@@ -253,6 +253,7 @@ export type ModelCatalogRow = {
   modelId: string;
   displayName: string;
   providerType: string;
+  modelVendor: string | null;
   providerName: string;
   providerSlug: string;
   priority: number;
@@ -412,6 +413,7 @@ export type ProviderConfigRow = {
   name: string;
   slug: string;
   providerType: string;
+  modelVendor: string | null;
   status: string;
   enabled: boolean;
   priority: number;

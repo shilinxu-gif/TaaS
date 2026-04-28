@@ -24,23 +24,6 @@ import { UsageSortTh, type UsageSortDir } from "../components/UsageSortTh";
 const DEFAULT_TO = new Date().toISOString().slice(0, 10);
 const DEFAULT_FROM = shiftDate(DEFAULT_TO, -13);
 
-const CHANNEL_LABELS: Record<string, string> = {
-  alipay: "支付宝",
-  wechat: "微信",
-  bank_transfer: "对公转账",
-  stripe: "国际支付",
-};
-
-const STATUS_LABELS: Record<string, string> = {
-  success: "已到账",
-  pending_review: "待审核",
-  pending_payment: "待支付",
-  pending: "处理中",
-  processing: "处理中",
-  cancelled: "已取消",
-  failed: "失败",
-};
-
 const emptyOverview: AdminUsageOverview = {
   from: DEFAULT_FROM,
   to: DEFAULT_TO,
@@ -409,6 +392,44 @@ function compareUserModelRows(
 export function AdminUsage() {
   const { i18n } = useTranslation();
   const text = (zhCN: string, enUS: string) => pickText(i18n.resolvedLanguage, zhCN, enUS);
+  const channelLabel = (value: string) =>
+    value === "alipay"
+      ? text("支付宝", "Alipay")
+      : value === "wechat"
+        ? text("微信", "WeChat")
+        : value === "bank_transfer"
+          ? text("对公转账", "Bank transfer")
+          : value === "stripe"
+            ? text("国际支付", "International payment")
+            : value;
+  const statusLabel = (value: string) =>
+    value === "success"
+      ? text("已到账", "Credited")
+      : value === "pending_review"
+        ? text("待审核", "Pending review")
+        : value === "pending_payment"
+          ? text("待支付", "Pending payment")
+          : value === "pending" || value === "processing"
+            ? text("处理中", "Processing")
+            : value === "cancelled"
+              ? text("已取消", "Cancelled")
+              : value === "failed"
+                ? text("失败", "Failed")
+                : value;
+  const platformRoleLabel = (value?: string | null) =>
+    value === "platform_admin"
+      ? text("平台管理员", "Platform Admin")
+      : value === "user"
+        ? text("普通用户", "User")
+        : value || "—";
+  const tenantStatusLabel = (value?: string | null) =>
+    !value
+      ? "—"
+      : value === "active"
+        ? text("启用中", "Active")
+        : value === "trial"
+          ? text("试用中", "Trial")
+          : value;
   const [search, setSearch] = useState("");
   const [dimension, setDimension] = useState<AdminUsageDimension>("tenant");
   const [from, setFrom] = useState(DEFAULT_FROM);
@@ -643,9 +664,12 @@ export function AdminUsage() {
     <div className="usage-page">
       <header className="usage-header">
         <div>
-          <h1 className="usage-title">调用与充值统计</h1>
+          <h1 className="usage-title">{text("调用与充值统计", "Usage & Recharge Analytics")}</h1>
           <p className="usage-subtitle muted">
-            支持按时间筛选、用户/租户维度切换，并查看 AppKey / 模型趋势与充值单明细
+            {text(
+              "支持按时间筛选、用户/租户维度切换，并查看 AppKey / 模型趋势与充值单明细",
+              "Filter by time, switch between user and tenant dimensions, and inspect AppKey/model trends plus recharge order details.",
+            )}
           </p>
         </div>
       </header>
@@ -653,7 +677,7 @@ export function AdminUsage() {
       <section className="usage-filters">
         <div className="usage-filter-grid admin-usage-filter-grid">
           <div className="usage-filter-block">
-            <span className="usage-filter-label">搜索</span>
+            <span className="usage-filter-label">{text("搜索", "Search")}</span>
             <div className="pane-search" style={{ maxWidth: "100%" }}>
               <svg width="18" height="18" viewBox="0 0 24 24" style={{ opacity: 0.45 }}>
                 <path
@@ -662,7 +686,7 @@ export function AdminUsage() {
                 />
               </svg>
               <input
-                placeholder="搜索用户 / 租户 / AppKey / 模型 / 订单号"
+                placeholder={text("搜索用户 / 租户 / AppKey / 模型 / 订单号", "Search user / tenant / AppKey / model / order no.")}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
@@ -670,27 +694,27 @@ export function AdminUsage() {
           </div>
 
           <div className="usage-filter-field">
-            <span className="usage-filter-label">统计维度</span>
+            <span className="usage-filter-label">{text("统计维度", "Dimension")}</span>
             <div className="admin-usage-toggle">
               <button
                 className={`btn ${dimension === "tenant" ? "btn-primary" : "btn-ghost"}`}
                 onClick={() => setDimension("tenant")}
                 type="button"
               >
-                租户
+                {text("租户", "Tenant")}
               </button>
               <button
                 className={`btn ${dimension === "user" ? "btn-primary" : "btn-ghost"}`}
                 onClick={() => setDimension("user")}
                 type="button"
               >
-                用户
+                {text("用户", "User")}
               </button>
             </div>
           </div>
 
           <div className="usage-filter-field">
-            <span className="usage-filter-label">时间范围</span>
+            <span className="usage-filter-label">{text("时间范围", "Date Range")}</span>
             <div className="usage-date-row">
               <input
                 className="input-plain usage-input"
@@ -699,7 +723,7 @@ export function AdminUsage() {
                 max={to}
                 onChange={(e) => setFrom(e.target.value)}
               />
-              <span className="usage-date-sep">至</span>
+              <span className="usage-date-sep">{text("至", "to")}</span>
               <input
                 className="input-plain usage-input"
                 type="date"
@@ -711,7 +735,7 @@ export function AdminUsage() {
           </div>
 
           <div className="usage-filter-field">
-            <span className="usage-filter-label">快捷范围</span>
+            <span className="usage-filter-label">{text("快捷范围", "Quick Range")}</span>
             <div className="usage-preset-row">
               {[7, 14, 30].map((days) => (
                 <button
@@ -723,27 +747,33 @@ export function AdminUsage() {
                   }}
                   type="button"
                 >
-                  最近 {days} 天
+                  {text(`最近 ${days} 天`, `Last ${days} days`)}
                 </button>
               ))}
             </div>
           </div>
         </div>
         <p className="usage-filter-meta muted">
-          当前区间：{filtered.from} 至 {filtered.to}，默认按 UTC 自然日统计。
+          {text(
+            `当前区间：${filtered.from} 至 ${filtered.to}，默认按 UTC 自然日统计。`,
+            `Current range: ${filtered.from} to ${filtered.to}. Statistics use UTC calendar days by default.`,
+          )}
         </p>
       </section>
 
       <section className="bill-summary">
         <article className="bill-kpi bill-kpi--usage">
-          <div className="bill-kpi-label">维度实体数</div>
+          <div className="bill-kpi-label">{text("维度实体数", "Dimension Entities")}</div>
           <div className="bill-kpi-value">{filtered.summaries.length}</div>
           <div className="bill-kpi-hint muted">
-            当前按{dimension === "tenant" ? "租户" : "用户"}聚合
+            {text(
+              `当前按${dimension === "tenant" ? "租户" : "用户"}聚合`,
+              `Aggregated by ${dimension === "tenant" ? "tenant" : "user"}`,
+            )}
           </div>
         </article>
         <article className="bill-kpi bill-kpi--spend">
-          <div className="bill-kpi-label">请求总数</div>
+          <div className="bill-kpi-label">{text("请求总数", "Total Requests")}</div>
           <div className="bill-kpi-value">
             {formatNumber(summaryStats.totalRequests, i18n.resolvedLanguage)}
           </div>
@@ -752,20 +782,23 @@ export function AdminUsage() {
           </div>
         </article>
         <article className="bill-kpi bill-kpi--bal">
-          <div className="bill-kpi-label">充值订单数</div>
+          <div className="bill-kpi-label">{text("充值订单数", "Recharge Orders")}</div>
           <div className="bill-kpi-value">{summaryStats.rechargeCount}</div>
           <div className="bill-kpi-hint muted">
-            成功金额 ¥{formatMoney(summaryStats.rechargeAmount)}
+            {text(`成功金额 ¥${formatMoney(summaryStats.rechargeAmount)}`, `Successful amount ¥${formatMoney(summaryStats.rechargeAmount)}`)}
           </div>
         </article>
       </section>
 
       <section className="bill-section bill-section--table">
         <h2 className="bill-section-title">
-          {dimension === "tenant" ? "租户维度统计" : "用户维度统计"}
+          {dimension === "tenant" ? text("租户维度统计", "Tenant Dimension") : text("用户维度统计", "User Dimension")}
         </h2>
         <p className="bill-section-desc muted">
-          可快速切换运营视角，观察请求量、Token 用量与充值结果。
+          {text(
+            "可快速切换运营视角，观察请求量、Token 用量与充值结果。",
+            "Switch operational perspectives quickly to observe request volume, token usage, and recharge results.",
+          )}
         </p>
         <div className="bill-table-wrap">
           <table className="bill-table">
@@ -783,12 +816,12 @@ export function AdminUsage() {
                 >
                   <UsageSortTh
                     field="name"
-                    label={dimension === "tenant" ? "租户" : "用户"}
+                    label={dimension === "tenant" ? text("租户", "Tenant") : text("用户", "User")}
                     sort={summarySort}
                     onToggle={toggleSummarySort}
                   />
                 </th>
-                <th>{dimension === "tenant" ? "Slug / 状态" : "邮箱 / 平台角色"}</th>
+                <th>{dimension === "tenant" ? text("Slug / 状态", "Slug / Status") : text("邮箱 / 平台角色", "Email / Platform Role")}</th>
                 <th
                   {...(summarySort.field === "facetCount"
                     ? {
@@ -801,7 +834,7 @@ export function AdminUsage() {
                 >
                   <UsageSortTh
                     field="facetCount"
-                    label={dimension === "tenant" ? "成员数" : "关联租户"}
+                    label={dimension === "tenant" ? text("成员数", "Members") : text("关联租户", "Tenants")}
                     sort={summarySort}
                     onToggle={toggleSummarySort}
                   />
@@ -818,7 +851,7 @@ export function AdminUsage() {
                 >
                   <UsageSortTh
                     field="requestCount"
-                    label="请求数"
+                    label={text("请求数", "Requests")}
                     sort={summarySort}
                     onToggle={toggleSummarySort}
                   />
@@ -835,7 +868,7 @@ export function AdminUsage() {
                 >
                   <UsageSortTh
                     field="totalTokens"
-                    label="总 Token"
+                    label={text("总 Token", "Total Tokens")}
                     sort={summarySort}
                     onToggle={toggleSummarySort}
                   />
@@ -852,7 +885,7 @@ export function AdminUsage() {
                 >
                   <UsageSortTh
                     field="rechargeCount"
-                    label="充值次数"
+                    label={text("充值次数", "Recharge Count")}
                     sort={summarySort}
                     onToggle={toggleSummarySort}
                   />
@@ -869,7 +902,7 @@ export function AdminUsage() {
                 >
                   <UsageSortTh
                     field="rechargeSuccessCny"
-                    label="成功金额(CNY)"
+                    label={text("成功金额(CNY)", "Successful Amount (CNY)")}
                     sort={summarySort}
                     onToggle={toggleSummarySort}
                   />
@@ -886,7 +919,7 @@ export function AdminUsage() {
                 >
                   <UsageSortTh
                     field="rechargeTokens"
-                    label="到账 Tokens"
+                    label={text("到账 Tokens", "Credited Tokens")}
                     sort={summarySort}
                     onToggle={toggleSummarySort}
                   />
@@ -903,7 +936,7 @@ export function AdminUsage() {
                 >
                   <UsageSortTh
                     field="lastRequestAt"
-                    label="最近调用"
+                    label={text("最近调用", "Last Call")}
                     sort={summarySort}
                     onToggle={toggleSummarySort}
                   />
@@ -920,7 +953,7 @@ export function AdminUsage() {
                 >
                   <UsageSortTh
                     field="lastRechargeAt"
-                    label="最近充值"
+                    label={text("最近充值", "Last Recharge")}
                     sort={summarySort}
                     onToggle={toggleSummarySort}
                   />
@@ -931,7 +964,7 @@ export function AdminUsage() {
               {sortedSummaries.length === 0 ? (
                 <tr>
                   <td className="bill-table-empty" colSpan={10}>
-                    当前筛选条件下暂无数据
+                    {text("当前筛选条件下暂无数据", "No data for the current filters")}
                   </td>
                 </tr>
               ) : (
@@ -943,14 +976,14 @@ export function AdminUsage() {
                         <div>
                           <div className="usage-code-sm">{row.tenantSlug || "—"}</div>
                           <span className="admin-usage-subtle">
-                            {formatTenantStatus(row.tenantStatus)}
+                            {tenantStatusLabel(row.tenantStatus)}
                           </span>
                         </div>
                       ) : (
                         <div>
                           <div className="usage-code-sm">{row.email || "—"}</div>
                           <span className="admin-usage-subtle">
-                            {formatPlatformRole(row.platformRole)}
+                            {platformRoleLabel(row.platformRole)}
                           </span>
                         </div>
                       )}
@@ -972,19 +1005,25 @@ export function AdminUsage() {
       </section>
 
       <TrendChart
-        title="AppKey 调用趋势"
-        description="展示当前筛选区间内请求量最高的 AppKey 日趋势。"
+        title={text("AppKey 调用趋势", "AppKey Call Trend")}
+        description={text(
+          "展示当前筛选区间内请求量最高的 AppKey 日趋势。",
+          "Daily trend for the AppKeys with the highest request volume in the current filter range.",
+        )}
         series={filtered.appKeyTrends}
       />
 
       <TrendChart
-        title="模型调用趋势"
-        description="展示当前筛选区间内调用量最高的模型日趋势。"
+        title={text("模型调用趋势", "Model Call Trend")}
+        description={text(
+          "展示当前筛选区间内调用量最高的模型日趋势。",
+          "Daily trend for the models with the highest call volume in the current filter range.",
+        )}
         series={filtered.modelTrends}
       />
 
       <section className="bill-section bill-section--table">
-        <h2 className="bill-section-title">AppKey 调用情况</h2>
+        <h2 className="bill-section-title">{text("AppKey 调用情况", "AppKey Usage")}</h2>
         <div className="bill-table-wrap">
           <table className="bill-table">
             <thead>
@@ -1018,7 +1057,7 @@ export function AdminUsage() {
                 >
                   <UsageSortTh
                     field="tenantName"
-                    label="租户"
+                    label={text("租户", "Tenant")}
                     sort={appKeySort}
                     onToggle={toggleAppKeySort}
                   />
@@ -1035,7 +1074,7 @@ export function AdminUsage() {
                 >
                   <UsageSortTh
                     field="environment"
-                    label="环境"
+                    label={text("环境", "Environment")}
                     sort={appKeySort}
                     onToggle={toggleAppKeySort}
                   />
@@ -1052,7 +1091,7 @@ export function AdminUsage() {
                 >
                   <UsageSortTh
                     field="requestCount"
-                    label="请求数"
+                    label={text("请求数", "Requests")}
                     sort={appKeySort}
                     onToggle={toggleAppKeySort}
                   />
@@ -1069,7 +1108,7 @@ export function AdminUsage() {
                 >
                   <UsageSortTh
                     field="successCount"
-                    label="成功数"
+                    label={text("成功数", "Successes")}
                     sort={appKeySort}
                     onToggle={toggleAppKeySort}
                   />
@@ -1086,7 +1125,7 @@ export function AdminUsage() {
                 >
                   <UsageSortTh
                     field="totalTokens"
-                    label="总 Token"
+                    label={text("总 Token", "Total Tokens")}
                     sort={appKeySort}
                     onToggle={toggleAppKeySort}
                   />
@@ -1103,7 +1142,7 @@ export function AdminUsage() {
                 >
                   <UsageSortTh
                     field="spendUsd"
-                    label="费用(USD)"
+                    label={text("费用(USD)", "Spend (USD)")}
                     sort={appKeySort}
                     onToggle={toggleAppKeySort}
                   />
@@ -1120,7 +1159,7 @@ export function AdminUsage() {
                 >
                   <UsageSortTh
                     field="lastCalledAt"
-                    label="最近调用"
+                    label={text("最近调用", "Last Call")}
                     sort={appKeySort}
                     onToggle={toggleAppKeySort}
                   />
@@ -1131,7 +1170,7 @@ export function AdminUsage() {
               {sortedAppKeys.length === 0 ? (
                 <tr>
                   <td className="bill-table-empty" colSpan={8}>
-                    当前筛选条件下暂无数据
+                    {text("当前筛选条件下暂无数据", "No data for the current filters")}
                   </td>
                 </tr>
               ) : (
@@ -1154,7 +1193,7 @@ export function AdminUsage() {
       </section>
 
       <section className="bill-section bill-section--table">
-        <h2 className="bill-section-title">模型调用情况</h2>
+        <h2 className="bill-section-title">{text("模型调用情况", "Model Usage")}</h2>
         <div className="bill-table-wrap">
           <table className="bill-table">
             <thead>
@@ -1171,7 +1210,7 @@ export function AdminUsage() {
                 >
                   <UsageSortTh
                     field="model"
-                    label="模型"
+                    label={text("模型", "Model")}
                     sort={modelSort}
                     onToggle={toggleModelSort}
                   />
@@ -1188,7 +1227,7 @@ export function AdminUsage() {
                 >
                   <UsageSortTh
                     field="providerSlug"
-                    label="供应商"
+                    label={text("供应商", "Provider")}
                     sort={modelSort}
                     onToggle={toggleModelSort}
                   />
@@ -1205,7 +1244,7 @@ export function AdminUsage() {
                 >
                   <UsageSortTh
                     field="requestCount"
-                    label="请求数"
+                    label={text("请求数", "Requests")}
                     sort={modelSort}
                     onToggle={toggleModelSort}
                   />
@@ -1222,7 +1261,7 @@ export function AdminUsage() {
                 >
                   <UsageSortTh
                     field="totalTokens"
-                    label="总 Token"
+                    label={text("总 Token", "Total Tokens")}
                     sort={modelSort}
                     onToggle={toggleModelSort}
                   />
@@ -1239,7 +1278,7 @@ export function AdminUsage() {
                 >
                   <UsageSortTh
                     field="spendUsd"
-                    label="费用(USD)"
+                    label={text("费用(USD)", "Spend (USD)")}
                     sort={modelSort}
                     onToggle={toggleModelSort}
                   />
@@ -1256,7 +1295,7 @@ export function AdminUsage() {
                 >
                   <UsageSortTh
                     field="avgLatencyMs"
-                    label="平均延迟"
+                    label={text("平均延迟", "Avg Latency")}
                     sort={modelSort}
                     onToggle={toggleModelSort}
                   />
@@ -1273,7 +1312,7 @@ export function AdminUsage() {
                 >
                   <UsageSortTh
                     field="successRate"
-                    label="成功率"
+                    label={text("成功率", "Success Rate")}
                     sort={modelSort}
                     onToggle={toggleModelSort}
                   />
@@ -1284,7 +1323,7 @@ export function AdminUsage() {
               {sortedModels.length === 0 ? (
                 <tr>
                   <td className="bill-table-empty" colSpan={7}>
-                    当前筛选条件下暂无数据
+                    {text("当前筛选条件下暂无数据", "No data for the current filters")}
                   </td>
                 </tr>
               ) : (
@@ -1306,14 +1345,14 @@ export function AdminUsage() {
       </section>
 
       <section className="bill-section bill-section--table">
-        <h2 className="bill-section-title">用户模型调用情况</h2>
+        <h2 className="bill-section-title">{text("用户模型调用情况", "User Model Usage")}</h2>
         <div className="bill-table-wrap">
           <table className="bill-table">
             <thead>
               <tr>
-                <th>用户</th>
-                <th>邮箱</th>
-                <th>模型</th>
+                <th>{text("用户", "User")}</th>
+                <th>{text("邮箱", "Email")}</th>
+                <th>{text("模型", "Model")}</th>
                 <th
                   {...(userModelSort.field === "requestCount"
                     ? {
@@ -1326,7 +1365,7 @@ export function AdminUsage() {
                 >
                   <UsageSortTh
                     field="requestCount"
-                    label="请求数"
+                    label={text("请求数", "Requests")}
                     sort={userModelSort}
                     onToggle={toggleUserModelSort}
                   />
@@ -1343,7 +1382,7 @@ export function AdminUsage() {
                 >
                   <UsageSortTh
                     field="totalTokens"
-                    label="总 Token"
+                    label={text("总 Token", "Total Tokens")}
                     sort={userModelSort}
                     onToggle={toggleUserModelSort}
                   />
@@ -1360,7 +1399,7 @@ export function AdminUsage() {
                 >
                   <UsageSortTh
                     field="spendUsd"
-                    label="费用(USD)"
+                    label={text("费用(USD)", "Spend (USD)")}
                     sort={userModelSort}
                     onToggle={toggleUserModelSort}
                   />
@@ -1377,7 +1416,7 @@ export function AdminUsage() {
                 >
                   <UsageSortTh
                     field="lastCalledAt"
-                    label="最近调用"
+                    label={text("最近调用", "Last Call")}
                     sort={userModelSort}
                     onToggle={toggleUserModelSort}
                   />
@@ -1388,7 +1427,7 @@ export function AdminUsage() {
               {sortedUserModels.length === 0 ? (
                 <tr>
                   <td className="bill-table-empty" colSpan={7}>
-                    当前筛选条件下暂无用户模型调用数据
+                    {text("当前筛选条件下暂无用户模型调用数据", "No user model usage data for the current filters")}
                   </td>
                 </tr>
               ) : (
@@ -1410,7 +1449,7 @@ export function AdminUsage() {
       </section>
 
       <section className="bill-section bill-section--table">
-        <h2 className="bill-section-title">租户充值情况</h2>
+        <h2 className="bill-section-title">{text("租户充值情况", "Tenant Recharge")}</h2>
         <div className="bill-table-wrap">
           <table className="bill-table">
             <thead>
@@ -1428,7 +1467,7 @@ export function AdminUsage() {
                 >
                   <UsageSortTh
                     field="tenantName"
-                    label="租户"
+                    label={text("租户", "Tenant")}
                     sort={rechargeSort}
                     onToggle={toggleRechargeSort}
                   />
@@ -1445,7 +1484,7 @@ export function AdminUsage() {
                 >
                   <UsageSortTh
                     field="rechargeCount"
-                    label="充值次数"
+                    label={text("充值次数", "Recharge Count")}
                     sort={rechargeSort}
                     onToggle={toggleRechargeSort}
                   />
@@ -1462,7 +1501,7 @@ export function AdminUsage() {
                 >
                   <UsageSortTh
                     field="successAmountCny"
-                    label="成功金额(CNY)"
+                    label={text("成功金额(CNY)", "Successful Amount (CNY)")}
                     sort={rechargeSort}
                     onToggle={toggleRechargeSort}
                   />
@@ -1479,7 +1518,7 @@ export function AdminUsage() {
                 >
                   <UsageSortTh
                     field="successTokens"
-                    label="到账 Tokens"
+                    label={text("到账 Tokens", "Credited Tokens")}
                     sort={rechargeSort}
                     onToggle={toggleRechargeSort}
                   />
@@ -1496,7 +1535,7 @@ export function AdminUsage() {
                 >
                   <UsageSortTh
                     field="lastRechargeAt"
-                    label="最近充值"
+                    label={text("最近充值", "Last Recharge")}
                     sort={rechargeSort}
                     onToggle={toggleRechargeSort}
                   />
@@ -1507,7 +1546,7 @@ export function AdminUsage() {
               {sortedRecharges.length === 0 ? (
                 <tr>
                   <td className="bill-table-empty" colSpan={6}>
-                    当前筛选条件下暂无充值数据
+                    {text("当前筛选条件下暂无充值数据", "No recharge data for the current filters")}
                   </td>
                 </tr>
               ) : (
@@ -1527,7 +1566,9 @@ export function AdminUsage() {
                             }
                             type="button"
                           >
-                            {expanded ? "收起" : `展开 ${tenantOrders.length || ""}`.trim()}
+                            {expanded
+                              ? text("收起", "Collapse")
+                              : text(`展开 ${tenantOrders.length || ""}`.trim(), `Expand ${tenantOrders.length || ""}`.trim())}
                           </button>
                         </td>
                         <td>{row.tenantName}</td>
@@ -1542,7 +1583,10 @@ export function AdminUsage() {
                             <div className="admin-usage-detail-wrap">
                               {tenantOrders.length === 0 ? (
                                 <p className="muted admin-usage-detail-empty">
-                                  当前租户在此筛选条件下没有充值单明细。
+                                  {text(
+                                    "当前租户在此筛选条件下没有充值单明细。",
+                                    "This tenant has no recharge order details for the current filters.",
+                                  )}
                                 </p>
                               ) : (
                                 <table className="admin-usage-detail-table">
@@ -1560,7 +1604,7 @@ export function AdminUsage() {
                                       >
                                         <UsageSortTh
                                           field="orderNo"
-                                          label="订单号"
+                                          label={text("订单号", "Order No.")}
                                           sort={rechargeOrderSort}
                                           onToggle={toggleRechargeOrderSort}
                                         />
@@ -1577,13 +1621,13 @@ export function AdminUsage() {
                                       >
                                         <UsageSortTh
                                           field="amount"
-                                          label="金额"
+                                          label={text("金额", "Amount")}
                                           sort={rechargeOrderSort}
                                           onToggle={toggleRechargeOrderSort}
                                         />
                                       </th>
-                                      <th>渠道</th>
-                                      <th>状态</th>
+                                      <th>{text("渠道", "Channel")}</th>
+                                      <th>{text("状态", "Status")}</th>
                                       <th
                                         {...(rechargeOrderSort.field === "creditedTokens"
                                           ? {
@@ -1596,12 +1640,12 @@ export function AdminUsage() {
                                       >
                                         <UsageSortTh
                                           field="creditedTokens"
-                                          label="到账 Tokens"
+                                          label={text("到账 Tokens", "Credited Tokens")}
                                           sort={rechargeOrderSort}
                                           onToggle={toggleRechargeOrderSort}
                                         />
                                       </th>
-                                      <th>付款人</th>
+                                      <th>{text("付款人", "Payer")}</th>
                                       <th
                                         {...(rechargeOrderSort.field === "createdAt"
                                           ? {
@@ -1614,12 +1658,12 @@ export function AdminUsage() {
                                       >
                                         <UsageSortTh
                                           field="createdAt"
-                                          label="创建时间"
+                                          label={text("创建时间", "Created At")}
                                           sort={rechargeOrderSort}
                                           onToggle={toggleRechargeOrderSort}
                                         />
                                       </th>
-                                      <th>备注</th>
+                                      <th>{text("备注", "Remark")}</th>
                                     </tr>
                                   </thead>
                                   <tbody>
@@ -1633,8 +1677,8 @@ export function AdminUsage() {
                                           {order.currency === "USD" ? "$" : "¥"}
                                           {order.amount}
                                         </td>
-                                        <td>{CHANNEL_LABELS[order.payChannel] || order.payChannel}</td>
-                                        <td>{STATUS_LABELS[order.status] || order.status}</td>
+                                        <td>{channelLabel(order.payChannel)}</td>
+                                        <td>{statusLabel(order.status)}</td>
                                         <td>{formatIntegerString(order.creditedTokens)}</td>
                                         <td>{order.payerName || "—"}</td>
                                         <td className="bill-td-date">
@@ -1642,7 +1686,7 @@ export function AdminUsage() {
                                         </td>
                                         <td className="bill-td-desc">
                                           {[
-                                            order.needInvoice ? "需发票" : null,
+                                            order.needInvoice ? text("需发票", "Invoice needed") : null,
                                             order.remark,
                                           ]
                                             .filter(Boolean)
@@ -1690,7 +1734,9 @@ function TrendChart({
       <p className="bill-section-desc muted">{description}</p>
       <div className="admin-usage-trend-grid">
         {series.length === 0 ? (
-          <div className="admin-usage-trend-empty muted">当前筛选条件下暂无趋势数据</div>
+          <div className="admin-usage-trend-empty muted">
+            {text("当前筛选条件下暂无趋势数据", "No trend data for the current filters")}
+          </div>
         ) : (
           series.map((item) => (
             <article className="admin-usage-trend-card" key={item.key}>
@@ -1705,7 +1751,7 @@ function TrendChart({
                   <div
                     className="admin-usage-trend-bar-col"
                     key={`${item.key}-${point.date}`}
-                    title={`${point.date} · ${point.requestCount} 请求`}
+                    title={text(`${point.date} · ${point.requestCount} 请求`, `${point.date} · ${point.requestCount} requests`)}
                   >
                     <span
                       style={{
@@ -1758,25 +1804,3 @@ function formatIntegerString(value: string) {
   });
 }
 
-function formatPlatformRole(value?: string | null) {
-  if (value === "platform_admin") {
-    return "平台管理员";
-  }
-  if (value === "user") {
-    return "普通用户";
-  }
-  return value || "—";
-}
-
-function formatTenantStatus(value?: string | null) {
-  if (!value) {
-    return "—";
-  }
-  if (value === "active") {
-    return "启用中";
-  }
-  if (value === "trial") {
-    return "试用中";
-  }
-  return value;
-}

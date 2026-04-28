@@ -29,6 +29,7 @@ export function ModelHub() {
   const gatewayOrigin =
     typeof window !== "undefined" ? window.location.origin : "http://www.itoken.group";
   const [providerFilter, setProviderFilter] = useState("all");
+  const [vendorFilter, setVendorFilter] = useState("all");
   const [capabilityFilter, setCapabilityFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -52,6 +53,13 @@ export function ModelHub() {
       })),
     [rows]
   );
+  const vendorOptions = useMemo(
+    () =>
+      Array.from(
+        new Set(rows.map((row) => row.modelVendor?.trim()).filter((vendor): vendor is string => Boolean(vendor))),
+      ).sort((left, right) => left.localeCompare(right)),
+    [rows]
+  );
   const capabilityOptions = useMemo(
     () => Array.from(new Set(rows.flatMap((row) => row.capabilityTags))),
     [rows]
@@ -60,6 +68,9 @@ export function ModelHub() {
     const keyword = search.trim().toLowerCase();
     return rows.filter((row) => {
       if (providerFilter !== "all" && row.providerType !== providerFilter) {
+        return false;
+      }
+      if (vendorFilter !== "all" && row.modelVendor?.trim() !== vendorFilter) {
         return false;
       }
       if (capabilityFilter !== "all" && !row.capabilityTags.includes(capabilityFilter)) {
@@ -71,10 +82,11 @@ export function ModelHub() {
       return (
         row.displayName.toLowerCase().includes(keyword) ||
         row.modelId.toLowerCase().includes(keyword) ||
+        (row.modelVendor?.toLowerCase().includes(keyword) ?? false) ||
         row.providerName.toLowerCase().includes(keyword)
       );
     });
-  }, [capabilityFilter, providerFilter, rows, search]);
+  }, [capabilityFilter, providerFilter, rows, search, vendorFilter]);
 
   const exampleUserPrompt = text(
     "请用一句话介绍这个模型的定位。",
@@ -202,8 +214,8 @@ print(resp.model_dump_json(indent=2))`;
             <strong>{rows.length}</strong>
           </article>
           <article className="model-hub-stat-card">
-            <span>{text("供应商类型", "Provider types")}</span>
-            <strong>{providerOptions.length}</strong>
+            <span>{text("模型厂商", "Model vendors")}</span>
+            <strong>{vendorOptions.length}</strong>
           </article>
           <article className="model-hub-stat-card">
             <span>{text("推荐接入形态", "Recommended protocol")}</span>
@@ -226,8 +238,26 @@ print(resp.model_dump_json(indent=2))`;
           />
         </div>
         <div className="model-hub-filter-group">
+          <label className="model-hub-filter-label" htmlFor="model-hub-vendor">
+            {text("模型厂商", "Model vendor")}
+          </label>
+          <select
+            id="model-hub-vendor"
+            className="input-plain"
+            value={vendorFilter}
+            onChange={(e) => setVendorFilter(e.target.value)}
+          >
+            <option value="all">{text("全部厂商", "All vendors")}</option>
+            {vendorOptions.map((vendor) => (
+              <option key={vendor} value={vendor}>
+                {vendor}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="model-hub-filter-group">
           <label className="model-hub-filter-label" htmlFor="model-hub-provider">
-            {text("供应商", "Provider")}
+            {text("协议类型", "Protocol")}
           </label>
           <select
             id="model-hub-provider"
@@ -235,7 +265,7 @@ print(resp.model_dump_json(indent=2))`;
             value={providerFilter}
             onChange={(e) => setProviderFilter(e.target.value)}
           >
-            <option value="all">{text("全部供应商", "All providers")}</option>
+            <option value="all">{text("全部协议", "All protocols")}</option>
             {providerOptions.map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}
@@ -285,7 +315,7 @@ print(resp.model_dump_json(indent=2))`;
                 <div>
                   <h2>{row.displayName}</h2>
                   <p className="muted">
-                    {row.providerName} · {row.protocolLabel}
+                    {[row.modelVendor, row.providerName, row.protocolLabel].filter(Boolean).join(" · ")}
                   </p>
                 </div>
                 <span className="model-hub-provider-badge">{row.providerType}</span>

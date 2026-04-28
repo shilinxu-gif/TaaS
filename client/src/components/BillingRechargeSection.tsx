@@ -15,15 +15,14 @@ import { copyText } from "../utils/clipboard";
 
 const PAY_CHANNELS: {
   id: RechargePayChannel;
-  label: string;
   recommended?: boolean;
   intl?: boolean;
 }[] = [
-  { id: "bank_transfer", label: "对公打款", recommended: true },
-  { id: "alipay", label: "支付宝", recommended: true },
-  { id: "wechat", label: "微信支付" },
-  { id: "apple_pay", label: "Apple Pay", intl: true },
-  { id: "google_pay", label: "Google Pay", intl: true },
+  { id: "bank_transfer", recommended: true },
+  { id: "alipay", recommended: true },
+  { id: "wechat" },
+  { id: "apple_pay", intl: true },
+  { id: "google_pay", intl: true },
 ];
 
 function IconBank() {
@@ -135,6 +134,32 @@ export function BillingRechargeSection({
 }) {
   const { i18n } = useTranslation();
   const text = (zhCN: string, enUS: string) => pickText(i18n.resolvedLanguage, zhCN, enUS);
+  const payChannelLabel = (channel: RechargePayChannel | string, fallback?: string) =>
+    channel === "bank_transfer"
+      ? text("对公打款", "Bank transfer")
+      : channel === "alipay"
+        ? text("支付宝", "Alipay")
+        : channel === "wechat"
+          ? text("微信支付", "WeChat Pay")
+          : channel === "apple_pay"
+            ? "Apple Pay"
+            : channel === "google_pay"
+              ? "Google Pay"
+              : fallback ?? channel;
+  const statusLabel = (status: string, fallback: string) =>
+    status === "success"
+      ? text("已到账", "Credited")
+      : status === "pending_review"
+        ? text("待审核", "Pending review")
+        : status === "pending_payment"
+          ? text("待支付", "Pending payment")
+          : status === "pending" || status === "processing"
+            ? text("处理中", "Processing")
+            : status === "cancelled"
+              ? text("已取消", "Cancelled")
+              : status === "failed"
+                ? text("失败", "Failed")
+                : fallback;
   const qc = useQueryClient();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [amount, setAmount] = useState("5000");
@@ -230,7 +255,7 @@ export function BillingRechargeSection({
   return (
     <section
       className={variant === "page" ? "rc-wrap rc-wrap--page" : "rc-wrap"}
-      aria-label={variant === "page" ? "在线充值与记录" : undefined}
+      aria-label={variant === "page" ? text("在线充值与记录", "Recharge and Records") : undefined}
       aria-labelledby={variant === "billing" ? "rc-heading" : undefined}
     >
       {toast ? (
@@ -244,10 +269,13 @@ export function BillingRechargeSection({
           <div className="rc-head">
             <div>
               <h2 id="rc-heading" className="rc-title">
-                在线充值
+                {text("在线充值", "Online Recharge")}
               </h2>
               <p className="rc-sub muted">
-                购买余额与套餐的入口；当前页面按生产占位流程记录申请与到账状态。
+                {text(
+                  "购买余额与套餐的入口；当前页面按生产占位流程记录申请与到账状态。",
+                  "Entry point for purchasing balance and plans. The current production-placeholder flow records requests and crediting status.",
+                )}
               </p>
             </div>
           </div>
@@ -277,9 +305,12 @@ export function BillingRechargeSection({
         </article>
 
         <article className="rc-card rc-card--entry">
-          <div className="rc-card-label">充值入口</div>
+          <div className="rc-card-label">{text("充值入口", "Recharge Entry")}</div>
           <p className="rc-entry-desc muted">
-            推荐优先使用对公打款；其他支付方式保留为接入占位，提交后生成待处理申请。
+            {text(
+              "推荐优先使用对公打款；其他支付方式保留为接入占位，提交后生成待处理申请。",
+              "Bank transfer is recommended first. Other payment methods are reserved as integration placeholders and create pending requests after submission.",
+            )}
           </p>
           <div className="rc-pay-grid" role="list">
             {PAY_CHANNELS.map((ch) => {
@@ -298,17 +329,17 @@ export function BillingRechargeSection({
                   onClick={() => setPayChannel(ch.id)}
                 >
                   <PayIcon id={ch.id} />
-                  <span className="rc-pay-tile-label">{ch.label}</span>
+                  <span className="rc-pay-tile-label">{payChannelLabel(ch.id)}</span>
                   {ch.intl ? (
-                    <span className="rc-intl-pill">国际支付</span>
+                    <span className="rc-intl-pill">{text("国际支付", "International")}</span>
                   ) : null}
-                  {rec ? <span className="rc-rec-pill">推荐</span> : null}
+                  {rec ? <span className="rc-rec-pill">{text("推荐", "Recommended")}</span> : null}
                 </button>
               );
             })}
           </div>
           <button type="button" className="btn btn-primary rc-cta" onClick={openDrawer}>
-            发起充值
+            {text("发起充值", "Start recharge")}
           </button>
         </article>
       </div>
@@ -316,28 +347,31 @@ export function BillingRechargeSection({
       {followUp?.kind === "bank" ? (
         <div className="rc-follow rc-follow--bank">
           <div className="rc-follow-hd">
-            <strong>对公打款</strong>
-            <span className="muted">单号 {followUp.row.orderNo}</span>
+            <strong>{text("对公打款", "Bank transfer")}</strong>
+            <span className="muted">{text(`单号 ${followUp.row.orderNo}`, `Order ${followUp.row.orderNo}`)}</span>
           </div>
           <p className="muted rc-follow-tip">
-            请向以下账户转账 <strong>{formatMoneyRow(followUp.row)}</strong>，附言请填写订单号；
-            打款后预计 <strong>1 个工作日内</strong>到账，当前为「待审核」状态。
+            {text("请向以下账户转账 ", "Transfer ")}
+            <strong>{formatMoneyRow(followUp.row)}</strong>
+            {text("，附言请填写订单号；打款后预计 ", " to the following account and include the order number in the memo. Funds are expected to be credited within ")}
+            <strong>{text("1 个工作日内", "1 business day")}</strong>
+            {text("到账，当前为「待审核」状态。", ". Current status: pending review.")}
           </p>
           <dl className="rc-bank-dl">
             <div>
-              <dt>公司名称</dt>
+              <dt>{text("公司名称", "Company Name")}</dt>
               <dd>{followUp.bank.companyName}</dd>
             </div>
             <div>
-              <dt>开户行</dt>
+              <dt>{text("开户行", "Bank Name")}</dt>
               <dd>{followUp.bank.bankName}</dd>
             </div>
             <div>
-              <dt>银行账号</dt>
+              <dt>{text("银行账号", "Bank Account")}</dt>
               <dd className="rc-mono">{followUp.bank.accountNo}</dd>
             </div>
             <div>
-              <dt>户名</dt>
+              <dt>{text("户名", "Account Name")}</dt>
               <dd>{followUp.bank.accountName}</dd>
             </div>
           </dl>
@@ -348,57 +382,59 @@ export function BillingRechargeSection({
               onClick={() => {
                 const b = followUp.bank;
                 const txt = [
-                  `户名：${b.accountName}`,
-                  `开户行：${b.bankName}`,
-                  `账号：${b.accountNo}`,
-                  `公司：${b.companyName}`,
+                  text(`户名：${b.accountName}`, `Account name: ${b.accountName}`),
+                  text(`开户行：${b.bankName}`, `Bank: ${b.bankName}`),
+                  text(`账号：${b.accountNo}`, `Account no.: ${b.accountNo}`),
+                  text(`公司：${b.companyName}`, `Company: ${b.companyName}`),
                 ].join("\n");
                 void copyText(txt).then((ok) => {
                   if (ok) {
                     setCopied(true);
-                    showToast("账户信息已复制");
+                    showToast(text("账户信息已复制", "Account information copied"));
                     return;
                   }
-                  showToast("复制失败，请手动复制");
+                  showToast(text("复制失败，请手动复制", "Copy failed. Please copy manually."));
                 });
               }}
             >
-              {copied ? "已复制" : "复制账户信息"}
+              {copied ? text("已复制", "Copied") : text("复制账户信息", "Copy account information")}
             </button>
             <button
               type="button"
               className="btn btn-header-ghost"
               onClick={() => setFollowUp(null)}
             >
-              收起
+              {text("收起", "Collapse")}
             </button>
           </div>
         </div>
       ) : null}
 
       <div className="rc-table-block">
-        <h3 className="rc-table-title">充值记录</h3>
-        <p className="muted rc-table-desc">共 {rows.length} 条（最近 100 条）</p>
+        <h3 className="rc-table-title">{text("充值记录", "Recharge Records")}</h3>
+        <p className="muted rc-table-desc">
+          {text(`共 ${rows.length} 条（最近 100 条）`, `${rows.length} records (latest 100)`)}
+        </p>
         <div className="rc-table-wrap">
           <table className="rc-table">
             <thead>
               <tr>
-                <th>充值单号</th>
-                <th>租户名称</th>
-                <th>充值金额</th>
-                <th>币种</th>
-                <th>支付方式</th>
-                <th>状态</th>
-                <th>创建时间</th>
-                <th>到账时间</th>
-                <th className="rc-col-actions">说明</th>
+                <th>{text("充值单号", "Order No.")}</th>
+                <th>{text("租户名称", "Tenant Name")}</th>
+                <th>{text("充值金额", "Amount")}</th>
+                <th>{text("币种", "Currency")}</th>
+                <th>{text("支付方式", "Payment Method")}</th>
+                <th>{text("状态", "Status")}</th>
+                <th>{text("创建时间", "Created At")}</th>
+                <th>{text("到账时间", "Credited At")}</th>
+                <th className="rc-col-actions">{text("说明", "Notes")}</th>
               </tr>
             </thead>
             <tbody>
               {rows.length === 0 ? (
                 <tr>
                   <td colSpan={9} className="rc-table-empty muted">
-                    暂无充值记录
+                    {text("暂无充值记录", "No recharge records")}
                   </td>
                 </tr>
               ) : (
@@ -408,10 +444,10 @@ export function BillingRechargeSection({
                     <td>{r.tenantName}</td>
                     <td className="tabular-nums">{r.amountDisplay}</td>
                     <td>{r.currency}</td>
-                    <td>{r.payChannelLabel}</td>
+                    <td>{payChannelLabel(r.payChannel, r.payChannelLabel)}</td>
                     <td>
                       <span className={rechargeStatusBadgeClass(r.status)}>
-                        {r.statusLabel}
+                        {statusLabel(r.status, r.statusLabel)}
                       </span>
                     </td>
                     <td className="rc-td-time">
@@ -424,11 +460,11 @@ export function BillingRechargeSection({
                     </td>
                     <td className="rc-col-actions">
                       {r.status === "pending_review" ? (
-                        <span className="muted">等待财务确认到账</span>
+                        <span className="muted">{text("等待财务确认到账", "Waiting for finance to confirm crediting")}</span>
                       ) : r.status === "pending_payment" ||
                         r.status === "pending" ||
                         r.status === "processing" ? (
-                        <span className="muted">等待真实支付通道回调或人工处理</span>
+                        <span className="muted">{text("等待真实支付通道回调或人工处理", "Waiting for payment callback or manual processing")}</span>
                       ) : (
                         <span className="muted">—</span>
                       )}
@@ -442,21 +478,35 @@ export function BillingRechargeSection({
       </div>
 
       <div className="rc-instructions">
-        <h3 className="rc-instructions-title">支付方式说明</h3>
+        <h3 className="rc-instructions-title">{text("支付方式说明", "Payment Method Notes")}</h3>
         <ul className="rc-instructions-list muted">
           <li>
-            <strong className="rc-instructions-strong">对公打款</strong>
-            ：适合合同框架内付款；请按页面户名、开户行、账号打款，并备注订单号或合同编号。
+            <strong className="rc-instructions-strong">{text("对公打款", "Bank transfer")}</strong>
+            {text(
+              "：适合合同框架内付款；请按页面户名、开户行、账号打款，并备注订单号或合同编号。",
+              ": Suitable for payments under a contract. Transfer to the displayed account name, bank, and account number, and include the order or contract number in the memo.",
+            )}
           </li>
           <li>
-            <strong className="rc-instructions-strong">微信支付 / 支付宝</strong>
-            ：支付通道保留接入位，当前提交后会生成待支付申请，由后续真实支付回调或人工复核完成到账。
+            <strong className="rc-instructions-strong">{text("微信支付 / 支付宝", "WeChat Pay / Alipay")}</strong>
+            {text(
+              "：支付通道保留接入位，当前提交后会生成待支付申请，由后续真实支付回调或人工复核完成到账。",
+              ": Payment channels are reserved integration slots. Submitting now creates a pending payment request that will be credited after a real payment callback or manual review.",
+            )}
           </li>
           <li>
             <strong className="rc-instructions-strong">Apple Pay / Google Pay</strong>
-            ：适用于国际卡与海外主体；当前仅保留订单受理能力，待后续接入真实支付通道。
+            {text(
+              "：适用于国际卡与海外主体；当前仅保留订单受理能力，待后续接入真实支付通道。",
+              ": Suitable for international cards and overseas entities. Currently only order intake is kept until real payment channels are integrated.",
+            )}
           </li>
-          <li>发票：勾选「需要发票」后，可在「自动化开票」模块补充抬头与邮寄信息。</li>
+          <li>
+            {text(
+              "发票：勾选「需要发票」后，可在「自动化开票」模块补充抬头与邮寄信息。",
+              "Invoice: after checking “Need invoice”, complete the title and delivery information in the invoicing module.",
+            )}
+          </li>
         </ul>
       </div>
 
@@ -469,18 +519,18 @@ export function BillingRechargeSection({
         >
           <div className="keys-modal keys-modal--wide">
             <div className="keys-modal-hd">
-              <h2 id="rc-drawer-title">发起充值</h2>
+              <h2 id="rc-drawer-title">{text("发起充值", "Start Recharge")}</h2>
               <button
                 type="button"
                 className="btn btn-header-ghost"
                 onClick={() => setDrawerOpen(false)}
               >
-                关闭
+                {text("关闭", "Close")}
               </button>
             </div>
             <div className="keys-form">
               <div className="keys-field">
-                <span className="keys-label">支付方式</span>
+                <span className="keys-label">{text("支付方式", "Payment Method")}</span>
                 <div className="rc-drawer-chips">
                   {PAY_CHANNELS.map((ch) => (
                     <button
@@ -491,8 +541,8 @@ export function BillingRechargeSection({
                       }
                       onClick={() => setPayChannel(ch.id)}
                     >
-                      {ch.label}
-                      {ch.intl ? " · 国际" : ""}
+                      {payChannelLabel(ch.id)}
+                      {ch.intl ? text(" · 国际", " · International") : ""}
                     </button>
                   ))}
                 </div>
@@ -500,7 +550,7 @@ export function BillingRechargeSection({
               <div className="keys-field-row">
                 <div className="keys-field keys-field--half">
                   <label className="keys-label" htmlFor="rc-amt">
-                    充值金额
+                    {text("充值金额", "Recharge Amount")}
                   </label>
                   <input
                     id="rc-amt"
@@ -514,7 +564,7 @@ export function BillingRechargeSection({
                 </div>
                 <div className="keys-field keys-field--half">
                   <label className="keys-label" htmlFor="rc-cur">
-                    币种
+                    {text("币种", "Currency")}
                   </label>
                   <select
                     id="rc-cur"
@@ -531,33 +581,33 @@ export function BillingRechargeSection({
               </div>
               <div className="keys-field">
                 <label className="keys-label" htmlFor="rc-payer">
-                  付款主体名称
+                  {text("付款主体名称", "Payer Name")}
                 </label>
                 <input
                   id="rc-payer"
                   className="input-plain"
-                  placeholder="与付款账户一致的企业或个人名称"
+                  placeholder={text("与付款账户一致的企业或个人名称", "Company or individual name matching the payer account")}
                   value={payerName}
                   onChange={(e) => setPayerName(e.target.value)}
                 />
               </div>
               <div className="keys-field">
                 <label className="keys-label" htmlFor="rc-rmk">
-                  备注
+                  {text("备注", "Remark")}
                 </label>
                 <textarea
                   id="rc-rmk"
                   className="input-plain keys-textarea"
                   rows={2}
                   maxLength={500}
-                  placeholder="选填：合同号、成本中心等"
+                  placeholder={text("选填：合同号、成本中心等", "Optional: contract number, cost center, etc.")}
                   value={remark}
                   onChange={(e) => setRemark(e.target.value)}
                 />
               </div>
               <div className="keys-field rc-switch-field">
                 <label className="keys-label" htmlFor="rc-inv">
-                  是否需要发票
+                  {text("是否需要发票", "Need Invoice")}
                 </label>
                 <button
                   id="rc-inv"
@@ -572,7 +622,10 @@ export function BillingRechargeSection({
               </div>
               {(payChannel === "apple_pay" || payChannel === "google_pay") ? (
                 <p className="muted-sm">
-                  当前渠道仍在接入中。提交后会先登记充值申请，不会自动加款。
+                  {text(
+                    "当前渠道仍在接入中。提交后会先登记充值申请，不会自动加款。",
+                    "This channel is still being integrated. Submission records a recharge request first and will not automatically add balance.",
+                  )}
                 </p>
               ) : null}
               {createM.error ? (
@@ -586,7 +639,7 @@ export function BillingRechargeSection({
                   className="btn btn-header-ghost"
                   onClick={() => setDrawerOpen(false)}
                 >
-                  取消
+                  {text("取消", "Cancel")}
                 </button>
                 <button
                   type="button"
@@ -594,7 +647,7 @@ export function BillingRechargeSection({
                   disabled={createM.isPending}
                   onClick={() => createM.mutate()}
                 >
-                  提交
+                  {text("提交", "Submit")}
                 </button>
               </div>
             </div>

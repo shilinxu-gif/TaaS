@@ -4016,6 +4016,10 @@ ul.saas-chart {
   margin-bottom: 0;
 }
 
+.admin-provider-edit-section {
+  margin-top: 1.25rem;
+}
+
 .bill-section-title {
   font-size: 1rem;
   font-weight: 700;
