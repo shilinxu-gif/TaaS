@@ -21,10 +21,6 @@ export async function api<T>(
   } catch {
     throw new Error(i18n.t("api.backendUnavailable"));
   }
-  if (res.status === 401) {
-    localStorage.removeItem("crm_token");
-    window.dispatchEvent(new Event("crm:unauthorized"));
-  }
   const text = await res.text();
   let data: unknown = null;
   if (text) {
@@ -33,6 +29,23 @@ export async function api<T>(
     } catch {
       data = null;
     }
+  }
+  const hasJwtToken = Boolean(token);
+  const responseError =
+    data && typeof data === "object" && data !== null && "error" in data
+      ? String((data as { error?: unknown }).error ?? "")
+      : "";
+  const looksLikeAuthFailure =
+    !responseError ||
+    /unauthorized|token|jwt|expired|session|auth|forbidden|未授权|认证|登录|会话|过期/i.test(
+      responseError
+    );
+  if (
+    hasJwtToken &&
+    (res.status === 401 || (res.status === 403 && looksLikeAuthFailure))
+  ) {
+    localStorage.removeItem("crm_token");
+    window.dispatchEvent(new Event("crm:unauthorized"));
   }
   if (!res.ok) {
     let msg: string;
