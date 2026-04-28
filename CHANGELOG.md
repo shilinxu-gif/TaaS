@@ -2,6 +2,33 @@
 
 ## Unreleased
 
+### 2026-04-28 管理员供应商：保存后模型目录 JSON 不再被旧缓存覆盖
+
+- 改动内容：`AdminProviders.tsx` 中保存供应商的 `onSuccess` 改为用 PATCH 返回的最新 `ProviderConfigRow` 调用 `buildForm` 更新表单，并对 `["admin","providers"]` 执行 `setQueryData` 合并该行；移除在 refetch 完成前用 `rows.find` 重建表单的逻辑，避免保存成功后界面上的模型目录 JSON 短暂回退为旧内容。
+- 影响范围：`client/src/pages/AdminProviders.tsx`、`CHANGELOG.md`。
+- 验证情况：已执行 `ReadLints`（`AdminProviders.tsx` 无新增诊断）、`npm run build --prefix client` 通过。
+- 运维动作：仅需发版前端静态资源；本地开发环境需重启前端服务生效。无 SQL、迁移或后端依赖。
+- 线上数据影响：无；仅修正前端保存成功后的本地状态同步，不改变接口或数据库写入行为。
+- 风险控制：与后端 `updateProvider` 返回整行供应商配置的行为一致；若未来 PATCH 不返回完整行需同步调整前端类型与赋值逻辑。
+
+### 2026-04-28 15:34 模型能力标签：支持按模型动态配置并在模型广场筛选
+
+- 改动内容：后端 `ConsoleService` 支持从供应商 `modelCatalog` 每个模型项读取 `capabilityTags`（支持数组或字符串配置），模型广场接口优先返回配置标签，未配置时回退默认 `chat/streaming`；前端 `AdminProviders.tsx` 的模型目录默认模板新增 `capabilityTags`，并在编辑/新增表单补充能力标签配置示例；`ModelHub.tsx` 扩展能力标签映射与展示，支持对话、思考、文生图、图生图、文案生成、图片生成、推理、代码能力、图生视频、视频生产、文案能力等标签的展示与筛选。
+- 影响范围：`backend-java/src/main/java/com/taas/console/ConsoleService.java`、`client/src/pages/AdminProviders.tsx`、`client/src/pages/ModelHub.tsx`、`CHANGELOG.md`。
+- 验证情况：已执行 `ReadLints`（改动文件无新增诊断）、`npm run build --prefix client`、`mvn -f backend-java/pom.xml test` 均通过。
+- 运维动作：发版并重启后端与前端服务生效；无需新增数据库迁移与手工 SQL。若已有供应商需要能力标签，请在供应商模型目录 JSON 中为模型项补充 `capabilityTags`。
+- 线上数据影响：无表结构变更；仅当管理员更新供应商 `model_catalog` 时会写入或更新模型能力标签，不影响历史请求日志、账单、余额或密钥数据。
+- 风险控制：保持未配置标签时的默认能力回退逻辑，避免旧数据导致模型广场能力列为空；能力标签仅用于展示与筛选，不参与路由和计费决策。
+
+### 2026-04-28 14:57 软著材料命名统一：Token分销字段改为算力无限
+
+- 改动内容：将软著相关文档中的“Token分销平台/Token分销”名称字段统一替换为“算力无限”，同步更新说明书与申请表文本文件，并对 `docs/` 下相关 `.docx` 内部 XML 文本执行同样替换，确保导出版名称一致。
+- 影响范围：`docs/SOFTWARE_COPYRIGHT_TOKEN_DISTRIBUTION_PLATFORM_V1.0.0.md`、`docs/SOFTWARE_COPYRIGHT_TOKEN_DISTRIBUTION_PLATFORM_V1.0.0_SOURCE_CODE.txt`、`docs/计算机软件著作权登记申请表_已补充.txt` 及 `docs/` 下相关软著 `.docx` 文件、`CHANGELOG.md`。
+- 验证情况：已检索 `docs/` 目录，确认不再包含“Token分销”文本；已抽查申请表与说明书内容显示为“算力无限”。
+- 运维动作：无；纯软著文档内容调整，不需要重启前后端服务，不需要执行 SQL 或迁移。
+- 线上数据影响：无。
+- 风险控制：仅替换软著材料命名字段，不涉及业务代码逻辑；建议提交软著前再人工核对公司证照信息与日期字段。
+
 ### 2026-04-28 14:26 认证：切页遇到 403 时自动退出登录
 
 - 改动内容：`client/src/api.ts` 调整会话失效判定逻辑，除 `401` 外，对带 JWT 的请求在返回疑似认证失效的 `403` 时也会清理本地 `crm_token` 并触发 `crm:unauthorized`，避免 token 过期后切页只弹 `HTTP 403` 而不自动跳登录页。

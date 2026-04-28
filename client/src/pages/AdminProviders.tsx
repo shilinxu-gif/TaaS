@@ -66,6 +66,7 @@ function defaultCatalogForType(providerType: CreateProviderForm["providerType"])
         inputUsdPerMillion: "0.15",
         outputUsdPerMillion: "0.60",
         supportsStreaming: true,
+        capabilityTags: ["chat", "streaming"],
       },
     ],
     null,
@@ -210,11 +211,20 @@ export function AdminProviders() {
         }),
       });
     },
-    onSuccess: () => {
+    onSuccess: (updated) => {
       setJsonError("");
-      if (selected) {
-        const next = rows.find((row) => row.id === selected.id);
-        if (next) setForm(buildForm(next));
+      // 必须用接口返回值更新表单：invalidate 后 refetch 尚未完成时，rows 仍是旧缓存，
+      // 用 rows.find 会误把 modelCatalogText 覆盖成保存前的 JSON。
+      if (updated) {
+        setForm(buildForm(updated));
+        qc.setQueryData(["admin", "providers"], (old: ProviderConfigRow[] | undefined) => {
+          if (!old?.length) return old;
+          const idx = old.findIndex((r) => r.id === updated.id);
+          if (idx < 0) return old;
+          const next = [...old];
+          next[idx] = updated;
+          return next;
+        });
       }
       void qc.invalidateQueries({ queryKey: ["admin", "providers"] });
       void qc.invalidateQueries({ queryKey: ["routing"] });
@@ -546,6 +556,12 @@ export function AdminProviders() {
                   )
                 }
               />
+              <p className="muted" style={{ margin: "0.35rem 0 0" }}>
+                {text(
+                  "可在每个模型项配置 capabilityTags，例如：\"capabilityTags\": [\"chat\", \"reasoning\", \"text_to_image\"]。",
+                  "You can configure capabilityTags per model item, for example: \"capabilityTags\": [\"chat\", \"reasoning\", \"text_to_image\"].",
+                )}
+              </p>
             </div>
           </div>
           {jsonError ? <p className="error">{jsonError}</p> : null}
@@ -786,6 +802,12 @@ export function AdminProviders() {
                       }))
                     }
                   />
+                  <p className="muted" style={{ margin: "0.35rem 0 0" }}>
+                    {text(
+                      "可在每个模型项配置 capabilityTags，例如：\"capabilityTags\": [\"chat\", \"reasoning\", \"text_to_image\"]。",
+                      "You can configure capabilityTags per model item, for example: \"capabilityTags\": [\"chat\", \"reasoning\", \"text_to_image\"].",
+                    )}
+                  </p>
                 </div>
               </div>
               {createJsonError ? <p className="error">{createJsonError}</p> : null}
