@@ -11,6 +11,7 @@
     "db:ready": "npm run db:up",
     "dev:server": "bash -lc 'set -a; [ -f ./.env ] && source ./.env; set +a; mvn -f backend-java/pom.xml spring-boot:run'",
     "dev:client": "npm run dev --prefix client",
-    "build": "bash -lc 'set -a; [ -f ./.env ] && source ./.env; set +a; mvn -f backend-java/pom.xml -DskipTests package' && npm run build --prefix client"
+    "build": "bash -lc 'set -a; [ -f ./.env ] && source ./.env; set +a; mvn -f backend-java/pom.xml -DskipTests package' && npm run build --prefix client",
+    "seed:demo-billing": "bash -lc 'set -a; [ -f ./.env ] && source ./.env; set +a; mvn -f backend-java/pom.xml spring-boot:run -Dspring-boot.run.main-class=com.taas.tools.DemoBillingSeedCommand'"
   }
 }

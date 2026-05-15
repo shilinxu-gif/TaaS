@@ -9,12 +9,16 @@ import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.context.annotation.Profile;
+import org.springframework.core.annotation.Order;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
 @Component
+@Profile("!demo-billing-seed")
+@Order(0)
 public class SeedDataRunner implements CommandLineRunner {
   private final NamedParameterJdbcTemplate jdbcTemplate;
   private final PasswordEncoder passwordEncoder;

@@ -2,6 +2,33 @@
 
 ## Unreleased
 
+### 2026-05-15 19:03 演示造数：新增一键执行脚本
+
+- 改动内容：新增 `scripts/seed-demo-billing.sh`，内置 AIoT 演示账号、租户和密码默认值，支持 `--dry-run` 与 `--apply` 两种模式；同步更新 `docs/DEMO_BILLING_SEED.md`，说明阿里云服务器上直接执行包装脚本的方式。
+- 影响范围：`scripts/seed-demo-billing.sh`、`docs/DEMO_BILLING_SEED.md`、`CHANGELOG.md`。
+- 验证情况：已执行 `bash -n scripts/seed-demo-billing.sh`、`mvn -f backend-java/pom.xml -DskipTests compile`、`mvn -f backend-java/pom.xml test` 通过；`ReadLints` 检查相关脚本与文档无新增诊断。
+- 运维动作：发版后在服务器项目根目录执行 `scripts/seed-demo-billing.sh --dry-run` 预览，确认无误后执行 `scripts/seed-demo-billing.sh --apply` 写入演示数据；如项目目录不同，可设置 `APP_DIR=/srv/taas/app/TaaS`。
+- 线上数据影响：`--dry-run` 不写库；`--apply` 会通过既有 Java 造数入口向 AIoT 演示租户写入/更新演示账号、租户、AppKey、请求日志、用量、账单、充值和开票记录。
+- 风险控制：脚本默认 dry-run；正式写入仍走 Java 入口的双确认、租户隔离、`@demo.local` 拒绝和批次清理保护；不应在真实客户租户上执行。
+
+### 2026-05-15 18:51 演示造数：默认账号改为 AIoT
+
+- 改动内容：将演示账单造数脚本的默认演示信息调整为登录账号 `aiot@redtea.com`、默认密码 `admin123`、租户展示名 `AIoT`、租户 slug `aiot`，并新增 `DEMO_TENANT_NAME` 参数；同步更新 `docs/DEMO_BILLING_SEED.md` 的 dry-run 与正式写入示例。
+- 影响范围：`backend-java/src/main/java/com/taas/tools/DemoBillingSeedCommand.java`、`docs/DEMO_BILLING_SEED.md`、`CHANGELOG.md`。
+- 验证情况：已执行 `mvn -f backend-java/pom.xml -DskipTests compile`、`mvn -f backend-java/pom.xml test` 通过；`ReadLints` 检查相关 Java/Markdown 文件无新增诊断。
+- 运维动作：发版并重启后端后生效；执行 `npm run seed:demo-billing` 时可省略默认账号、密码与展示租户名参数，也可通过环境变量覆盖。
+- 线上数据影响：仅在显式执行演示造数脚本且设置正式写入确认变量时，影响指定演示租户与账号相关数据；不自动修改线上存量数据。
+- 风险控制：仍保留正式写入双确认、`@demo.local` 拒绝、非演示租户默认拒绝复用等保护；默认密码仅用于演示账号，生产客户账号不要复用。
+
+### 2026-05-15 18:36 演示账单造数脚本
+
+- 改动内容：新增 `DemoBillingSeedCommand` 专用命令入口和 `demo-billing-seed` profile，用于按指定演示租户生成账号、AppKey、请求日志、用量、账单、充值和开票演示数据；脚本默认 dry-run，正式写入需 `DEMO_BILLING_SEED_APPLY=YES` 与 `DEMO_ALLOW_PROD_LIKE=YES` 双确认；默认种子 Runner 与 Web Security FilterChain 在该 profile 下不执行，避免 dry-run 隐式写库或启动 Web 安全链路；新增 `npm run seed:demo-billing` 与操作文档。
+- 影响范围：`backend-java/src/main/java/com/taas/tools/DemoBillingSeedCommand.java`、`backend-java/src/main/java/com/taas/boot/SeedDataRunner.java`、`backend-java/src/main/java/com/taas/auth/SecurityConfig.java`、`package.json`、`docs/DEMO_BILLING_SEED.md`、`CHANGELOG.md`。
+- 验证情况：已执行 `mvn -f backend-java/pom.xml -DskipTests compile`、`mvn -f backend-java/pom.xml test` 通过；`ReadLints` 检查新增/改动 Java 文件无诊断；已执行 dry-run 命令验证专用 profile 启动且不触发 Flyway，但本机 Docker daemon 未运行、Postgres 连接失败，未完成数据库级 dry-run 输出与正式写入验证。
+- 运维动作：发版并重启后端后可使用；执行造数前先确认目标环境已完成 Flyway 迁移，并按 `docs/DEMO_BILLING_SEED.md` 设置环境变量运行 `npm run seed:demo-billing`。正式写入必须使用专属演示租户，不要在真实客户租户上执行。
+- 线上数据影响：仅在显式执行且设置正式写入确认变量时，向指定演示租户写入或更新 `users`、`tenants`、`tenant_members`、`tenant_routing_strategies`、`tenant_cache_settings`、`app_keys`、`api_request_logs`、`usage_records`、`billing_records`、`wallet_recharge_orders`、`invoice_requests`；不会自动随服务启动写入数据。重复执行会清理同租户下本脚本批次标记的数据后重建。
+- 风险控制：脚本拒绝 `@demo.local` 邮箱；未设置确认变量默认退出或 dry-run；正式写入需额外确认生产类环境风险；既有非演示租户默认拒绝复用，除非显式 `DEMO_ALLOW_EXISTING_TENANT=YES`；脚本入口强制禁用 Flyway，避免造数时隐式迁移。
+
 ### 2026-04-28 补提交：ConsoleService modelCatalog 能力标签逻辑入库
 
 - 改动内容：将此前未提交的 `ConsoleService.java` 变更纳入版本控制，包括 `modelCatalog` 从 `modelCatalog` JSON 项读取 `capabilityTags`（数组或逗号分隔字符串）、空配置时回退 `chat`/`streaming`，以及创建/更新供应商时对 `capabilityTags` 类型与单标签长度的校验

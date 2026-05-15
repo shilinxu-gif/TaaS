@@ -1,0 +1,797 @@
+package com.taas.tools;
+
+import com.taas.boot.TaasApplication;
+import com.taas.infra.security.CryptoUtils;
+import com.taas.infra.util.Ids;
+import com.taas.infra.util.Jsons;
+import com.taas.infra.util.MoneyUtils;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.sql.Timestamp;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import org.springframework.boot.CommandLineRunner;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.WebApplicationType;
+import org.springframework.boot.builder.SpringApplicationBuilder;
+import org.springframework.context.ConfigurableApplicationContext;
+import org.springframework.context.annotation.Profile;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
+import org.springframework.core.env.Environment;
+import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
+
+public class DemoBillingSeedCommand {
+  public static void main(String[] args) {
+    System.setProperty("spring.flyway.enabled", "false");
+    ConfigurableApplicationContext context =
+        new SpringApplicationBuilder(TaasApplication.class)
+            .web(WebApplicationType.NONE)
+            .profiles("demo-billing-seed")
+            .run(args);
+    int exitCode = SpringApplication.exit(context);
+    System.exit(exitCode);
+  }
+}
+
+@Component
+@Profile("demo-billing-seed")
+@Order(Ordered.LOWEST_PRECEDENCE)
+class DemoBillingSeedRunner implements CommandLineRunner {
+  private static final String CONFIRM_VALUE = "YES";
+  private static final String DEMO_CONTRACT_CODE = "DEMO-BILLING-SEED";
+  private static final String DEFAULT_BATCH_ID = "default";
+  private static final String DEFAULT_TENANT_SLUG = "aiot";
+  private static final String DEFAULT_TENANT_NAME = "AIoT";
+  private static final String DEFAULT_USER_EMAIL = "aiot@redtea.com";
+  private static final String DEFAULT_USER_NAME = "AIoT 演示账号";
+  private static final String DEFAULT_USER_PASSWORD = "admin123";
+  private static final int DEFAULT_DAYS = 30;
+  private static final int DEFAULT_REQUESTS_PER_DAY = 8;
+  private static final BigDecimal DEFAULT_INITIAL_TOKENS = new BigDecimal("30000000");
+  private static final BigDecimal DEFAULT_RECHARGE_TOKENS = new BigDecimal("12000000");
+  private static final BigDecimal DEFAULT_RECHARGE_CNY = new BigDecimal("6800.00");
+  private static final List<String> DEFAULT_APP_KEY_SCOPES =
+      List.of("chat:complete", "usage:read", "billing:read", "admin:ops");
+
+  private final NamedParameterJdbcTemplate jdbcTemplate;
+  private final PasswordEncoder passwordEncoder;
+  private final CryptoUtils cryptoUtils;
+  private final Jsons jsons;
+  private final Environment environment;
+
+  DemoBillingSeedRunner(
+      NamedParameterJdbcTemplate jdbcTemplate,
+      PasswordEncoder passwordEncoder,
+      CryptoUtils cryptoUtils,
+      Jsons jsons,
+      Environment environment) {
+    this.jdbcTemplate = jdbcTemplate;
+    this.passwordEncoder = passwordEncoder;
+    this.cryptoUtils = cryptoUtils;
+    this.jsons = jsons;
+    this.environment = environment;
+  }
+
+  @Override
+  @Transactional
+  public void run(String... args) {
+    SeedOptions options = readOptions();
+    boolean userExists = exists("select count(*) from users where email = :email", Map.of("email", options.userEmail()));
+    if (!options.dryRun() && !userExists && !hasText(options.userPassword())) {
+      throw new IllegalStateException("DEMO_USER_PASSWORD is required when creating a demo user");
+    }
+
+    ProviderModel providerModel = resolveProviderModel();
+    SeedSummary summary = buildSummary(options, providerModel);
+    printPlan(options, providerModel, summary, userExists);
+    if (options.dryRun()) {
+      System.out.println("Dry-run only. Set DEMO_BILLING_SEED_APPLY=YES to write demo data.");
+      return;
+    }
+
+    String userId = ensureUser(options, userExists);
+    TenantRow tenant = ensureTenant(options, userId);
+    ensureTenantDefaults(tenant.id());
+    String appKeyToken = ensureAppKey(options, tenant.id(), userId, providerModel.model());
+    cleanupPriorBatch(tenant.id(), options.batchKey());
+    insertUsageAndBilling(options, tenant.id(), userId, providerModel, summary);
+    if (options.includeFinance()) {
+      insertFinanceRows(options, tenant.id());
+    }
+    updateBalances(tenant.id(), summary);
+
+    System.out.println("Demo billing seed completed.");
+    System.out.println("Tenant slug: " + options.tenantSlug());
+    System.out.println("User email: " + options.userEmail());
+    if (appKeyToken != null) {
+      System.out.println("New AppKey token: " + appKeyToken);
+    } else {
+      System.out.println("AppKey token: existing key reused; raw token is not recoverable.");
+    }
+    System.out.println("Requests inserted: " + summary.totalRequests());
+    System.out.println("Usage tokens inserted: " + summary.usageTokens());
+    System.out.println("Billing USD inserted: " + summary.amountUsd());
+    System.out.println("Final balance tokens set to: " + summary.finalBalanceTokens());
+  }
+
+  private SeedOptions readOptions() {
+    String confirm = required("DEMO_BILLING_SEED_CONFIRM");
+    if (!CONFIRM_VALUE.equals(confirm)) {
+      throw new IllegalStateException("DEMO_BILLING_SEED_CONFIRM must be YES");
+    }
+    String tenantSlug = normalizeSlug(optional("DEMO_TENANT_SLUG", DEFAULT_TENANT_SLUG));
+    String tenantName = optional("DEMO_TENANT_NAME", DEFAULT_TENANT_NAME).trim();
+    String userEmail = optional("DEMO_USER_EMAIL", DEFAULT_USER_EMAIL).trim().toLowerCase(Locale.ROOT);
+    if (userEmail.endsWith("@demo.local")) {
+      throw new IllegalStateException("DEMO_USER_EMAIL must not use @demo.local because startup cleanup removes it");
+    }
+    boolean apply = CONFIRM_VALUE.equals(optional("DEMO_BILLING_SEED_APPLY", "NO"));
+    if (apply && !CONFIRM_VALUE.equals(optional("DEMO_ALLOW_PROD_LIKE", "NO"))) {
+      throw new IllegalStateException("DEMO_ALLOW_PROD_LIKE=YES is required before writing demo data");
+    }
+    String batchId = normalizeBatchId(optional("DEMO_BATCH_ID", DEFAULT_BATCH_ID));
+    int days = intOption("DEMO_DAYS", DEFAULT_DAYS, 1, 90);
+    int requestsPerDay = intOption("DEMO_REQUESTS_PER_DAY", DEFAULT_REQUESTS_PER_DAY, 1, 50);
+    BigDecimal initialTokens = decimalOption("DEMO_INITIAL_TOKENS", DEFAULT_INITIAL_TOKENS);
+    BigDecimal rechargeTokens = decimalOption("DEMO_RECHARGE_TOKENS", DEFAULT_RECHARGE_TOKENS);
+    return new SeedOptions(
+        tenantSlug,
+        tenantName,
+        userEmail,
+        optional("DEMO_USER_NAME", DEFAULT_USER_NAME).trim(),
+        optional("DEMO_USER_PASSWORD", DEFAULT_USER_PASSWORD).trim(),
+        CONFIRM_VALUE.equals(optional("DEMO_RESET_USER_PASSWORD", "NO")),
+        "demo-billing-seed:" + batchId,
+        days,
+        requestsPerDay,
+        initialTokens,
+        rechargeTokens,
+        !apply,
+        !"NO".equalsIgnoreCase(optional("DEMO_INCLUDE_FINANCE", "YES")));
+  }
+
+  private ProviderModel resolveProviderModel() {
+    List<ProviderModel> models =
+        jdbcTemplate.query(
+            """
+            select id, slug, provider_type, model_catalog::text as model_catalog
+            from providers
+            where enabled = true and status = 'active'
+            order by priority asc, slug asc
+            """,
+            (rs, rowNum) -> {
+              String catalogRaw = rs.getString("model_catalog");
+              List<Map<String, Object>> catalog = jsons.readObjectList(catalogRaw);
+              if (!catalog.isEmpty()) {
+                Map<String, Object> first = catalog.get(0);
+                String model = stringValue(first.get("model"));
+                if (hasText(model)) {
+                  return new ProviderModel(
+                      rs.getString("id"),
+                      rs.getString("slug"),
+                      rs.getString("provider_type"),
+                      model,
+                      decimalValue(first.get("inputUsdPerMillion"), new BigDecimal("0.15")),
+                      decimalValue(first.get("outputUsdPerMillion"), new BigDecimal("0.60")));
+                }
+              }
+              return new ProviderModel(
+                  rs.getString("id"),
+                  rs.getString("slug"),
+                  rs.getString("provider_type"),
+                  "gpt-4o-mini",
+                  new BigDecimal("0.15"),
+                  new BigDecimal("0.60"));
+            });
+    if (models.isEmpty()) {
+      throw new IllegalStateException("No active provider found. Start the backend once to seed providers first.");
+    }
+    return models.stream()
+        .filter(
+            model ->
+                model.inputUsdPerMillion().add(model.outputUsdPerMillion()).compareTo(BigDecimal.ZERO)
+                    > 0)
+        .findFirst()
+        .orElse(models.get(0));
+  }
+
+  private SeedSummary buildSummary(SeedOptions options, ProviderModel providerModel) {
+    int usageTokens = 0;
+    BigDecimal amountUsd = BigDecimal.ZERO;
+    int cacheHits = 0;
+    for (int day = 0; day < options.days(); day++) {
+      for (int seq = 0; seq < options.requestsPerDay(); seq++) {
+        DemoRequest request = demoRequest(options, providerModel, day, seq);
+        if (request.cacheHit()) {
+          cacheHits++;
+          continue;
+        }
+        usageTokens += request.totalTokens();
+        amountUsd = amountUsd.add(request.amountUsd());
+      }
+    }
+    BigDecimal finalBalance =
+        options.initialTokens()
+            .add(options.includeFinance() ? options.rechargeTokens() : BigDecimal.ZERO)
+            .subtract(BigDecimal.valueOf(usageTokens));
+    return new SeedSummary(
+        options.days() * options.requestsPerDay(),
+        cacheHits,
+        usageTokens,
+        amountUsd.setScale(6, RoundingMode.HALF_UP),
+        finalBalance);
+  }
+
+  private void printPlan(
+      SeedOptions options, ProviderModel providerModel, SeedSummary summary, boolean userExists) {
+    System.out.println("Demo billing seed plan");
+    System.out.println("Mode: " + (options.dryRun() ? "dry-run" : "apply"));
+    System.out.println("Tenant slug: " + options.tenantSlug());
+    System.out.println("Tenant name: " + options.tenantName());
+    System.out.println("User email: " + options.userEmail() + (userExists ? " (existing)" : " (will create)"));
+    System.out.println("Batch key: " + options.batchKey());
+    System.out.println("Provider/model: " + providerModel.providerSlug() + " / " + providerModel.model());
+    System.out.println("Requests: " + summary.totalRequests() + " (" + summary.cacheHits() + " cache hits)");
+    System.out.println("Usage tokens: " + summary.usageTokens());
+    System.out.println("Billing USD: " + summary.amountUsd());
+    System.out.println("Final balance tokens: " + summary.finalBalanceTokens());
+  }
+
+  private String ensureUser(SeedOptions options, boolean userExists) {
+    List<String> existing =
+        jdbcTemplate.query(
+            "select id from users where email = :email limit 1",
+            Map.of("email", options.userEmail()),
+            (rs, rowNum) -> rs.getString("id"));
+    if (!existing.isEmpty()) {
+      if (options.resetUserPassword() && hasText(options.userPassword())) {
+        jdbcTemplate.update(
+            "update users set password_hash = :passwordHash, name = :name, updated_at = :now where id = :id",
+            new MapSqlParameterSource()
+                .addValue("id", existing.get(0))
+                .addValue("passwordHash", passwordEncoder.encode(options.userPassword()))
+                .addValue("name", options.userName())
+                .addValue("now", ts(Instant.now())));
+      }
+      return existing.get(0);
+    }
+    if (userExists) {
+      throw new IllegalStateException("User lookup changed during seed");
+    }
+    String userId = Ids.cuidLike("usr");
+    Instant now = Instant.now();
+    jdbcTemplate.update(
+        """
+        insert into users (id, email, password_hash, name, platform_role, email_verified_at, created_at, updated_at)
+        values (:id, :email, :passwordHash, :name, 'user', :now, :now, :now)
+        """,
+        new MapSqlParameterSource()
+            .addValue("id", userId)
+            .addValue("email", options.userEmail())
+            .addValue("passwordHash", passwordEncoder.encode(options.userPassword()))
+            .addValue("name", options.userName())
+            .addValue("now", ts(now)));
+    return userId;
+  }
+
+  private TenantRow ensureTenant(SeedOptions options, String userId) {
+    List<TenantRow> existing =
+        jdbcTemplate.query(
+            "select id, contract_code from tenants where slug = :slug limit 1",
+            Map.of("slug", options.tenantSlug()),
+            (rs, rowNum) -> new TenantRow(rs.getString("id"), rs.getString("contract_code")));
+    if (!existing.isEmpty()) {
+      TenantRow row = existing.get(0);
+      if (!DEMO_CONTRACT_CODE.equals(row.contractCode())
+          && !CONFIRM_VALUE.equals(optional("DEMO_ALLOW_EXISTING_TENANT", "NO"))) {
+        throw new IllegalStateException(
+            "Tenant slug already exists and is not marked as demo. Set DEMO_ALLOW_EXISTING_TENANT=YES only for a dedicated demo tenant.");
+      }
+      jdbcTemplate.update(
+          "update tenants set name = :name, billing_email = :email, contract_code = :contractCode, updated_at = :now where id = :id",
+          new MapSqlParameterSource()
+              .addValue("id", row.id())
+              .addValue("name", options.tenantName())
+              .addValue("email", options.userEmail())
+              .addValue("contractCode", DEMO_CONTRACT_CODE)
+              .addValue("now", ts(Instant.now())));
+      ensureTenantMember(userId, row.id());
+      return row;
+    }
+
+    String planId =
+        jdbcTemplate.query(
+                "select id from plans where code = 'enterprise' limit 1",
+                (rs, rowNum) -> rs.getString("id"))
+            .stream()
+            .findFirst()
+            .orElse(null);
+    String tenantId = Ids.cuidLike("tenant");
+    Instant now = Instant.now();
+    jdbcTemplate.update(
+        """
+        insert into tenants (
+          id, name, slug, status, plan_id, balance_tokens, trial_ends_at, billing_email,
+          contact_sales_email, monthly_budget_usd, spend_cap_enforced, contract_code, created_at, updated_at
+        ) values (
+          :id, :name, :slug, 'active', :planId, :balanceTokens, :trialEndsAt, :billingEmail,
+          'sales@taas.example', 5000.0000, true, :contractCode, :now, :now
+        )
+        """,
+        new MapSqlParameterSource()
+            .addValue("id", tenantId)
+            .addValue("name", options.tenantName())
+            .addValue("slug", options.tenantSlug())
+            .addValue("planId", planId)
+            .addValue("balanceTokens", options.initialTokens())
+            .addValue("trialEndsAt", ts(now.plus(365, ChronoUnit.DAYS)))
+            .addValue("billingEmail", options.userEmail())
+            .addValue("contractCode", DEMO_CONTRACT_CODE)
+            .addValue("now", ts(now)));
+    ensureTenantMember(userId, tenantId);
+    return new TenantRow(tenantId, DEMO_CONTRACT_CODE);
+  }
+
+  private void ensureTenantMember(String userId, String tenantId) {
+    jdbcTemplate.update(
+        """
+        insert into tenant_members (id, user_id, tenant_id, role)
+        values (:id, :userId, :tenantId, 'owner')
+        on conflict (user_id, tenant_id) do update set role = 'owner'
+        """,
+        new MapSqlParameterSource()
+            .addValue("id", Ids.cuidLike("tm"))
+            .addValue("userId", userId)
+            .addValue("tenantId", tenantId));
+  }
+
+  private void ensureTenantDefaults(String tenantId) {
+    Instant now = Instant.now();
+    jdbcTemplate.update(
+        """
+        insert into tenant_routing_strategies (
+          id, tenant_id, mode, primary_provider_type, fallback_provider_types, max_retries, timeout_ms, created_at, updated_at
+        ) values (
+          :id, :tenantId, 'balance', null, '["anthropic","google"]'::jsonb, 1, 30000, :now, :now
+        )
+        on conflict (tenant_id) do nothing
+        """,
+        new MapSqlParameterSource()
+            .addValue("id", Ids.cuidLike("route"))
+            .addValue("tenantId", tenantId)
+            .addValue("now", ts(now)));
+    jdbcTemplate.update(
+        """
+        insert into tenant_cache_settings (
+          id, tenant_id, enabled, mode, similarity_threshold, ttl_seconds, created_at, updated_at
+        ) values (
+          :id, :tenantId, true, 'semantic', 0.920, 86400, :now, :now
+        )
+        on conflict (tenant_id) do nothing
+        """,
+        new MapSqlParameterSource()
+            .addValue("id", Ids.cuidLike("cache"))
+            .addValue("tenantId", tenantId)
+            .addValue("now", ts(now)));
+  }
+
+  private String ensureAppKey(SeedOptions options, String tenantId, String userId, String model) {
+    List<String> existing =
+        jdbcTemplate.query(
+            """
+            select id
+            from app_keys
+            where tenant_id = :tenantId and name = '客户演示商用密钥'
+            limit 1
+            """,
+            Map.of("tenantId", tenantId),
+            (rs, rowNum) -> rs.getString("id"));
+    if (!existing.isEmpty()) {
+      jdbcTemplate.update(
+          """
+          update app_keys
+          set status = 'active',
+              environment = 'production',
+              scopes = cast(:scopes as jsonb),
+              allowed_models = cast(:allowedModels as jsonb),
+              owner_user_id = :ownerUserId
+          where id = :id
+          """,
+          new MapSqlParameterSource()
+              .addValue("id", existing.get(0))
+              .addValue("scopes", jsons.stringify(DEFAULT_APP_KEY_SCOPES))
+              .addValue("allowedModels", jsons.stringify(List.of(model)))
+              .addValue("ownerUserId", userId));
+      return null;
+    }
+    String token = cryptoUtils.generateAppKeyToken();
+    jdbcTemplate.update(
+        """
+        insert into app_keys (
+          id, tenant_id, name, description, token, token_hash, token_preview, status, environment,
+          scopes, qps_limit, daily_budget_usd, monthly_budget_usd, allowed_models, owner_user_id, created_at
+        ) values (
+          :id, :tenantId, '客户演示商用密钥', :description, null, :tokenHash, :tokenPreview, 'active', 'production',
+          cast(:scopes as jsonb), 20, 500.0000, 5000.0000, cast(:allowedModels as jsonb), :ownerUserId, :createdAt
+        )
+        """,
+        new MapSqlParameterSource()
+            .addValue("id", Ids.cuidLike("ak"))
+            .addValue("tenantId", tenantId)
+            .addValue("description", "演示商用消耗与账单造数专用 AppKey")
+            .addValue("tokenHash", cryptoUtils.hashAppKey(token))
+            .addValue("tokenPreview", cryptoUtils.buildAppKeyPreview(token))
+            .addValue("scopes", jsons.stringify(DEFAULT_APP_KEY_SCOPES))
+            .addValue("allowedModels", jsons.stringify(List.of(model)))
+            .addValue("ownerUserId", userId)
+            .addValue("createdAt", ts(Instant.now())));
+    return token;
+  }
+
+  private void cleanupPriorBatch(String tenantId, String batchKey) {
+    MapSqlParameterSource params =
+        new MapSqlParameterSource().addValue("tenantId", tenantId).addValue("batchLike", batchKey + ":%");
+    jdbcTemplate.update(
+        """
+        delete from billing_records
+        where tenant_id = :tenantId
+          and log_id in (
+            select id from api_request_logs
+            where tenant_id = :tenantId and idempotency_key like :batchLike
+          )
+        """,
+        params);
+    jdbcTemplate.update(
+        """
+        delete from usage_records
+        where tenant_id = :tenantId
+          and log_id in (
+            select id from api_request_logs
+            where tenant_id = :tenantId and idempotency_key like :batchLike
+          )
+        """,
+        params);
+    jdbcTemplate.update(
+        "delete from api_request_logs where tenant_id = :tenantId and idempotency_key like :batchLike",
+        params);
+    jdbcTemplate.update(
+        "delete from wallet_recharge_orders where tenant_id = :tenantId and order_no like 'DEMO-RCH-%'",
+        Map.of("tenantId", tenantId));
+    jdbcTemplate.update(
+        "delete from invoice_requests where tenant_id = :tenantId and request_no like 'DEMO-INV-%'",
+        Map.of("tenantId", tenantId));
+  }
+
+  private void insertUsageAndBilling(
+      SeedOptions options,
+      String tenantId,
+      String userId,
+      ProviderModel providerModel,
+      SeedSummary summary) {
+    String appKeyId =
+        jdbcTemplate.queryForObject(
+            """
+            select id from app_keys
+            where tenant_id = :tenantId and name = '客户演示商用密钥'
+            limit 1
+            """,
+            Map.of("tenantId", tenantId),
+            String.class);
+    List<DemoRequest> requests = new ArrayList<>();
+    for (int day = 0; day < options.days(); day++) {
+      for (int seq = 0; seq < options.requestsPerDay(); seq++) {
+        requests.add(demoRequest(options, providerModel, day, seq));
+      }
+    }
+    for (DemoRequest request : requests) {
+      insertRequest(options, tenantId, userId, appKeyId, providerModel, request);
+    }
+    if (summary.totalRequests() > 0) {
+      jdbcTemplate.update(
+          "update app_keys set last_used_at = :now, last_used_ip = '203.0.113.24' where id = :id",
+          Map.of("now", ts(Instant.now()), "id", appKeyId));
+    }
+  }
+
+  private void insertRequest(
+      SeedOptions options,
+      String tenantId,
+      String userId,
+      String appKeyId,
+      ProviderModel providerModel,
+      DemoRequest request) {
+    String logId = Ids.cuidLike("log");
+    MapSqlParameterSource logParams =
+        new MapSqlParameterSource()
+            .addValue("id", logId)
+            .addValue("tenantId", tenantId)
+            .addValue("userId", userId)
+            .addValue("appKeyId", appKeyId)
+            .addValue("providerId", providerModel.providerId())
+            .addValue("requestId", "req_" + Ids.shortHex(8))
+            .addValue("traceId", "trace_" + Ids.shortHex(8))
+            .addValue("model", providerModel.model())
+            .addValue("promptTokens", request.cacheHit() ? 0 : request.promptTokens())
+            .addValue("completionTokens", request.cacheHit() ? 0 : request.completionTokens())
+            .addValue("totalTokens", request.cacheHit() ? 0 : request.totalTokens())
+            .addValue("latencyMs", request.latencyMs())
+            .addValue("cacheHit", request.cacheHit())
+            .addValue("routingPrimary", providerModel.providerType())
+            .addValue("routingActual", providerModel.providerSlug())
+            .addValue("routingReason", request.cacheHit() ? "semantic_cache_hit" : null)
+            .addValue("retryCount", request.retryCount())
+            .addValue("ip", "203.0.113.24")
+            .addValue("statusCode", 200)
+            .addValue("idempotencyKey", request.idempotencyKey())
+            .addValue("savedTokensEstimate", request.cacheHit() ? request.totalTokens() : null)
+            .addValue("savedPromptTokens", request.cacheHit() ? request.promptTokens() : null)
+            .addValue("savedCompletionTokens", request.cacheHit() ? request.completionTokens() : null)
+            .addValue("createdAt", ts(request.createdAt()));
+    jdbcTemplate.update(
+        """
+        insert into api_request_logs (
+          id, tenant_id, user_id, app_key_id, provider_id, request_id, trace_id, model,
+          prompt_tokens, completion_tokens, total_tokens, latency_ms, cache_hit,
+          routing_primary, routing_actual, routing_reason, retry_count, request_source_ip,
+          status_code, idempotency_key, saved_tokens_estimate, saved_prompt_tokens, saved_completion_tokens, created_at
+        ) values (
+          :id, :tenantId, :userId, :appKeyId, :providerId, :requestId, :traceId, :model,
+          :promptTokens, :completionTokens, :totalTokens, :latencyMs, :cacheHit,
+          :routingPrimary, :routingActual, :routingReason, :retryCount, :ip,
+          :statusCode, :idempotencyKey, :savedTokensEstimate, :savedPromptTokens, :savedCompletionTokens, :createdAt
+        )
+        """,
+        logParams);
+    jdbcTemplate.update(
+        "insert into usage_records (id, log_id, tenant_id, period, total_tokens, created_at) values (:id, :logId, :tenantId, :period, :totalTokens, :createdAt)",
+        new MapSqlParameterSource()
+            .addValue("id", Ids.cuidLike("usage"))
+            .addValue("logId", logId)
+            .addValue("tenantId", tenantId)
+            .addValue("period", MoneyUtils.dayPeriod(request.createdAt()))
+            .addValue("totalTokens", request.cacheHit() ? 0 : request.totalTokens())
+            .addValue("createdAt", ts(request.createdAt())));
+    jdbcTemplate.update(
+        """
+        insert into billing_records (
+          id, log_id, tenant_id, amount_usd, subtotal_usd, input_unit_price_usd, output_unit_price_usd,
+          quantity_prompt_tokens, quantity_completion_tokens, tax_rate_pct, tax_amount_usd,
+          reconciliation_status, invoice_status, currency, type, description, created_at
+        ) values (
+          :id, :logId, :tenantId, :amountUsd, :subtotalUsd, :inputPrice, :outputPrice,
+          :promptTokens, :completionTokens, 0, 0, 'settled', :invoiceStatus, 'USD', :type,
+          :description, :createdAt
+        )
+        """,
+        new MapSqlParameterSource()
+            .addValue("id", Ids.cuidLike("bill"))
+            .addValue("logId", logId)
+            .addValue("tenantId", tenantId)
+            .addValue("amountUsd", request.cacheHit() ? BigDecimal.ZERO : request.amountUsd())
+            .addValue("subtotalUsd", request.cacheHit() ? BigDecimal.ZERO : request.amountUsd())
+            .addValue("inputPrice", providerModel.inputUsdPerMillion())
+            .addValue("outputPrice", providerModel.outputUsdPerMillion())
+            .addValue("promptTokens", request.cacheHit() ? 0 : request.promptTokens())
+            .addValue("completionTokens", request.cacheHit() ? 0 : request.completionTokens())
+            .addValue("invoiceStatus", request.createdAt().isBefore(Instant.now().minus(14, ChronoUnit.DAYS)) ? "issued" : "not_requested")
+            .addValue("type", request.cacheHit() ? "cache_hit" : "usage")
+            .addValue(
+                "description",
+                request.cacheHit()
+                    ? "演示账单造数：缓存命中免计费"
+                    : "演示账单造数：LLM usage - " + providerModel.model() + " via " + providerModel.providerSlug())
+            .addValue("createdAt", ts(request.createdAt())));
+  }
+
+  private void insertFinanceRows(SeedOptions options, String tenantId) {
+    Instant now = Instant.now();
+    jdbcTemplate.update(
+        """
+        insert into wallet_recharge_orders (
+          id, tenant_id, order_no, amount_cny, currency, pay_channel, status, credited_tokens,
+          payer_name, need_invoice, remark, paid_at, created_at, updated_at
+        ) values (
+          :id, :tenantId, :orderNo, :amountCny, 'CNY', 'bank_transfer', 'success', :creditedTokens,
+          :payerName, true, :remark, :paidAt, :createdAt, :updatedAt
+        )
+        """,
+        new MapSqlParameterSource()
+            .addValue("id", Ids.cuidLike("rch"))
+            .addValue("tenantId", tenantId)
+            .addValue("orderNo", "DEMO-RCH-" + options.batchKey().replace(':', '-').toUpperCase(Locale.ROOT))
+            .addValue("amountCny", DEFAULT_RECHARGE_CNY)
+            .addValue("creditedTokens", options.rechargeTokens())
+            .addValue("payerName", options.userName())
+            .addValue("remark", "演示商用充值订单")
+            .addValue("paidAt", ts(now.minus(20, ChronoUnit.DAYS)))
+            .addValue("createdAt", ts(now.minus(21, ChronoUnit.DAYS)))
+            .addValue("updatedAt", ts(now.minus(20, ChronoUnit.DAYS))));
+    jdbcTemplate.update(
+        """
+        insert into invoice_requests (
+          id, tenant_id, request_no, title_type, invoice_type, buyer_name, buyer_tax_no,
+          buyer_address_phone, buyer_bank_account, amount_cny, email, status, invoice_no,
+          invoice_code, pdf_url, issued_at, created_at, updated_at
+        ) values (
+          :id, :tenantId, :requestNo, 'enterprise', 'vat_electronic', :buyerName, '91110000DEMOSEED01',
+          '北京市朝阳区演示路 88 号 010-88888888', '招商银行北京分行 1100000000000000',
+          :amountCny, :email, 'issued', :invoiceNo, :invoiceCode, null, :issuedAt, :createdAt, :updatedAt
+        )
+        """,
+        new MapSqlParameterSource()
+            .addValue("id", Ids.cuidLike("inv"))
+            .addValue("tenantId", tenantId)
+            .addValue("requestNo", "DEMO-INV-" + options.batchKey().replace(':', '-').toUpperCase(Locale.ROOT))
+            .addValue("buyerName", options.tenantName() + "有限公司")
+            .addValue("amountCny", DEFAULT_RECHARGE_CNY)
+            .addValue("email", options.userEmail())
+            .addValue("invoiceNo", "DEMO" + Ids.shortHex(4).toUpperCase(Locale.ROOT))
+            .addValue("invoiceCode", "04400" + Ids.shortHex(3).toUpperCase(Locale.ROOT))
+            .addValue("issuedAt", ts(now.minus(18, ChronoUnit.DAYS)))
+            .addValue("createdAt", ts(now.minus(19, ChronoUnit.DAYS)))
+            .addValue("updatedAt", ts(now.minus(18, ChronoUnit.DAYS))));
+  }
+
+  private void updateBalances(String tenantId, SeedSummary summary) {
+    jdbcTemplate.update(
+        "update tenants set balance_tokens = :balanceTokens, updated_at = :now where id = :tenantId",
+        new MapSqlParameterSource()
+            .addValue("balanceTokens", summary.finalBalanceTokens())
+            .addValue("now", ts(Instant.now()))
+            .addValue("tenantId", tenantId));
+  }
+
+  private DemoRequest demoRequest(SeedOptions options, ProviderModel providerModel, int day, int seq) {
+    int promptTokens = 1800 + (day % 10) * 420 + seq * 160;
+    int completionTokens = 900 + (day % 7) * 260 + seq * 120;
+    int totalTokens = promptTokens + completionTokens;
+    boolean cacheHit = seq == options.requestsPerDay() - 1 && day % 3 == 0;
+    Instant createdAt =
+        LocalDate.now(ZoneOffset.UTC)
+            .minusDays(options.days() - 1L - day)
+            .atTime(9 + (seq % 9), (seq * 7) % 60)
+            .toInstant(ZoneOffset.UTC);
+    BigDecimal amountUsd =
+        BigDecimal.valueOf(promptTokens)
+            .divide(BigDecimal.valueOf(1_000_000), 6, RoundingMode.HALF_UP)
+            .multiply(providerModel.inputUsdPerMillion())
+            .add(
+                BigDecimal.valueOf(completionTokens)
+                    .divide(BigDecimal.valueOf(1_000_000), 6, RoundingMode.HALF_UP)
+                    .multiply(providerModel.outputUsdPerMillion()))
+            .setScale(6, RoundingMode.HALF_UP);
+    return new DemoRequest(
+        promptTokens,
+        completionTokens,
+        totalTokens,
+        280 + (seq * 37) + (day % 5) * 24,
+        cacheHit,
+        seq % 11 == 0 ? 1 : 0,
+        amountUsd,
+        createdAt,
+        options.batchKey() + ":" + MoneyUtils.dayPeriod(createdAt) + ":" + seq);
+  }
+
+  private boolean exists(String sql, Map<String, ?> params) {
+    Integer count = jdbcTemplate.queryForObject(sql, params, Integer.class);
+    return count != null && count > 0;
+  }
+
+  private String required(String key) {
+    String value = optional(key, "");
+    if (!hasText(value)) {
+      throw new IllegalStateException(key + " is required");
+    }
+    return value.trim();
+  }
+
+  private String optional(String key, String defaultValue) {
+    String value = environment.getProperty(key);
+    return hasText(value) ? value.trim() : defaultValue;
+  }
+
+  private int intOption(String key, int defaultValue, int min, int max) {
+    int value = Integer.parseInt(optional(key, String.valueOf(defaultValue)));
+    if (value < min || value > max) {
+      throw new IllegalStateException(key + " must be between " + min + " and " + max);
+    }
+    return value;
+  }
+
+  private BigDecimal decimalOption(String key, BigDecimal defaultValue) {
+    BigDecimal value = new BigDecimal(optional(key, defaultValue.toPlainString()));
+    if (value.compareTo(BigDecimal.ZERO) < 0) {
+      throw new IllegalStateException(key + " must be >= 0");
+    }
+    return value;
+  }
+
+  private static String normalizeSlug(String value) {
+    String slug = value.trim().toLowerCase(Locale.ROOT);
+    if (!slug.matches("[a-z0-9][a-z0-9-]{1,62}[a-z0-9]")) {
+      throw new IllegalStateException("DEMO_TENANT_SLUG must be 3-64 chars of lowercase letters, digits, or hyphen");
+    }
+    return slug;
+  }
+
+  private static String normalizeBatchId(String value) {
+    String batchId = value.trim().toLowerCase(Locale.ROOT);
+    if (!batchId.matches("[a-z0-9][a-z0-9-]{0,40}")) {
+      throw new IllegalStateException("DEMO_BATCH_ID must use lowercase letters, digits, or hyphen");
+    }
+    return batchId;
+  }
+
+  private static boolean hasText(String value) {
+    return value != null && !value.isBlank();
+  }
+
+  private static String stringValue(Object value) {
+    return value == null ? "" : String.valueOf(value).trim();
+  }
+
+  private static BigDecimal decimalValue(Object value, BigDecimal fallback) {
+    if (value == null || String.valueOf(value).isBlank()) {
+      return fallback;
+    }
+    return new BigDecimal(String.valueOf(value));
+  }
+
+  private static Timestamp ts(Instant instant) {
+    return Timestamp.from(instant);
+  }
+
+  private record SeedOptions(
+      String tenantSlug,
+      String tenantName,
+      String userEmail,
+      String userName,
+      String userPassword,
+      boolean resetUserPassword,
+      String batchKey,
+      int days,
+      int requestsPerDay,
+      BigDecimal initialTokens,
+      BigDecimal rechargeTokens,
+      boolean dryRun,
+      boolean includeFinance) {}
+
+  private record ProviderModel(
+      String providerId,
+      String providerSlug,
+      String providerType,
+      String model,
+      BigDecimal inputUsdPerMillion,
+      BigDecimal outputUsdPerMillion) {}
+
+  private record SeedSummary(
+      int totalRequests,
+      int cacheHits,
+      int usageTokens,
+      BigDecimal amountUsd,
+      BigDecimal finalBalanceTokens) {}
+
+  private record DemoRequest(
+      int promptTokens,
+      int completionTokens,
+      int totalTokens,
+      int latencyMs,
+      boolean cacheHit,
+      int retryCount,
+      BigDecimal amountUsd,
+      Instant createdAt,
+      String idempotencyKey) {}
+
+  private record TenantRow(String id, String contractCode) {}
+}
