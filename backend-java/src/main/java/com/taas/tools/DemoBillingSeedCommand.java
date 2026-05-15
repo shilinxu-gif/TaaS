@@ -61,7 +61,7 @@ class DemoBillingSeedRunner implements CommandLineRunner {
   private static final BigDecimal DEFAULT_INITIAL_TOKENS = new BigDecimal("300000000");
   private static final BigDecimal DEFAULT_RECHARGE_TOKENS = new BigDecimal("120000000");
   private static final BigDecimal DEFAULT_RECHARGE_CNY = new BigDecimal("6800.00");
-  private static final BigDecimal TODAY_TARGET_SPEND_USD = new BigDecimal("900.00");
+  private static final BigDecimal TODAY_TARGET_SPEND_USD = new BigDecimal("917.63");
   private static final List<String> DEFAULT_APP_KEY_SCOPES =
       List.of("chat:complete", "usage:read", "billing:read", "admin:ops");
   private static final List<ModelProfile> MODEL_PROFILES =

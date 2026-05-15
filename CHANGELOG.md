@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### 2026-05-15 20:39 演示造数：今日 USD 消耗改为非整数
+
+- 改动内容：将 AIoT 演示数据的今日非缓存消费目标从整数 `900.00 USD` 调整为 `917.63 USD`，避免控制台展示的消耗金额为整数；文档同步更新今日金额说明。
+- 影响范围：`backend-java/src/main/java/com/taas/tools/DemoBillingSeedCommand.java`、`docs/DEMO_BILLING_SEED.md`、`CHANGELOG.md`。
+- 验证情况：已执行 `mvn -f backend-java/pom.xml -DskipTests compile`、`mvn -f backend-java/pom.xml test` 通过；`ReadLints` 检查相关 Java/Markdown 文件无新增诊断。
+- 运维动作：发版后执行 `scripts/seed-demo-billing.sh --dry-run` 确认金额，再执行 `scripts/seed-demo-billing.sh --apply` 重建演示数据。
+- 线上数据影响：仅在显式执行 `--apply` 时重建 AIoT 演示租户本批次请求日志、用量、账单和缓存命中记录；不影响其他租户。
+- 风险控制：仅调整目标金额常量和文档说明，仍保留租户隔离和批次清理。
+
 ### 2026-05-15 20:33 演示造数：今日消费锚定 900 USD
 
 - 改动内容：将 AIoT 演示数据的今日非缓存消费金额锚定在约 `900 USD`，Token 数按各模型单价反推；模型分布从顺序轮换改为不规律模式，仍覆盖 `deepseekv4`、`gpt-5.4`、`claude-opus-4-7`、`GLM-5`；今日缓存命中继续写入 saved tokens 以展示缓存节省金额；文档补充每日执行 `--apply` 会重建包含当天日期的消耗记录。
