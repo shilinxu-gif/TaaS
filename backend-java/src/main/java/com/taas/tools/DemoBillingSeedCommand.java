@@ -61,6 +61,7 @@ class DemoBillingSeedRunner implements CommandLineRunner {
   private static final BigDecimal DEFAULT_INITIAL_TOKENS = new BigDecimal("300000000");
   private static final BigDecimal DEFAULT_RECHARGE_TOKENS = new BigDecimal("120000000");
   private static final BigDecimal DEFAULT_RECHARGE_CNY = new BigDecimal("6800.00");
+  private static final BigDecimal TODAY_TARGET_SPEND_USD = new BigDecimal("900.00");
   private static final List<String> DEFAULT_APP_KEY_SCOPES =
       List.of("chat:complete", "usage:read", "billing:read", "admin:ops");
   private static final List<ModelProfile> MODEL_PROFILES =
@@ -660,22 +661,36 @@ class DemoBillingSeedRunner implements CommandLineRunner {
   }
 
   private DemoRequest demoRequest(SeedOptions options, int day, int seq) {
-    ModelProfile modelProfile = modelProfile(day, seq);
+    boolean today = day == options.days() - 1;
+    ModelProfile modelProfile = modelProfile(options, day, seq);
     double dayFactor = dailyUsageFactor(options, day);
-    int promptTokens =
-        (int)
-            Math.round(
-                (18000 + (day % 10) * 3200 + seq * 1800 + burstTokens(day, seq))
-                    * dayFactor);
-    int completionTokens =
-        (int)
-            Math.round(
-                (9000 + (day % 7) * 2400 + seq * 1200 + burstTokens(day + 3, seq) / 2.0)
-                    * dayFactor);
-    int totalTokens = promptTokens + completionTokens;
     boolean cacheHit =
         seq >= Math.max(1, options.requestsPerDay() - 2)
-            && (day == options.days() - 1 || day % 4 == 0 || dayFactor < 1.8);
+            && (today || day % 4 == 0 || dayFactor < 1.8);
+    int promptTokens;
+    int completionTokens;
+    if (today && cacheHit) {
+      int savedTotal = 55_000_000 + Math.max(0, seq - (options.requestsPerDay() - 2)) * 20_000_000;
+      promptTokens = (int) Math.round(savedTotal * 0.62);
+      completionTokens = savedTotal - promptTokens;
+    } else if (today) {
+      BigDecimal desiredUsd = TODAY_TARGET_SPEND_USD.multiply(todaySpendShare(options, seq));
+      TokenSplit split = tokensForSpend(desiredUsd, modelProfile);
+      promptTokens = split.promptTokens();
+      completionTokens = split.completionTokens();
+    } else {
+      promptTokens =
+          (int)
+              Math.round(
+                  (18000 + (day % 10) * 3200 + seq * 1800 + burstTokens(day, seq))
+                      * dayFactor);
+      completionTokens =
+          (int)
+              Math.round(
+                  (9000 + (day % 7) * 2400 + seq * 1200 + burstTokens(day + 3, seq) / 2.0)
+                      * dayFactor);
+    }
+    int totalTokens = promptTokens + completionTokens;
     Instant createdAt =
         LocalDate.now(ZoneOffset.UTC)
             .minusDays(options.days() - 1L - day)
@@ -705,8 +720,14 @@ class DemoBillingSeedRunner implements CommandLineRunner {
         options.batchKey() + ":" + MoneyUtils.dayPeriod(createdAt) + ":" + seq);
   }
 
-  private ModelProfile modelProfile(int day, int seq) {
-    return MODEL_PROFILES.get(Math.floorMod(day + seq, MODEL_PROFILES.size()));
+  private ModelProfile modelProfile(SeedOptions options, int day, int seq) {
+    if (day == options.days() - 1) {
+      int[] todayPattern = {1, 3, 2, 1, 0, 2, 3, 1, 2, 0, 3, 1};
+      return MODEL_PROFILES.get(todayPattern[Math.floorMod(seq, todayPattern.length)]);
+    }
+    int[] pattern = {0, 2, 1, 3, 1, 0, 3, 2, 2, 1, 3, 0, 1, 3, 0, 2};
+    int index = Math.floorMod(day * 7 + seq * 5 + (day % 3) * 2 + (seq % 2), pattern.length);
+    return MODEL_PROFILES.get(pattern[index]);
   }
 
   private List<String> modelNames() {
@@ -729,6 +750,43 @@ class DemoBillingSeedRunner implements CommandLineRunner {
       return factor * 0.55;
     }
     return factor;
+  }
+
+  private BigDecimal todaySpendShare(SeedOptions options, int seq) {
+    double[] weights = {0.16, 0.10, 0.31, 0.18, 0.03, 0.22, 0.12, 0.08, 0.20, 0.14};
+    double current = weights[Math.floorMod(seq, weights.length)];
+    double total = 0;
+    for (int i = 0; i < options.requestsPerDay(); i++) {
+      if (i >= Math.max(1, options.requestsPerDay() - 2)) {
+        continue;
+      }
+      total += weights[Math.floorMod(i, weights.length)];
+    }
+    if (total <= 0) {
+      return BigDecimal.ZERO;
+    }
+    return BigDecimal.valueOf(current / total).setScale(8, RoundingMode.HALF_UP);
+  }
+
+  private TokenSplit tokensForSpend(BigDecimal amountUsd, ModelProfile modelProfile) {
+    BigDecimal promptRatio = new BigDecimal("0.58");
+    BigDecimal completionRatio = BigDecimal.ONE.subtract(promptRatio);
+    BigDecimal blendedPrice =
+        modelProfile
+            .inputUsdPerMillion()
+            .multiply(promptRatio)
+            .add(modelProfile.outputUsdPerMillion().multiply(completionRatio));
+    if (blendedPrice.compareTo(BigDecimal.ZERO) <= 0) {
+      return new TokenSplit(0, 0);
+    }
+    long totalTokens =
+        amountUsd
+            .multiply(BigDecimal.valueOf(1_000_000))
+            .divide(blendedPrice, 0, RoundingMode.HALF_UP)
+            .longValue();
+    int promptTokens = Math.toIntExact(Math.round(totalTokens * promptRatio.doubleValue()));
+    int completionTokens = Math.toIntExact(totalTokens - promptTokens);
+    return new TokenSplit(promptTokens, completionTokens);
   }
 
   private int burstTokens(int day, int seq) {
@@ -835,6 +893,8 @@ class DemoBillingSeedRunner implements CommandLineRunner {
 
   private record ModelProfile(
       String model, BigDecimal inputUsdPerMillion, BigDecimal outputUsdPerMillion) {}
+
+  private record TokenSplit(int promptTokens, int completionTokens) {}
 
   private record SeedSummary(
       int totalRequests,

@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### 2026-05-15 20:33 演示造数：今日消费锚定 900 USD
+
+- 改动内容：将 AIoT 演示数据的今日非缓存消费金额锚定在约 `900 USD`，Token 数按各模型单价反推；模型分布从顺序轮换改为不规律模式，仍覆盖 `deepseekv4`、`gpt-5.4`、`claude-opus-4-7`、`GLM-5`；今日缓存命中继续写入 saved tokens 以展示缓存节省金额；文档补充每日执行 `--apply` 会重建包含当天日期的消耗记录。
+- 影响范围：`backend-java/src/main/java/com/taas/tools/DemoBillingSeedCommand.java`、`docs/DEMO_BILLING_SEED.md`、`CHANGELOG.md`。
+- 验证情况：已执行 `mvn -f backend-java/pom.xml -DskipTests compile`、`mvn -f backend-java/pom.xml test` 通过；`ReadLints` 检查相关 Java/Markdown 文件无新增诊断。
+- 运维动作：发版后在服务器执行 `scripts/seed-demo-billing.sh --dry-run` 预览，确认今日金额约 900 USD 后执行 `scripts/seed-demo-billing.sh --apply` 重建演示数据；后续每日演示前可重复执行 `--apply` 刷新当天记录。
+- 线上数据影响：仅在显式执行 `--apply` 时重建 AIoT 演示租户本批次请求日志、用量、账单、缓存命中记录，并更新该租户余额；不影响其他租户。
+- 风险控制：仍使用 AIoT 专属租户与批次标记清理，不随服务启动自动写库。
+
 ### 2026-05-15 20:22 演示造数：提升余额与模型消耗覆盖
 
 - 改动内容：将 AIoT 演示租户默认初始余额提升到 `300000000` tokens、充值到账提升到 `120000000` tokens；将今日非缓存 Token 消耗提升到千万级，并在今日生成缓存命中 saved tokens 以展示缓存节省金额；模型消耗记录轮换覆盖 `deepseekv4`、`gpt-5.4`、`claude-opus-4-7`、`GLM-5`。
