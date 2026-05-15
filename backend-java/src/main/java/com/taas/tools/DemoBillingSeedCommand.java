@@ -54,7 +54,7 @@ class DemoBillingSeedRunner implements CommandLineRunner {
   private static final String DEFAULT_TENANT_SLUG = "aiot";
   private static final String DEFAULT_TENANT_NAME = "AIoT";
   private static final String DEFAULT_USER_EMAIL = "aiot@redtea.com";
-  private static final String DEFAULT_USER_NAME = "AIoT 演示账号";
+  private static final String DEFAULT_USER_NAME = "AIoT 管理员";
   private static final String DEFAULT_USER_PASSWORD = "admin123";
   private static final int DEFAULT_DAYS = 30;
   private static final int DEFAULT_REQUESTS_PER_DAY = 8;
@@ -392,7 +392,7 @@ class DemoBillingSeedRunner implements CommandLineRunner {
             """
             select id
             from app_keys
-            where tenant_id = :tenantId and name = '客户演示商用密钥'
+            where tenant_id = :tenantId and name = 'AIoT 生产调用密钥'
             limit 1
             """,
             Map.of("tenantId", tenantId),
@@ -422,14 +422,14 @@ class DemoBillingSeedRunner implements CommandLineRunner {
           id, tenant_id, name, description, token, token_hash, token_preview, status, environment,
           scopes, qps_limit, daily_budget_usd, monthly_budget_usd, allowed_models, owner_user_id, created_at
         ) values (
-          :id, :tenantId, '客户演示商用密钥', :description, null, :tokenHash, :tokenPreview, 'active', 'production',
+          :id, :tenantId, 'AIoT 生产调用密钥', :description, null, :tokenHash, :tokenPreview, 'active', 'production',
           cast(:scopes as jsonb), 20, 500.0000, 5000.0000, cast(:allowedModels as jsonb), :ownerUserId, :createdAt
         )
         """,
         new MapSqlParameterSource()
             .addValue("id", Ids.cuidLike("ak"))
             .addValue("tenantId", tenantId)
-            .addValue("description", "演示商用消耗与账单造数专用 AppKey")
+            .addValue("description", "AIoT 商用系统生产调用")
             .addValue("tokenHash", cryptoUtils.hashAppKey(token))
             .addValue("tokenPreview", cryptoUtils.buildAppKeyPreview(token))
             .addValue("scopes", jsons.stringify(DEFAULT_APP_KEY_SCOPES))
@@ -466,10 +466,10 @@ class DemoBillingSeedRunner implements CommandLineRunner {
         "delete from api_request_logs where tenant_id = :tenantId and idempotency_key like :batchLike",
         params);
     jdbcTemplate.update(
-        "delete from wallet_recharge_orders where tenant_id = :tenantId and order_no like 'DEMO-RCH-%'",
+        "delete from wallet_recharge_orders where tenant_id = :tenantId and order_no like 'RCH-AIOT-%'",
         Map.of("tenantId", tenantId));
     jdbcTemplate.update(
-        "delete from invoice_requests where tenant_id = :tenantId and request_no like 'DEMO-INV-%'",
+        "delete from invoice_requests where tenant_id = :tenantId and request_no like 'INV-AIOT-%'",
         Map.of("tenantId", tenantId));
   }
 
@@ -483,7 +483,7 @@ class DemoBillingSeedRunner implements CommandLineRunner {
         jdbcTemplate.queryForObject(
             """
             select id from app_keys
-            where tenant_id = :tenantId and name = '客户演示商用密钥'
+            where tenant_id = :tenantId and name = 'AIoT 生产调用密钥'
             limit 1
             """,
             Map.of("tenantId", tenantId),
@@ -589,8 +589,8 @@ class DemoBillingSeedRunner implements CommandLineRunner {
             .addValue(
                 "description",
                 request.cacheHit()
-                    ? "演示账单造数：缓存命中免计费"
-                    : "演示账单造数：LLM usage - " + providerModel.model() + " via " + providerModel.providerSlug())
+                    ? "智能设备诊断问答缓存命中"
+                    : "智能设备诊断问答 - " + providerModel.model() + " via " + providerModel.providerSlug())
             .addValue("createdAt", ts(request.createdAt())));
   }
 
@@ -609,11 +609,11 @@ class DemoBillingSeedRunner implements CommandLineRunner {
         new MapSqlParameterSource()
             .addValue("id", Ids.cuidLike("rch"))
             .addValue("tenantId", tenantId)
-            .addValue("orderNo", "DEMO-RCH-" + options.batchKey().replace(':', '-').toUpperCase(Locale.ROOT))
+            .addValue("orderNo", "RCH-AIOT-" + LocalDate.now(ZoneOffset.UTC).format(java.time.format.DateTimeFormatter.BASIC_ISO_DATE))
             .addValue("amountCny", DEFAULT_RECHARGE_CNY)
             .addValue("creditedTokens", options.rechargeTokens())
             .addValue("payerName", options.userName())
-            .addValue("remark", "演示商用充值订单")
+            .addValue("remark", "AIoT 设备智能运维服务预充值")
             .addValue("paidAt", ts(now.minus(20, ChronoUnit.DAYS)))
             .addValue("createdAt", ts(now.minus(21, ChronoUnit.DAYS)))
             .addValue("updatedAt", ts(now.minus(20, ChronoUnit.DAYS))));
@@ -624,19 +624,19 @@ class DemoBillingSeedRunner implements CommandLineRunner {
           buyer_address_phone, buyer_bank_account, amount_cny, email, status, invoice_no,
           invoice_code, pdf_url, issued_at, created_at, updated_at
         ) values (
-          :id, :tenantId, :requestNo, 'enterprise', 'vat_electronic', :buyerName, '91110000DEMOSEED01',
-          '北京市朝阳区演示路 88 号 010-88888888', '招商银行北京分行 1100000000000000',
+          :id, :tenantId, :requestNo, 'enterprise', 'vat_electronic', :buyerName, '91110000AIOT202601',
+          '北京市朝阳区望京东路 88 号 010-88888888', '招商银行北京分行 1100000000000000',
           :amountCny, :email, 'issued', :invoiceNo, :invoiceCode, null, :issuedAt, :createdAt, :updatedAt
         )
         """,
         new MapSqlParameterSource()
             .addValue("id", Ids.cuidLike("inv"))
             .addValue("tenantId", tenantId)
-            .addValue("requestNo", "DEMO-INV-" + options.batchKey().replace(':', '-').toUpperCase(Locale.ROOT))
+            .addValue("requestNo", "INV-AIOT-" + LocalDate.now(ZoneOffset.UTC).format(java.time.format.DateTimeFormatter.BASIC_ISO_DATE))
             .addValue("buyerName", options.tenantName() + "有限公司")
             .addValue("amountCny", DEFAULT_RECHARGE_CNY)
             .addValue("email", options.userEmail())
-            .addValue("invoiceNo", "DEMO" + Ids.shortHex(4).toUpperCase(Locale.ROOT))
+            .addValue("invoiceNo", "AIOT" + Ids.shortHex(4).toUpperCase(Locale.ROOT))
             .addValue("invoiceCode", "04400" + Ids.shortHex(3).toUpperCase(Locale.ROOT))
             .addValue("issuedAt", ts(now.minus(18, ChronoUnit.DAYS)))
             .addValue("createdAt", ts(now.minus(19, ChronoUnit.DAYS)))
@@ -653,10 +653,18 @@ class DemoBillingSeedRunner implements CommandLineRunner {
   }
 
   private DemoRequest demoRequest(SeedOptions options, ProviderModel providerModel, int day, int seq) {
-    int promptTokens = 1800 + (day % 10) * 420 + seq * 160;
-    int completionTokens = 900 + (day % 7) * 260 + seq * 120;
+    double dayFactor = dailyUsageFactor(day);
+    int promptTokens =
+        (int)
+            Math.round(
+                (1600 + (day % 10) * 430 + seq * 210 + burstTokens(day, seq)) * dayFactor);
+    int completionTokens =
+        (int)
+            Math.round(
+                (760 + (day % 7) * 280 + seq * 150 + burstTokens(day + 3, seq) / 2.0)
+                    * dayFactor);
     int totalTokens = promptTokens + completionTokens;
-    boolean cacheHit = seq == options.requestsPerDay() - 1 && day % 3 == 0;
+    boolean cacheHit = seq == options.requestsPerDay() - 1 && day % 4 == 0 && dayFactor < 1.8;
     Instant createdAt =
         LocalDate.now(ZoneOffset.UTC)
             .minusDays(options.days() - 1L - day)
@@ -681,6 +689,31 @@ class DemoBillingSeedRunner implements CommandLineRunner {
         amountUsd,
         createdAt,
         options.batchKey() + ":" + MoneyUtils.dayPeriod(createdAt) + ":" + seq);
+  }
+
+  private double dailyUsageFactor(int day) {
+    double[] factors = {
+      0.35, 1.15, 2.8, 0.75, 4.6, 1.4, 0.55, 2.2, 6.0, 0.9,
+      1.75, 3.8, 0.45, 2.6, 5.2
+    };
+    double factor = factors[day % factors.length];
+    if (day % 11 == 0) {
+      return factor * 1.65;
+    }
+    if (day % 6 == 0) {
+      return factor * 0.55;
+    }
+    return factor;
+  }
+
+  private int burstTokens(int day, int seq) {
+    if (day % 9 == 0 && seq >= 2 && seq <= 5) {
+      return 6400 + seq * 900;
+    }
+    if (day % 5 == 2 && seq == 1) {
+      return 3600;
+    }
+    return 0;
   }
 
   private boolean exists(String sql, Map<String, ?> params) {

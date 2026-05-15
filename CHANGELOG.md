@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### 2026-05-15 19:15 演示造数：隐藏界面 DEMO 字样并增强用量波动
+
+- 改动内容：调整演示账单造数字段，控制台可见的 AppKey 名称/说明、账单说明、充值订单号、发票申请号、充值备注、税号与发票号不再出现 `DEMO` 或“演示”字样，改为 AIoT 商用系统、智能设备诊断问答、预充值等正式业务语义；每日 token 生成逻辑增加日级倍率和突发调用，让近 30 天用量呈明显峰谷波动。
+- 影响范围：`backend-java/src/main/java/com/taas/tools/DemoBillingSeedCommand.java`、`docs/DEMO_BILLING_SEED.md`、`CHANGELOG.md`。
+- 验证情况：已执行 `mvn -f backend-java/pom.xml -DskipTests compile`、`mvn -f backend-java/pom.xml test` 通过；`ReadLints` 检查相关 Java/Markdown 文件无新增诊断。
+- 运维动作：发版后重新执行 `scripts/seed-demo-billing.sh --dry-run` 预览，确认无误后执行 `scripts/seed-demo-billing.sh --apply` 重建 AIoT 演示数据。
+- 线上数据影响：仅在显式执行 `--apply` 后影响 AIoT 演示租户本脚本批次生成的数据；重复执行会清理并重建同批次请求日志、账单、充值和开票记录。
+- 风险控制：内部清理仍依赖批次标记和 AIoT 订单号前缀，不把内部标识展示到客户界面；正式写入仍保留双确认和租户隔离。
+
 ### 2026-05-15 19:03 演示造数：新增一键执行脚本
 
 - 改动内容：新增 `scripts/seed-demo-billing.sh`，内置 AIoT 演示账号、租户和密码默认值，支持 `--dry-run` 与 `--apply` 两种模式；同步更新 `docs/DEMO_BILLING_SEED.md`，说明阿里云服务器上直接执行包装脚本的方式。

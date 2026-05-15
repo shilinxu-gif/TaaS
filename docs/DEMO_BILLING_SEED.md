@@ -58,6 +58,8 @@ npm run seed:demo-billing
 - `DEMO_INCLUDE_FINANCE=NO`：不生成充值和开票记录
 - `DEMO_ALLOW_EXISTING_TENANT=YES`：允许使用未标记为演示的既有租户，仅限确认该租户为专属演示租户时使用
 
+生成的数据在控制台可见字段中使用正式商用语义，例如生产调用密钥、智能设备诊断问答、预充值和开票信息；内部批次标记仅用于重复执行时清理，不作为订单名称或账单说明展示。用量曲线包含明显峰谷，部分日期会出现高峰调用，避免每天用量过于平均。
+
 ## 安全约束
 
 - `scripts/seed-demo-billing.sh` 默认 `--dry-run` 不写库，只有 `--apply` 会自动带上正式写入确认变量。
