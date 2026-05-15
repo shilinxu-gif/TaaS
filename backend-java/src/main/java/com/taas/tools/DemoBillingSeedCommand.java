@@ -58,11 +58,17 @@ class DemoBillingSeedRunner implements CommandLineRunner {
   private static final String DEFAULT_USER_PASSWORD = "admin123";
   private static final int DEFAULT_DAYS = 30;
   private static final int DEFAULT_REQUESTS_PER_DAY = 8;
-  private static final BigDecimal DEFAULT_INITIAL_TOKENS = new BigDecimal("30000000");
-  private static final BigDecimal DEFAULT_RECHARGE_TOKENS = new BigDecimal("12000000");
+  private static final BigDecimal DEFAULT_INITIAL_TOKENS = new BigDecimal("300000000");
+  private static final BigDecimal DEFAULT_RECHARGE_TOKENS = new BigDecimal("120000000");
   private static final BigDecimal DEFAULT_RECHARGE_CNY = new BigDecimal("6800.00");
   private static final List<String> DEFAULT_APP_KEY_SCOPES =
       List.of("chat:complete", "usage:read", "billing:read", "admin:ops");
+  private static final List<ModelProfile> MODEL_PROFILES =
+      List.of(
+          new ModelProfile("deepseekv4", new BigDecimal("0.28"), new BigDecimal("1.10")),
+          new ModelProfile("gpt-5.4", new BigDecimal("3.20"), new BigDecimal("12.80")),
+          new ModelProfile("claude-opus-4-7", new BigDecimal("15.00"), new BigDecimal("75.00")),
+          new ModelProfile("GLM-5", new BigDecimal("0.90"), new BigDecimal("3.60")));
 
   private final NamedParameterJdbcTemplate jdbcTemplate;
   private final PasswordEncoder passwordEncoder;
@@ -103,7 +109,7 @@ class DemoBillingSeedRunner implements CommandLineRunner {
     String userId = ensureUser(options, userExists);
     TenantRow tenant = ensureTenant(options, userId);
     ensureTenantDefaults(tenant.id());
-    String appKeyToken = ensureAppKey(options, tenant.id(), userId, providerModel.model());
+    String appKeyToken = ensureAppKey(options, tenant.id(), userId);
     cleanupPriorBatch(tenant.id(), options.batchKey());
     insertUsageAndBilling(options, tenant.id(), userId, providerModel, summary);
     if (options.includeFinance()) {
@@ -207,12 +213,12 @@ class DemoBillingSeedRunner implements CommandLineRunner {
   }
 
   private SeedSummary buildSummary(SeedOptions options, ProviderModel providerModel) {
-    int usageTokens = 0;
+    long usageTokens = 0;
     BigDecimal amountUsd = BigDecimal.ZERO;
     int cacheHits = 0;
     for (int day = 0; day < options.days(); day++) {
       for (int seq = 0; seq < options.requestsPerDay(); seq++) {
-        DemoRequest request = demoRequest(options, providerModel, day, seq);
+        DemoRequest request = demoRequest(options, day, seq);
         if (request.cacheHit()) {
           cacheHits++;
           continue;
@@ -241,7 +247,8 @@ class DemoBillingSeedRunner implements CommandLineRunner {
     System.out.println("Tenant name: " + options.tenantName());
     System.out.println("User email: " + options.userEmail() + (userExists ? " (existing)" : " (will create)"));
     System.out.println("Batch key: " + options.batchKey());
-    System.out.println("Provider/model: " + providerModel.providerSlug() + " / " + providerModel.model());
+    System.out.println("Provider: " + providerModel.providerSlug());
+    System.out.println("Models: " + modelNames());
     System.out.println("Requests: " + summary.totalRequests() + " (" + summary.cacheHits() + " cache hits)");
     System.out.println("Usage tokens: " + summary.usageTokens());
     System.out.println("Billing USD: " + summary.amountUsd());
@@ -386,7 +393,7 @@ class DemoBillingSeedRunner implements CommandLineRunner {
             .addValue("now", ts(now)));
   }
 
-  private String ensureAppKey(SeedOptions options, String tenantId, String userId, String model) {
+  private String ensureAppKey(SeedOptions options, String tenantId, String userId) {
     List<String> existing =
         jdbcTemplate.query(
             """
@@ -411,7 +418,7 @@ class DemoBillingSeedRunner implements CommandLineRunner {
           new MapSqlParameterSource()
               .addValue("id", existing.get(0))
               .addValue("scopes", jsons.stringify(DEFAULT_APP_KEY_SCOPES))
-              .addValue("allowedModels", jsons.stringify(List.of(model)))
+              .addValue("allowedModels", jsons.stringify(modelNames()))
               .addValue("ownerUserId", userId));
       return null;
     }
@@ -433,7 +440,7 @@ class DemoBillingSeedRunner implements CommandLineRunner {
             .addValue("tokenHash", cryptoUtils.hashAppKey(token))
             .addValue("tokenPreview", cryptoUtils.buildAppKeyPreview(token))
             .addValue("scopes", jsons.stringify(DEFAULT_APP_KEY_SCOPES))
-            .addValue("allowedModels", jsons.stringify(List.of(model)))
+            .addValue("allowedModels", jsons.stringify(modelNames()))
             .addValue("ownerUserId", userId)
             .addValue("createdAt", ts(Instant.now())));
     return token;
@@ -491,7 +498,7 @@ class DemoBillingSeedRunner implements CommandLineRunner {
     List<DemoRequest> requests = new ArrayList<>();
     for (int day = 0; day < options.days(); day++) {
       for (int seq = 0; seq < options.requestsPerDay(); seq++) {
-        requests.add(demoRequest(options, providerModel, day, seq));
+        requests.add(demoRequest(options, day, seq));
       }
     }
     for (DemoRequest request : requests) {
@@ -521,7 +528,7 @@ class DemoBillingSeedRunner implements CommandLineRunner {
             .addValue("providerId", providerModel.providerId())
             .addValue("requestId", "req_" + Ids.shortHex(8))
             .addValue("traceId", "trace_" + Ids.shortHex(8))
-            .addValue("model", providerModel.model())
+            .addValue("model", request.model())
             .addValue("promptTokens", request.cacheHit() ? 0 : request.promptTokens())
             .addValue("completionTokens", request.cacheHit() ? 0 : request.completionTokens())
             .addValue("totalTokens", request.cacheHit() ? 0 : request.totalTokens())
@@ -580,8 +587,8 @@ class DemoBillingSeedRunner implements CommandLineRunner {
             .addValue("tenantId", tenantId)
             .addValue("amountUsd", request.cacheHit() ? BigDecimal.ZERO : request.amountUsd())
             .addValue("subtotalUsd", request.cacheHit() ? BigDecimal.ZERO : request.amountUsd())
-            .addValue("inputPrice", providerModel.inputUsdPerMillion())
-            .addValue("outputPrice", providerModel.outputUsdPerMillion())
+            .addValue("inputPrice", request.inputUsdPerMillion())
+            .addValue("outputPrice", request.outputUsdPerMillion())
             .addValue("promptTokens", request.cacheHit() ? 0 : request.promptTokens())
             .addValue("completionTokens", request.cacheHit() ? 0 : request.completionTokens())
             .addValue("invoiceStatus", request.createdAt().isBefore(Instant.now().minus(14, ChronoUnit.DAYS)) ? "issued" : "not_requested")
@@ -590,7 +597,7 @@ class DemoBillingSeedRunner implements CommandLineRunner {
                 "description",
                 request.cacheHit()
                     ? "智能设备诊断问答缓存命中"
-                    : "智能设备诊断问答 - " + providerModel.model() + " via " + providerModel.providerSlug())
+                    : "智能设备诊断问答 - " + request.model() + " via " + providerModel.providerSlug())
             .addValue("createdAt", ts(request.createdAt())));
   }
 
@@ -652,19 +659,23 @@ class DemoBillingSeedRunner implements CommandLineRunner {
             .addValue("tenantId", tenantId));
   }
 
-  private DemoRequest demoRequest(SeedOptions options, ProviderModel providerModel, int day, int seq) {
-    double dayFactor = dailyUsageFactor(day);
+  private DemoRequest demoRequest(SeedOptions options, int day, int seq) {
+    ModelProfile modelProfile = modelProfile(day, seq);
+    double dayFactor = dailyUsageFactor(options, day);
     int promptTokens =
         (int)
             Math.round(
-                (1600 + (day % 10) * 430 + seq * 210 + burstTokens(day, seq)) * dayFactor);
+                (18000 + (day % 10) * 3200 + seq * 1800 + burstTokens(day, seq))
+                    * dayFactor);
     int completionTokens =
         (int)
             Math.round(
-                (760 + (day % 7) * 280 + seq * 150 + burstTokens(day + 3, seq) / 2.0)
+                (9000 + (day % 7) * 2400 + seq * 1200 + burstTokens(day + 3, seq) / 2.0)
                     * dayFactor);
     int totalTokens = promptTokens + completionTokens;
-    boolean cacheHit = seq == options.requestsPerDay() - 1 && day % 4 == 0 && dayFactor < 1.8;
+    boolean cacheHit =
+        seq >= Math.max(1, options.requestsPerDay() - 2)
+            && (day == options.days() - 1 || day % 4 == 0 || dayFactor < 1.8);
     Instant createdAt =
         LocalDate.now(ZoneOffset.UTC)
             .minusDays(options.days() - 1L - day)
@@ -673,13 +684,16 @@ class DemoBillingSeedRunner implements CommandLineRunner {
     BigDecimal amountUsd =
         BigDecimal.valueOf(promptTokens)
             .divide(BigDecimal.valueOf(1_000_000), 6, RoundingMode.HALF_UP)
-            .multiply(providerModel.inputUsdPerMillion())
+            .multiply(modelProfile.inputUsdPerMillion())
             .add(
                 BigDecimal.valueOf(completionTokens)
                     .divide(BigDecimal.valueOf(1_000_000), 6, RoundingMode.HALF_UP)
-                    .multiply(providerModel.outputUsdPerMillion()))
+                    .multiply(modelProfile.outputUsdPerMillion()))
             .setScale(6, RoundingMode.HALF_UP);
     return new DemoRequest(
+        modelProfile.model(),
+        modelProfile.inputUsdPerMillion(),
+        modelProfile.outputUsdPerMillion(),
         promptTokens,
         completionTokens,
         totalTokens,
@@ -691,12 +705,23 @@ class DemoBillingSeedRunner implements CommandLineRunner {
         options.batchKey() + ":" + MoneyUtils.dayPeriod(createdAt) + ":" + seq);
   }
 
-  private double dailyUsageFactor(int day) {
+  private ModelProfile modelProfile(int day, int seq) {
+    return MODEL_PROFILES.get(Math.floorMod(day + seq, MODEL_PROFILES.size()));
+  }
+
+  private List<String> modelNames() {
+    return MODEL_PROFILES.stream().map(ModelProfile::model).toList();
+  }
+
+  private double dailyUsageFactor(SeedOptions options, int day) {
     double[] factors = {
-      0.35, 1.15, 2.8, 0.75, 4.6, 1.4, 0.55, 2.2, 6.0, 0.9,
-      1.75, 3.8, 0.45, 2.6, 5.2
+      1.2, 4.5, 11.0, 2.8, 16.0, 5.4, 1.7, 8.6, 21.0, 3.6,
+      6.8, 14.0, 1.4, 10.5, 18.5
     };
     double factor = factors[day % factors.length];
+    if (day == options.days() - 1) {
+      return Math.max(factor * 4.8, 155.0);
+    }
     if (day % 11 == 0) {
       return factor * 1.65;
     }
@@ -708,10 +733,10 @@ class DemoBillingSeedRunner implements CommandLineRunner {
 
   private int burstTokens(int day, int seq) {
     if (day % 9 == 0 && seq >= 2 && seq <= 5) {
-      return 6400 + seq * 900;
+      return 180000 + seq * 45000;
     }
     if (day % 5 == 2 && seq == 1) {
-      return 3600;
+      return 120000;
     }
     return 0;
   }
@@ -808,14 +833,20 @@ class DemoBillingSeedRunner implements CommandLineRunner {
       BigDecimal inputUsdPerMillion,
       BigDecimal outputUsdPerMillion) {}
 
+  private record ModelProfile(
+      String model, BigDecimal inputUsdPerMillion, BigDecimal outputUsdPerMillion) {}
+
   private record SeedSummary(
       int totalRequests,
       int cacheHits,
-      int usageTokens,
+      long usageTokens,
       BigDecimal amountUsd,
       BigDecimal finalBalanceTokens) {}
 
   private record DemoRequest(
+      String model,
+      BigDecimal inputUsdPerMillion,
+      BigDecimal outputUsdPerMillion,
       int promptTokens,
       int completionTokens,
       int totalTokens,
