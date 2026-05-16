@@ -1,17 +1,20 @@
 package com.taas.auth;
 
+import com.taas.demo.DemoDailyUsageService;
 import com.taas.infra.api.ApiException;
 import com.taas.infra.config.TaasProperties;
 import com.taas.infra.util.Ids;
 import com.taas.ops.AuditService;
 import java.math.BigDecimal;
-import java.sql.Timestamp;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
@@ -20,24 +23,28 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class AuthService {
+  private static final Logger log = LoggerFactory.getLogger(AuthService.class);
   private static final String CRM_LOCAL_SUFFIX = "@crm.local";
   private final NamedParameterJdbcTemplate jdbcTemplate;
   private final PasswordEncoder passwordEncoder;
   private final JwtService jwtService;
   private final TaasProperties properties;
   private final AuditService auditService;
+  private final DemoDailyUsageService demoDailyUsageService;
 
   public AuthService(
       NamedParameterJdbcTemplate jdbcTemplate,
       PasswordEncoder passwordEncoder,
       JwtService jwtService,
       TaasProperties properties,
-      AuditService auditService) {
+      AuditService auditService,
+      DemoDailyUsageService demoDailyUsageService) {
     this.jdbcTemplate = jdbcTemplate;
     this.passwordEncoder = passwordEncoder;
     this.jwtService = jwtService;
     this.properties = properties;
     this.auditService = auditService;
+    this.demoDailyUsageService = demoDailyUsageService;
   }
 
   public Map<String, Object> register(String email, String password, String name, String ip) {
@@ -186,6 +193,11 @@ public class AuthService {
         user.id(),
         ip,
         Map.of("role", member.role()));
+    try {
+      demoDailyUsageService.appendTodayIfNeeded(user.email(), user.id(), member.tenantId());
+    } catch (Exception exception) {
+      log.warn("demo.daily_usage.append_failed email={} tenantId={}", user.email(), member.tenantId(), exception);
+    }
 
     return Map.of(
         "token", jwtService.issue(user.id(), member.tenantId(), member.role(), user.platformRole()),

@@ -51,6 +51,7 @@ npm run seed:demo-billing
 - `DEMO_USER_NAME`：演示用户名称，默认 `AIoT 演示账号`
 - `DEMO_RESET_USER_PASSWORD=YES`：用户已存在时同步重置密码
 - `DEMO_BATCH_ID`：批次标识，默认 `default`
+- `DEMO_APPEND_DAILY_RECORDS`：是否追加当天新消耗记录，默认 `YES`；设为 `NO` 时按批次清理并完整重建历史数据
 - `DEMO_DAYS`：生成最近多少天数据，默认 30，范围 1-90
 - `DEMO_REQUESTS_PER_DAY`：每天请求数，默认 8，范围 1-50
 - `DEMO_INITIAL_TOKENS`：演示租户初始余额，默认 `300000000`
@@ -58,7 +59,9 @@ npm run seed:demo-billing
 - `DEMO_INCLUDE_FINANCE=NO`：不生成充值和开票记录
 - `DEMO_ALLOW_EXISTING_TENANT=YES`：允许使用未标记为演示的既有租户，仅限确认该租户为专属演示租户时使用
 
-生成的数据在控制台可见字段中使用正式商用语义，例如生产调用密钥、智能设备诊断问答、预充值和开票信息；内部批次标记仅用于重复执行时清理，不作为订单名称或账单说明展示。用量曲线包含明显峰谷，今日非缓存消耗金额控制在约 `917.63 USD`，避免展示为整数，Token 数按各模型单价换算，余额保持亿级，并生成缓存命中行用于展示缓存节省金额。模型消耗会不规律覆盖 `deepseekv4`、`gpt-5.4`、`claude-opus-4-7`、`GLM-5`；每天执行 `--apply` 会重建包含当天日期的消耗记录。
+生成的数据在控制台可见字段中使用正式商用语义，例如生产调用密钥、智能设备诊断问答、预充值和开票信息；内部批次标记仅用于重复执行时清理，不作为订单名称或账单说明展示。默认执行 `--apply` 会追加一批当天新的 USD 和 Token 消耗记录，不清理历史请求/账单；如需完整重建历史数据，设置 `DEMO_APPEND_DAILY_RECORDS=NO`。今日非缓存消耗金额控制在约 `917.63 USD`，避免展示为整数，Token 数按各模型单价换算，余额保持亿级，并生成缓存命中行用于展示缓存节省金额。模型消耗会不规律覆盖 `deepseekv4`、`gpt-5.4`、`claude-opus-4-7`、`GLM-5`。
+
+`aiot@redtea.com` 登录成功后，后端会自动检查当前 AIoT 租户当天是否已有登录自动追加记录；如果没有，会自动追加一批当天不同的 USD 和 Token 消耗记录，并从当前余额扣减本次用量。该自动逻辑只对 `aiot@redtea.com` 且租户 slug 为 `aiot` 生效，不影响其他账号。
 
 ## 安全约束
 

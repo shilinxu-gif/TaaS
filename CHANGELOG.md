@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+### 2026-05-16 14:23 演示账号登录后自动追加当天消耗
+
+- 改动内容：新增 `DemoDailyUsageService`，在 `aiot@redtea.com` 登录成功后自动检查 AIoT 租户当天是否已有登录自动追加记录；若没有，则自动追加一批当天不同 USD/Token 消耗和缓存命中记录，并从当前余额扣减本次用量。`AuthService.login` 调用该服务，异常仅记录日志，不阻断登录。
+- 影响范围：`backend-java/src/main/java/com/taas/demo/DemoDailyUsageService.java`、`backend-java/src/main/java/com/taas/auth/AuthService.java`、`backend-java/src/test/java/com/taas/auth/AuthServiceTest.java`、`docs/DEMO_BILLING_SEED.md`、`CHANGELOG.md`。
+- 验证情况：已执行 `mvn -f backend-java/pom.xml -DskipTests compile`、`mvn -f backend-java/pom.xml test` 通过；`ReadLints` 检查相关 Java/Markdown 文件无新增诊断。
+- 运维动作：发版并重启后端后生效；无需每天手动执行脚本即可在演示账号登录后补当天消耗。若需手动追加或完整重建，仍可使用 `scripts/seed-demo-billing.sh`。
+- 线上数据影响：仅 `aiot@redtea.com` 且租户 slug 为 `aiot` 的登录会触发；每天最多自动追加一批带 `demo-login-daily` 批次标记的请求日志、用量、账单和缓存命中记录，并扣减该租户余额；不影响其他租户。
+- 风险控制：触发条件限定账号和租户；当天已有自动追加记录则跳过；使用 PostgreSQL 事务级锁避免并发登录重复追加；失败只记日志，不影响用户登录。
+
+### 2026-05-16 14:19 演示造数：默认追加当天消耗记录
+
+- 改动内容：演示造数脚本默认改为每日追加模式（`DEMO_APPEND_DAILY_RECORDS=YES`），每次执行 `--apply` 会生成带当天日期和随机批次后缀的新 USD/Token 消耗记录，不再清理历史请求与账单；如需完整重建历史数据，可设置 `DEMO_APPEND_DAILY_RECORDS=NO` 恢复按批次清理重建。追加模式下余额从当前余额继续扣减本次用量，充值与开票记录按当天编号存在时跳过，避免重复插入冲突。
+- 影响范围：`backend-java/src/main/java/com/taas/tools/DemoBillingSeedCommand.java`、`docs/DEMO_BILLING_SEED.md`、`CHANGELOG.md`。
+- 验证情况：已执行 `mvn -f backend-java/pom.xml -DskipTests compile`、`mvn -f backend-java/pom.xml test` 通过；`ReadLints` 检查相关 Java/Markdown 文件无新增诊断。
+- 运维动作：发版后每日演示前执行 `scripts/seed-demo-billing.sh --apply` 即可追加当天不同的 USD 和 Token 消耗；完整重建时执行 `DEMO_APPEND_DAILY_RECORDS=NO scripts/seed-demo-billing.sh --apply`。
+- 线上数据影响：默认只追加 AIoT 演示租户的新请求日志、用量、账单和缓存命中记录，并扣减该租户当前余额；不影响其他租户。
+- 风险控制：追加记录仍使用 AIoT 专属租户与内部批次标记；完整重建需显式关闭追加模式。
+
 ### 2026-05-15 20:39 演示造数：今日 USD 消耗改为非整数
 
 - 改动内容：将 AIoT 演示数据的今日非缓存消费目标从整数 `900.00 USD` 调整为 `917.63 USD`，避免控制台展示的消耗金额为整数；文档同步更新今日金额说明。

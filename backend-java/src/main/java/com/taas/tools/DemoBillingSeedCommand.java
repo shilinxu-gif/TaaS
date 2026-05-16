@@ -111,12 +111,14 @@ class DemoBillingSeedRunner implements CommandLineRunner {
     TenantRow tenant = ensureTenant(options, userId);
     ensureTenantDefaults(tenant.id());
     String appKeyToken = ensureAppKey(options, tenant.id(), userId);
-    cleanupPriorBatch(tenant.id(), options.batchKey());
+    if (!options.appendDailyRecords()) {
+      cleanupPriorBatch(tenant.id(), options.batchKey());
+    }
     insertUsageAndBilling(options, tenant.id(), userId, providerModel, summary);
     if (options.includeFinance()) {
       insertFinanceRows(options, tenant.id());
     }
-    updateBalances(tenant.id(), summary);
+    updateBalances(options, tenant.id(), summary);
 
     System.out.println("Demo billing seed completed.");
     System.out.println("Tenant slug: " + options.tenantSlug());
@@ -148,10 +150,20 @@ class DemoBillingSeedRunner implements CommandLineRunner {
       throw new IllegalStateException("DEMO_ALLOW_PROD_LIKE=YES is required before writing demo data");
     }
     String batchId = normalizeBatchId(optional("DEMO_BATCH_ID", DEFAULT_BATCH_ID));
-    int days = intOption("DEMO_DAYS", DEFAULT_DAYS, 1, 90);
+    boolean appendDailyRecords = !"NO".equalsIgnoreCase(optional("DEMO_APPEND_DAILY_RECORDS", "YES"));
+    int days = appendDailyRecords ? 1 : intOption("DEMO_DAYS", DEFAULT_DAYS, 1, 90);
     int requestsPerDay = intOption("DEMO_REQUESTS_PER_DAY", DEFAULT_REQUESTS_PER_DAY, 1, 50);
     BigDecimal initialTokens = decimalOption("DEMO_INITIAL_TOKENS", DEFAULT_INITIAL_TOKENS);
     BigDecimal rechargeTokens = decimalOption("DEMO_RECHARGE_TOKENS", DEFAULT_RECHARGE_TOKENS);
+    String baseBatchKey = "demo-billing-seed:" + batchId;
+    String batchKey =
+        appendDailyRecords
+            ? baseBatchKey
+                + ":"
+                + LocalDate.now(ZoneOffset.UTC).format(java.time.format.DateTimeFormatter.BASIC_ISO_DATE)
+                + ":"
+                + Ids.shortHex(3)
+            : baseBatchKey;
     return new SeedOptions(
         tenantSlug,
         tenantName,
@@ -159,13 +171,14 @@ class DemoBillingSeedRunner implements CommandLineRunner {
         optional("DEMO_USER_NAME", DEFAULT_USER_NAME).trim(),
         optional("DEMO_USER_PASSWORD", DEFAULT_USER_PASSWORD).trim(),
         CONFIRM_VALUE.equals(optional("DEMO_RESET_USER_PASSWORD", "NO")),
-        "demo-billing-seed:" + batchId,
+        batchKey,
         days,
         requestsPerDay,
         initialTokens,
         rechargeTokens,
         !apply,
-        !"NO".equalsIgnoreCase(optional("DEMO_INCLUDE_FINANCE", "YES")));
+        !"NO".equalsIgnoreCase(optional("DEMO_INCLUDE_FINANCE", "YES")),
+        appendDailyRecords);
   }
 
   private ProviderModel resolveProviderModel() {
@@ -248,6 +261,7 @@ class DemoBillingSeedRunner implements CommandLineRunner {
     System.out.println("Tenant name: " + options.tenantName());
     System.out.println("User email: " + options.userEmail() + (userExists ? " (existing)" : " (will create)"));
     System.out.println("Batch key: " + options.batchKey());
+    System.out.println("Append daily records: " + options.appendDailyRecords());
     System.out.println("Provider: " + providerModel.providerSlug());
     System.out.println("Models: " + modelNames());
     System.out.println("Requests: " + summary.totalRequests() + " (" + summary.cacheHits() + " cache hits)");
@@ -604,6 +618,28 @@ class DemoBillingSeedRunner implements CommandLineRunner {
 
   private void insertFinanceRows(SeedOptions options, String tenantId) {
     Instant now = Instant.now();
+    String rechargeOrderNo =
+        "RCH-AIOT-" + LocalDate.now(ZoneOffset.UTC).format(java.time.format.DateTimeFormatter.BASIC_ISO_DATE);
+    String invoiceRequestNo =
+        "INV-AIOT-" + LocalDate.now(ZoneOffset.UTC).format(java.time.format.DateTimeFormatter.BASIC_ISO_DATE);
+    boolean rechargeExists =
+        exists(
+        "select count(*) from wallet_recharge_orders where tenant_id = :tenantId and order_no = :orderNo",
+        Map.of("tenantId", tenantId, "orderNo", rechargeOrderNo));
+    boolean invoiceExists =
+        exists(
+            "select count(*) from invoice_requests where tenant_id = :tenantId and request_no = :requestNo",
+            Map.of("tenantId", tenantId, "requestNo", invoiceRequestNo));
+    if (!rechargeExists) {
+      insertRechargeOrder(options, tenantId, now, rechargeOrderNo);
+    }
+    if (!invoiceExists) {
+      insertInvoiceRequest(options, tenantId, now, invoiceRequestNo);
+    }
+  }
+
+  private void insertRechargeOrder(
+      SeedOptions options, String tenantId, Instant now, String rechargeOrderNo) {
     jdbcTemplate.update(
         """
         insert into wallet_recharge_orders (
@@ -617,7 +653,7 @@ class DemoBillingSeedRunner implements CommandLineRunner {
         new MapSqlParameterSource()
             .addValue("id", Ids.cuidLike("rch"))
             .addValue("tenantId", tenantId)
-            .addValue("orderNo", "RCH-AIOT-" + LocalDate.now(ZoneOffset.UTC).format(java.time.format.DateTimeFormatter.BASIC_ISO_DATE))
+            .addValue("orderNo", rechargeOrderNo)
             .addValue("amountCny", DEFAULT_RECHARGE_CNY)
             .addValue("creditedTokens", options.rechargeTokens())
             .addValue("payerName", options.userName())
@@ -625,6 +661,10 @@ class DemoBillingSeedRunner implements CommandLineRunner {
             .addValue("paidAt", ts(now.minus(20, ChronoUnit.DAYS)))
             .addValue("createdAt", ts(now.minus(21, ChronoUnit.DAYS)))
             .addValue("updatedAt", ts(now.minus(20, ChronoUnit.DAYS))));
+  }
+
+  private void insertInvoiceRequest(
+      SeedOptions options, String tenantId, Instant now, String invoiceRequestNo) {
     jdbcTemplate.update(
         """
         insert into invoice_requests (
@@ -640,7 +680,7 @@ class DemoBillingSeedRunner implements CommandLineRunner {
         new MapSqlParameterSource()
             .addValue("id", Ids.cuidLike("inv"))
             .addValue("tenantId", tenantId)
-            .addValue("requestNo", "INV-AIOT-" + LocalDate.now(ZoneOffset.UTC).format(java.time.format.DateTimeFormatter.BASIC_ISO_DATE))
+            .addValue("requestNo", invoiceRequestNo)
             .addValue("buyerName", options.tenantName() + "有限公司")
             .addValue("amountCny", DEFAULT_RECHARGE_CNY)
             .addValue("email", options.userEmail())
@@ -651,13 +691,22 @@ class DemoBillingSeedRunner implements CommandLineRunner {
             .addValue("updatedAt", ts(now.minus(18, ChronoUnit.DAYS))));
   }
 
-  private void updateBalances(String tenantId, SeedSummary summary) {
-    jdbcTemplate.update(
-        "update tenants set balance_tokens = :balanceTokens, updated_at = :now where id = :tenantId",
-        new MapSqlParameterSource()
-            .addValue("balanceTokens", summary.finalBalanceTokens())
-            .addValue("now", ts(Instant.now()))
-            .addValue("tenantId", tenantId));
+  private void updateBalances(SeedOptions options, String tenantId, SeedSummary summary) {
+    if (options.appendDailyRecords()) {
+      jdbcTemplate.update(
+          "update tenants set balance_tokens = balance_tokens - :usageTokens, updated_at = :now where id = :tenantId",
+          new MapSqlParameterSource()
+              .addValue("usageTokens", BigDecimal.valueOf(summary.usageTokens()))
+              .addValue("now", ts(Instant.now()))
+              .addValue("tenantId", tenantId));
+    } else {
+      jdbcTemplate.update(
+          "update tenants set balance_tokens = :balanceTokens, updated_at = :now where id = :tenantId",
+          new MapSqlParameterSource()
+              .addValue("balanceTokens", summary.finalBalanceTokens())
+              .addValue("now", ts(Instant.now()))
+              .addValue("tenantId", tenantId));
+    }
   }
 
   private DemoRequest demoRequest(SeedOptions options, int day, int seq) {
@@ -881,7 +930,8 @@ class DemoBillingSeedRunner implements CommandLineRunner {
       BigDecimal initialTokens,
       BigDecimal rechargeTokens,
       boolean dryRun,
-      boolean includeFinance) {}
+      boolean includeFinance,
+      boolean appendDailyRecords) {}
 
   private record ProviderModel(
       String providerId,

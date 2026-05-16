@@ -7,6 +7,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.taas.infra.config.TaasProperties;
+import com.taas.demo.DemoDailyUsageService;
 import com.taas.ops.AuditService;
 import java.lang.reflect.Method;
 import java.util.Map;
@@ -22,7 +23,8 @@ class AuthServiceTest {
           mock(PasswordEncoder.class),
           mock(JwtService.class),
           mock(TaasProperties.class),
-          mock(AuditService.class));
+          mock(AuditService.class),
+          mock(DemoDailyUsageService.class));
 
   @Test
   void resolveLoginEmailShouldPreferLegacyCrmSuffix() throws Exception {
