@@ -22,15 +22,15 @@ public class DemoDailyUsageService {
   private static final String DEMO_EMAIL = "aiot@redtea.com";
   private static final String DEMO_TENANT_SLUG = "aiot";
   private static final String APP_KEY_NAME = "AIoT 生产调用密钥";
-  private static final BigDecimal MIN_DISPLAY_BALANCE_TOKENS = new BigDecimal("800000000");
+  private static final BigDecimal MIN_DISPLAY_BALANCE_TOKENS = new BigDecimal("836482917");
   private static final List<String> APP_KEY_SCOPES =
       List.of("chat:complete", "usage:read", "billing:read", "admin:ops");
   private static final List<ModelProfile> MODEL_PROFILES =
       List.of(
-          new ModelProfile("deepseekv4", new BigDecimal("0.28"), new BigDecimal("1.10")),
-          new ModelProfile("gpt-5.4", new BigDecimal("3.20"), new BigDecimal("12.80")),
-          new ModelProfile("claude-opus-4-7", new BigDecimal("15.00"), new BigDecimal("75.00")),
-          new ModelProfile("GLM-5", new BigDecimal("0.90"), new BigDecimal("3.60")));
+          new ModelProfile("deepseekv4", new BigDecimal("0.28"), new BigDecimal("1.13")),
+          new ModelProfile("gpt-5.4", new BigDecimal("3.24"), new BigDecimal("12.86")),
+          new ModelProfile("claude-opus-4-7", new BigDecimal("15.37"), new BigDecimal("75.82")),
+          new ModelProfile("GLM-5", new BigDecimal("0.93"), new BigDecimal("3.64")));
 
   private final NamedParameterJdbcTemplate jdbcTemplate;
   private final CryptoUtils cryptoUtils;
@@ -173,7 +173,7 @@ public class DemoDailyUsageService {
           scopes, qps_limit, daily_budget_usd, monthly_budget_usd, allowed_models, owner_user_id, created_at
         ) values (
           :id, :tenantId, :name, :description, null, :tokenHash, :tokenPreview, 'active', 'production',
-          cast(:scopes as jsonb), 20, 500.0000, 5000.0000, cast(:allowedModels as jsonb), :ownerUserId, :createdAt
+          cast(:scopes as jsonb), 23, 537.2800, 5286.7300, cast(:allowedModels as jsonb), :ownerUserId, :createdAt
         )
         """,
         new MapSqlParameterSource()
@@ -211,7 +211,7 @@ public class DemoDailyUsageService {
     int promptTokens;
     int completionTokens;
     if (cacheHit) {
-      int savedTotal = 48_000_000 + (seq - 6) * 22_000_000;
+      int savedTotal = 48_391_727 + (seq - 6) * 22_684_319;
       promptTokens = (int) Math.round(savedTotal * 0.62);
       completionTokens = savedTotal - promptTokens;
     } else {

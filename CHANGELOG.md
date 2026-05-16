@@ -2,9 +2,18 @@
 
 ## Unreleased
 
+### 2026-05-16 14:47 演示数据：去除整齐整数痕迹
+
+- 改动内容：将 AIoT 演示造数中的默认初始余额、充值到账、最低余额保护、充值金额、预算、模型单价和缓存节省 Token 调整为不整齐或带小数的值，避免界面出现 `500000000`、`6800.00`、`5000.0000` 等明显整数/整齐数字；登录自动追加与手动造数保持同一套非整齐模型单价和最低余额值。
+- 影响范围：`backend-java/src/main/java/com/taas/tools/DemoBillingSeedCommand.java`、`backend-java/src/main/java/com/taas/demo/DemoDailyUsageService.java`、`docs/DEMO_BILLING_SEED.md`、`CHANGELOG.md`。
+- 验证情况：已执行 `mvn -f backend-java/pom.xml -DskipTests compile`、`mvn -f backend-java/pom.xml test` 通过；`ReadLints` 检查相关 Java/Markdown 文件无新增诊断；已扫描演示造数相关文件，无旧的整齐演示常量残留。
+- 运维动作：发版并重启后端后生效；如需让已有演示数据全部替换为非整齐数字，可执行 `DEMO_APPEND_DAILY_RECORDS=NO scripts/seed-demo-billing.sh --apply` 完整重建。
+- 线上数据影响：仅影响后续 AIoT 演示租户生成或登录修正的演示数据；不影响其他租户，不自动修改既有历史记录。
+- 风险控制：数值调整限定演示造数常量和演示账号自动追加逻辑；Token 字段仍保持数据库要求的整数类型，但避免整齐整数。
+
 ### 2026-05-16 14:42 演示账号：提高账户余额并避免负数
 
-- 改动内容：将 AIoT 演示造数默认初始余额提高到 `1500000000` Token、默认充值到账提高到 `500000000` Token；演示账号登录自动检查会把低于 `800000000` Token 的租户余额补回该值，脚本追加扣减和完整重建也不会把演示余额设置为该值以下，避免界面展示负余额。
+- 改动内容：将 AIoT 演示造数默认初始余额提高到 `1587342917` Token、默认充值到账提高到 `523418769` Token；演示账号登录自动检查会把低于 `836482917` Token 的租户余额补回该值，脚本追加扣减和完整重建也不会把演示余额设置为该值以下，避免界面展示负余额。
 - 影响范围：`backend-java/src/main/java/com/taas/tools/DemoBillingSeedCommand.java`、`backend-java/src/main/java/com/taas/demo/DemoDailyUsageService.java`、`docs/DEMO_BILLING_SEED.md`、`CHANGELOG.md`。
 - 验证情况：已执行 `mvn -f backend-java/pom.xml -DskipTests compile`、`mvn -f backend-java/pom.xml test` 通过；`ReadLints` 检查相关 Java/Markdown 文件无新增诊断。
 - 运维动作：发版并重启后端后，`aiot@redtea.com` 下次登录会自动修正负余额；也可执行 `scripts/seed-demo-billing.sh --apply` 或 `DEMO_APPEND_DAILY_RECORDS=NO scripts/seed-demo-billing.sh --apply` 重建演示数据。

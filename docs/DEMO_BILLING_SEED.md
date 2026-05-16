@@ -54,8 +54,8 @@ npm run seed:demo-billing
 - `DEMO_APPEND_DAILY_RECORDS`：是否追加当天新消耗记录，默认 `YES`；设为 `NO` 时按批次清理并完整重建历史数据
 - `DEMO_DAYS`：生成最近多少天数据，默认 30，范围 1-90
 - `DEMO_REQUESTS_PER_DAY`：每天请求数，默认 8，范围 1-50
-- `DEMO_INITIAL_TOKENS`：演示租户初始余额，默认 `1500000000`
-- `DEMO_RECHARGE_TOKENS`：演示充值到账 Token，默认 `500000000`
+- `DEMO_INITIAL_TOKENS`：演示租户初始余额，默认 `1587342917`
+- `DEMO_RECHARGE_TOKENS`：演示充值到账 Token，默认 `523418769`
 - `DEMO_INCLUDE_FINANCE=NO`：不生成充值和开票记录
 - `DEMO_ALLOW_EXISTING_TENANT=YES`：允许使用未标记为演示的既有租户，仅限确认该租户为专属演示租户时使用
 
@@ -63,7 +63,9 @@ npm run seed:demo-billing
 
 `aiot@redtea.com` 登录成功后，后端会自动检查当前 AIoT 租户当天是否已有登录自动追加记录；如果没有，会自动追加一批当天不同的 USD 和 Token 消耗记录，并从当前余额扣减本次用量。该自动逻辑只对 `aiot@redtea.com` 且租户 slug 为 `aiot` 生效，不影响其他账号。
 
-为了避免演示账号余额显示为负数，AIoT 租户余额带有最低展示保护：登录自动检查会把低于 `800000000` 的余额补回该值；脚本追加扣减或完整重建时也不会把余额设置到该值以下。
+为了避免演示账号余额显示为负数，AIoT 租户余额带有最低展示保护：登录自动检查会把低于 `836482917` 的余额补回该值；脚本追加扣减或完整重建时也不会把余额设置到该值以下。
+
+演示数据避免使用过于整齐的数字：金额、预算、模型单价使用带小数的值，Token 余额、充值到账、缓存节省和消耗量使用不整齐的整数值，减少界面上出现 `500000000`、`6800.00`、`5000.0000` 这类明显造数痕迹。
 
 用量页展示的 `总计 Token` 会避免重复数值：插入演示请求前会检查同租户当天已存在的 Token 总量，如冲突则自动微调 completion tokens；缓存命中记录仍保留 saved tokens 用于展示节省金额，但不会向 `usage_records` 写入 0 Token 的消耗行。
 
