@@ -58,8 +58,9 @@ class DemoBillingSeedRunner implements CommandLineRunner {
   private static final String DEFAULT_USER_PASSWORD = "admin123";
   private static final int DEFAULT_DAYS = 30;
   private static final int DEFAULT_REQUESTS_PER_DAY = 8;
-  private static final BigDecimal DEFAULT_INITIAL_TOKENS = new BigDecimal("300000000");
-  private static final BigDecimal DEFAULT_RECHARGE_TOKENS = new BigDecimal("120000000");
+  private static final BigDecimal DEFAULT_INITIAL_TOKENS = new BigDecimal("1500000000");
+  private static final BigDecimal DEFAULT_RECHARGE_TOKENS = new BigDecimal("500000000");
+  private static final BigDecimal MIN_DISPLAY_BALANCE_TOKENS = new BigDecimal("800000000");
   private static final BigDecimal DEFAULT_RECHARGE_CNY = new BigDecimal("6800.00");
   private static final BigDecimal TODAY_TARGET_SPEND_USD = new BigDecimal("917.63");
   private static final List<String> DEFAULT_APP_KEY_SCOPES =
@@ -245,6 +246,9 @@ class DemoBillingSeedRunner implements CommandLineRunner {
         options.initialTokens()
             .add(options.includeFinance() ? options.rechargeTokens() : BigDecimal.ZERO)
             .subtract(BigDecimal.valueOf(usageTokens));
+    if (finalBalance.compareTo(MIN_DISPLAY_BALANCE_TOKENS) < 0) {
+      finalBalance = MIN_DISPLAY_BALANCE_TOKENS;
+    }
     return new SeedSummary(
         options.days() * options.requestsPerDay(),
         cacheHits,
@@ -767,9 +771,15 @@ class DemoBillingSeedRunner implements CommandLineRunner {
   private void updateBalances(SeedOptions options, String tenantId, SeedSummary summary) {
     if (options.appendDailyRecords()) {
       jdbcTemplate.update(
-          "update tenants set balance_tokens = balance_tokens - :usageTokens, updated_at = :now where id = :tenantId",
+          """
+          update tenants
+          set balance_tokens = greatest(balance_tokens - :usageTokens, :minBalance),
+              updated_at = :now
+          where id = :tenantId
+          """,
           new MapSqlParameterSource()
               .addValue("usageTokens", BigDecimal.valueOf(summary.usageTokens()))
+              .addValue("minBalance", MIN_DISPLAY_BALANCE_TOKENS)
               .addValue("now", ts(Instant.now()))
               .addValue("tenantId", tenantId));
     } else {

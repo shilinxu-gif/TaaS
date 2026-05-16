@@ -22,6 +22,7 @@ public class DemoDailyUsageService {
   private static final String DEMO_EMAIL = "aiot@redtea.com";
   private static final String DEMO_TENANT_SLUG = "aiot";
   private static final String APP_KEY_NAME = "AIoT 生产调用密钥";
+  private static final BigDecimal MIN_DISPLAY_BALANCE_TOKENS = new BigDecimal("800000000");
   private static final List<String> APP_KEY_SCOPES =
       List.of("chat:complete", "usage:read", "billing:read", "admin:ops");
   private static final List<ModelProfile> MODEL_PROFILES =
@@ -50,6 +51,7 @@ public class DemoDailyUsageService {
     if (!isDemoTenant(tenantId)) {
       return;
     }
+    ensureMinimumDisplayBalance(tenantId);
     String day = LocalDate.now(ZoneOffset.UTC).format(java.time.format.DateTimeFormatter.BASIC_ISO_DATE);
     String batchPrefix = "demo-login-daily:" + day + ":%";
     jdbcTemplate.queryForObject(
@@ -75,9 +77,15 @@ public class DemoDailyUsageService {
     String batchKey = "demo-login-daily:" + day + ":" + Ids.shortHex(3);
     UsageSummary summary = insertTodayUsage(tenantId, userId, appKeyId, provider, batchKey);
     jdbcTemplate.update(
-        "update tenants set balance_tokens = balance_tokens - :tokens, updated_at = :now where id = :tenantId",
+        """
+        update tenants
+        set balance_tokens = greatest(balance_tokens - :tokens, :minBalance),
+            updated_at = :now
+        where id = :tenantId
+        """,
         new MapSqlParameterSource()
             .addValue("tokens", BigDecimal.valueOf(summary.usageTokens()))
+            .addValue("minBalance", MIN_DISPLAY_BALANCE_TOKENS)
             .addValue("tenantId", tenantId)
             .addValue("now", ts(Instant.now())));
     jdbcTemplate.update(
@@ -92,6 +100,21 @@ public class DemoDailyUsageService {
             Map.of("tenantId", tenantId, "slug", DEMO_TENANT_SLUG),
             Integer.class);
     return count != null && count > 0;
+  }
+
+  private void ensureMinimumDisplayBalance(String tenantId) {
+    jdbcTemplate.update(
+        """
+        update tenants
+        set balance_tokens = :minBalance,
+            updated_at = :now
+        where id = :tenantId
+          and balance_tokens < :minBalance
+        """,
+        new MapSqlParameterSource()
+            .addValue("tenantId", tenantId)
+            .addValue("minBalance", MIN_DISPLAY_BALANCE_TOKENS)
+            .addValue("now", ts(Instant.now())));
   }
 
   private ProviderRow requireProvider() {

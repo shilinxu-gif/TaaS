@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### 2026-05-16 14:42 演示账号：提高账户余额并避免负数
+
+- 改动内容：将 AIoT 演示造数默认初始余额提高到 `1500000000` Token、默认充值到账提高到 `500000000` Token；演示账号登录自动检查会把低于 `800000000` Token 的租户余额补回该值，脚本追加扣减和完整重建也不会把演示余额设置为该值以下，避免界面展示负余额。
+- 影响范围：`backend-java/src/main/java/com/taas/tools/DemoBillingSeedCommand.java`、`backend-java/src/main/java/com/taas/demo/DemoDailyUsageService.java`、`docs/DEMO_BILLING_SEED.md`、`CHANGELOG.md`。
+- 验证情况：已执行 `mvn -f backend-java/pom.xml -DskipTests compile`、`mvn -f backend-java/pom.xml test` 通过；`ReadLints` 检查相关 Java/Markdown 文件无新增诊断。
+- 运维动作：发版并重启后端后，`aiot@redtea.com` 下次登录会自动修正负余额；也可执行 `scripts/seed-demo-billing.sh --apply` 或 `DEMO_APPEND_DAILY_RECORDS=NO scripts/seed-demo-billing.sh --apply` 重建演示数据。
+- 线上数据影响：仅影响 AIoT 演示租户 `tenants.balance_tokens` 的后续写入或登录时低余额修正；不影响其他租户，不修改请求日志、账单或充值历史。
+- 风险控制：余额保护限定演示账号和 `aiot` 租户；只在余额低于最低展示值时补回，不影响正常高余额。
+
 ### 2026-05-16 14:34 演示用量：避免重复 Token 消耗
 
 - 改动内容：演示造数脚本与演示账号登录自动追加逻辑在插入请求前检查同租户当天是否已有相同 `total_tokens`，如冲突则自动微调 completion tokens，保证用量页展示的 Token 消耗数值不重复；缓存命中记录继续保留 saved tokens 用于展示节省金额，但不再向 `usage_records` 写入 0 Token 消耗行。
