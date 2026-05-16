@@ -72,10 +72,10 @@ public class DemoDailyUsageService {
       return;
     }
 
-    ProviderRow provider = requireProvider();
+    Map<String, ProviderRow> providerCatalog = ensureProviderCatalog();
     String appKeyId = ensureAppKey(tenantId, userId);
     String batchKey = "demo-login-daily:" + day + ":" + Ids.shortHex(3);
-    UsageSummary summary = insertTodayUsage(tenantId, userId, appKeyId, provider, batchKey);
+    UsageSummary summary = insertTodayUsage(tenantId, userId, appKeyId, providerCatalog, batchKey);
     jdbcTemplate.update(
         """
         update tenants
@@ -117,21 +117,101 @@ public class DemoDailyUsageService {
             .addValue("now", ts(Instant.now())));
   }
 
-  private ProviderRow requireProvider() {
+  private Map<String, ProviderRow> ensureProviderCatalog() {
+    return Map.of(
+        "deepseekv4",
+        ensureProvider(
+            new ProviderSpec(
+                "DeepSeek",
+                "deepseek-commercial",
+                "openai",
+                "DeepSeek",
+                "deepseekv4",
+                new BigDecimal("0.28"),
+                new BigDecimal("1.13"),
+                14)),
+        "gpt-5.4",
+        ensureProvider(
+            new ProviderSpec(
+                "OpenAI",
+                "openai-commercial",
+                "openai",
+                "OpenAI",
+                "gpt-5.4",
+                new BigDecimal("3.24"),
+                new BigDecimal("12.86"),
+                11)),
+        "claude-opus-4-7",
+        ensureProvider(
+            new ProviderSpec(
+                "Anthropic",
+                "anthropic-commercial",
+                "anthropic",
+                "Anthropic",
+                "claude-opus-4-7",
+                new BigDecimal("15.37"),
+                new BigDecimal("75.82"),
+                12)),
+        "GLM-5",
+        ensureProvider(
+            new ProviderSpec(
+                "GLM",
+                "glm-commercial",
+                "openai",
+                "GLM",
+                "GLM-5",
+                new BigDecimal("0.93"),
+                new BigDecimal("3.64"),
+                13)));
+  }
+
+  private ProviderRow ensureProvider(ProviderSpec spec) {
+    String catalog =
+        jsons.stringify(
+            List.of(
+                Map.of(
+                    "model", spec.model(),
+                    "providerType", spec.providerType(),
+                    "inputUsdPerMillion", spec.inputUsdPerMillion().toPlainString(),
+                    "outputUsdPerMillion", spec.outputUsdPerMillion().toPlainString(),
+                    "supportsStreaming", true)));
+    jdbcTemplate.update(
+        """
+        insert into providers (
+          id, name, slug, provider_type, model_vendor, status, enabled, base_url, api_key_ciphertext,
+          model_catalog, priority, timeout_ms, health_status, supports_streaming, created_at
+        ) values (
+          :id, :name, :slug, :providerType, :modelVendor, 'active', true, null, null,
+          cast(:modelCatalog as jsonb), :priority, 30000, 'healthy', true, :createdAt
+        )
+        on conflict (slug) do update set
+          name = excluded.name,
+          provider_type = excluded.provider_type,
+          model_vendor = excluded.model_vendor,
+          status = 'active',
+          enabled = true,
+          model_catalog = excluded.model_catalog,
+          priority = excluded.priority,
+          health_status = 'healthy'
+        """,
+        new MapSqlParameterSource()
+            .addValue("id", Ids.cuidLike("prov"))
+            .addValue("name", spec.name())
+            .addValue("slug", spec.slug())
+            .addValue("providerType", spec.providerType())
+            .addValue("modelVendor", spec.modelVendor())
+            .addValue("modelCatalog", catalog)
+            .addValue("priority", spec.priority())
+            .addValue("createdAt", ts(Instant.now())));
     return jdbcTemplate.query(
-            """
-            select id, slug, provider_type
-            from providers
-            where enabled = true and status = 'active'
-            order by priority asc, slug asc
-            limit 1
-            """,
+            "select id, slug, provider_type from providers where slug = :slug",
+            Map.of("slug", spec.slug()),
             (rs, rowNum) ->
                 new ProviderRow(
                     rs.getString("id"), rs.getString("slug"), rs.getString("provider_type")))
         .stream()
         .findFirst()
-        .orElseThrow(() -> new IllegalStateException("No active provider found for demo daily usage"));
+        .orElseThrow(() -> new IllegalStateException("No provider found for " + spec.slug()));
   }
 
   private String ensureAppKey(String tenantId, String userId) {
@@ -191,11 +271,19 @@ public class DemoDailyUsageService {
   }
 
   private UsageSummary insertTodayUsage(
-      String tenantId, String userId, String appKeyId, ProviderRow provider, String batchKey) {
+      String tenantId,
+      String userId,
+      String appKeyId,
+      Map<String, ProviderRow> providerCatalog,
+      String batchKey) {
     long usageTokens = 0;
     BigDecimal spendUsd = BigDecimal.ZERO;
     for (int seq = 0; seq < 8; seq++) {
       DemoRequest request = demoRequest(seq, batchKey);
+      ProviderRow provider = providerCatalog.get(request.model());
+      if (provider == null) {
+        throw new IllegalStateException("No demo provider mapping for model " + request.model());
+      }
       insertRequest(tenantId, userId, appKeyId, provider, request);
       if (!request.cacheHit()) {
         usageTokens += request.totalTokens();
@@ -403,8 +491,8 @@ public class DemoDailyUsageService {
 
   private BigDecimal dailyTargetSpendUsd() {
     int dayOfYear = LocalDate.now(ZoneOffset.UTC).getDayOfYear();
-    BigDecimal base = new BigDecimal("917.63");
-    BigDecimal drift = BigDecimal.valueOf(((dayOfYear * 37L) % 91) - 45).divide(BigDecimal.TEN);
+    BigDecimal base = new BigDecimal("486.37");
+    BigDecimal drift = BigDecimal.valueOf(((dayOfYear * 37L) % 53) - 26).divide(BigDecimal.TEN);
     return base.add(drift).setScale(2, RoundingMode.HALF_UP);
   }
 
@@ -450,6 +538,16 @@ public class DemoDailyUsageService {
   }
 
   private record ProviderRow(String id, String slug, String providerType) {}
+
+  private record ProviderSpec(
+      String name,
+      String slug,
+      String providerType,
+      String modelVendor,
+      String model,
+      BigDecimal inputUsdPerMillion,
+      BigDecimal outputUsdPerMillion,
+      int priority) {}
 
   private record ModelProfile(
       String model, BigDecimal inputUsdPerMillion, BigDecimal outputUsdPerMillion) {}

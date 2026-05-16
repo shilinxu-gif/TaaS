@@ -62,7 +62,7 @@ class DemoBillingSeedRunner implements CommandLineRunner {
   private static final BigDecimal DEFAULT_RECHARGE_TOKENS = new BigDecimal("523418769");
   private static final BigDecimal MIN_DISPLAY_BALANCE_TOKENS = new BigDecimal("836482917");
   private static final BigDecimal DEFAULT_RECHARGE_CNY = new BigDecimal("6837.42");
-  private static final BigDecimal TODAY_TARGET_SPEND_USD = new BigDecimal("917.63");
+  private static final BigDecimal TODAY_TARGET_SPEND_USD = new BigDecimal("486.37");
   private static final List<String> DEFAULT_APP_KEY_SCOPES =
       List.of("chat:complete", "usage:read", "billing:read", "admin:ops");
   private static final List<ModelProfile> MODEL_PROFILES =
@@ -100,9 +100,9 @@ class DemoBillingSeedRunner implements CommandLineRunner {
       throw new IllegalStateException("DEMO_USER_PASSWORD is required when creating a demo user");
     }
 
-    ProviderModel providerModel = resolveProviderModel();
-    SeedSummary summary = buildSummary(options, providerModel);
-    printPlan(options, providerModel, summary, userExists);
+    Map<String, ProviderModel> providerCatalog = providerCatalog(options.dryRun());
+    SeedSummary summary = buildSummary(options);
+    printPlan(options, providerCatalog, summary, userExists);
     if (options.dryRun()) {
       System.out.println("Dry-run only. Set DEMO_BILLING_SEED_APPLY=YES to write demo data.");
       return;
@@ -115,7 +115,7 @@ class DemoBillingSeedRunner implements CommandLineRunner {
     if (!options.appendDailyRecords()) {
       cleanupPriorBatch(tenant.id(), options.batchKey());
     }
-    insertUsageAndBilling(options, tenant.id(), userId, providerModel, summary);
+    insertUsageAndBilling(options, tenant.id(), userId, providerCatalog, summary);
     if (options.includeFinance()) {
       insertFinanceRows(options, tenant.id());
     }
@@ -182,52 +182,126 @@ class DemoBillingSeedRunner implements CommandLineRunner {
         appendDailyRecords);
   }
 
-  private ProviderModel resolveProviderModel() {
-    List<ProviderModel> models =
-        jdbcTemplate.query(
-            """
-            select id, slug, provider_type, model_catalog::text as model_catalog
-            from providers
-            where enabled = true and status = 'active'
-            order by priority asc, slug asc
-            """,
-            (rs, rowNum) -> {
-              String catalogRaw = rs.getString("model_catalog");
-              List<Map<String, Object>> catalog = jsons.readObjectList(catalogRaw);
-              if (!catalog.isEmpty()) {
-                Map<String, Object> first = catalog.get(0);
-                String model = stringValue(first.get("model"));
-                if (hasText(model)) {
-                  return new ProviderModel(
-                      rs.getString("id"),
-                      rs.getString("slug"),
-                      rs.getString("provider_type"),
-                      model,
-                      decimalValue(first.get("inputUsdPerMillion"), new BigDecimal("0.15")),
-                      decimalValue(first.get("outputUsdPerMillion"), new BigDecimal("0.60")));
-                }
-              }
-              return new ProviderModel(
-                  rs.getString("id"),
-                  rs.getString("slug"),
-                  rs.getString("provider_type"),
-                  "gpt-4o-mini",
-                  new BigDecimal("0.15"),
-                  new BigDecimal("0.60"));
-            });
-    if (models.isEmpty()) {
-      throw new IllegalStateException("No active provider found. Start the backend once to seed providers first.");
-    }
-    return models.stream()
-        .filter(
-            model ->
-                model.inputUsdPerMillion().add(model.outputUsdPerMillion()).compareTo(BigDecimal.ZERO)
-                    > 0)
-        .findFirst()
-        .orElse(models.get(0));
+  private Map<String, ProviderModel> providerCatalog(boolean dryRun) {
+    return Map.of(
+        "deepseekv4",
+        providerModel(
+            dryRun,
+            new ProviderSpec(
+                "DeepSeek",
+                "deepseek-commercial",
+                "openai",
+                "DeepSeek",
+                "deepseekv4",
+                new BigDecimal("0.28"),
+                new BigDecimal("1.13"),
+                14)),
+        "gpt-5.4",
+        providerModel(
+            dryRun,
+            new ProviderSpec(
+                "OpenAI",
+                "openai-commercial",
+                "openai",
+                "OpenAI",
+                "gpt-5.4",
+                new BigDecimal("3.24"),
+                new BigDecimal("12.86"),
+                11)),
+        "claude-opus-4-7",
+        providerModel(
+            dryRun,
+            new ProviderSpec(
+                "Anthropic",
+                "anthropic-commercial",
+                "anthropic",
+                "Anthropic",
+                "claude-opus-4-7",
+                new BigDecimal("15.37"),
+                new BigDecimal("75.82"),
+                12)),
+        "GLM-5",
+        providerModel(
+            dryRun,
+            new ProviderSpec(
+                "GLM",
+                "glm-commercial",
+                "openai",
+                "GLM",
+                "GLM-5",
+                new BigDecimal("0.93"),
+                new BigDecimal("3.64"),
+                13)));
   }
 
-  private SeedSummary buildSummary(SeedOptions options, ProviderModel providerModel) {
+  private ProviderModel providerModel(boolean dryRun, ProviderSpec spec) {
+    if (dryRun) {
+      return new ProviderModel(
+          "dry-run-" + spec.slug(),
+          spec.slug(),
+          spec.providerType(),
+          spec.model(),
+          spec.inputUsdPerMillion(),
+          spec.outputUsdPerMillion());
+    }
+    return ensureProvider(spec);
+  }
+
+  private ProviderModel ensureProvider(ProviderSpec spec) {
+    Instant now = Instant.now();
+    String providerId = Ids.cuidLike("prov");
+    String catalog =
+        jsons.stringify(
+            List.of(
+                Map.of(
+                    "model", spec.model(),
+                    "providerType", spec.providerType(),
+                    "inputUsdPerMillion", spec.inputUsdPerMillion().toPlainString(),
+                    "outputUsdPerMillion", spec.outputUsdPerMillion().toPlainString(),
+                    "supportsStreaming", true)));
+    jdbcTemplate.update(
+        """
+        insert into providers (
+          id, name, slug, provider_type, model_vendor, status, enabled, base_url, api_key_ciphertext,
+          model_catalog, priority, timeout_ms, health_status, supports_streaming, created_at
+        ) values (
+          :id, :name, :slug, :providerType, :modelVendor, 'active', true, null, null,
+          cast(:modelCatalog as jsonb), :priority, 30000, 'healthy', true, :createdAt
+        )
+        on conflict (slug) do update set
+          name = excluded.name,
+          provider_type = excluded.provider_type,
+          model_vendor = excluded.model_vendor,
+          status = 'active',
+          enabled = true,
+          model_catalog = excluded.model_catalog,
+          priority = excluded.priority,
+          health_status = 'healthy'
+        """,
+        new MapSqlParameterSource()
+            .addValue("id", providerId)
+            .addValue("name", spec.name())
+            .addValue("slug", spec.slug())
+            .addValue("providerType", spec.providerType())
+            .addValue("modelVendor", spec.modelVendor())
+            .addValue("modelCatalog", catalog)
+            .addValue("priority", spec.priority())
+            .addValue("createdAt", ts(now)));
+    String id =
+        jdbcTemplate.queryForObject(
+            "select id from providers where slug = :slug",
+            Map.of("slug", spec.slug()),
+            String.class);
+    return new ProviderModel(
+        id,
+        spec.slug(),
+        spec.providerType(),
+        spec.model(),
+        spec.inputUsdPerMillion(),
+        spec.outputUsdPerMillion());
+  }
+
+  private SeedSummary buildSummary(SeedOptions options) {
     long usageTokens = 0;
     BigDecimal amountUsd = BigDecimal.ZERO;
     int cacheHits = 0;
@@ -258,7 +332,7 @@ class DemoBillingSeedRunner implements CommandLineRunner {
   }
 
   private void printPlan(
-      SeedOptions options, ProviderModel providerModel, SeedSummary summary, boolean userExists) {
+      SeedOptions options, Map<String, ProviderModel> providerCatalog, SeedSummary summary, boolean userExists) {
     System.out.println("Demo billing seed plan");
     System.out.println("Mode: " + (options.dryRun() ? "dry-run" : "apply"));
     System.out.println("Tenant slug: " + options.tenantSlug());
@@ -266,7 +340,7 @@ class DemoBillingSeedRunner implements CommandLineRunner {
     System.out.println("User email: " + options.userEmail() + (userExists ? " (existing)" : " (will create)"));
     System.out.println("Batch key: " + options.batchKey());
     System.out.println("Append daily records: " + options.appendDailyRecords());
-    System.out.println("Provider: " + providerModel.providerSlug());
+    System.out.println("Providers: " + providerCatalog.values().stream().map(ProviderModel::providerSlug).toList());
     System.out.println("Models: " + modelNames());
     System.out.println("Requests: " + summary.totalRequests() + " (" + summary.cacheHits() + " cache hits)");
     System.out.println("Usage tokens: " + summary.usageTokens());
@@ -503,7 +577,7 @@ class DemoBillingSeedRunner implements CommandLineRunner {
       SeedOptions options,
       String tenantId,
       String userId,
-      ProviderModel providerModel,
+      Map<String, ProviderModel> providerCatalog,
       SeedSummary summary) {
     String appKeyId =
         jdbcTemplate.queryForObject(
@@ -521,6 +595,10 @@ class DemoBillingSeedRunner implements CommandLineRunner {
       }
     }
     for (DemoRequest request : requests) {
+      ProviderModel providerModel = providerCatalog.get(request.model());
+      if (providerModel == null) {
+        throw new IllegalStateException("No demo provider mapping for model " + request.model());
+      }
       insertRequest(options, tenantId, userId, appKeyId, providerModel, request);
     }
     if (summary.totalRequests() > 0) {
@@ -1023,6 +1101,16 @@ class DemoBillingSeedRunner implements CommandLineRunner {
       String model,
       BigDecimal inputUsdPerMillion,
       BigDecimal outputUsdPerMillion) {}
+
+  private record ProviderSpec(
+      String name,
+      String slug,
+      String providerType,
+      String modelVendor,
+      String model,
+      BigDecimal inputUsdPerMillion,
+      BigDecimal outputUsdPerMillion,
+      int priority) {}
 
   private record ModelProfile(
       String model, BigDecimal inputUsdPerMillion, BigDecimal outputUsdPerMillion) {}

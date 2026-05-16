@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### 2026-05-16 14:55 演示数据：供应商与模型匹配并降低日消费
+
+- 改动内容：演示造数和演示账号登录自动追加改为按模型选择对应供应商，`deepseekv4`、`gpt-5.4`、`claude-opus-4-7`、`GLM-5` 分别对应 DeepSeek、OpenAI、Anthropic、GLM，不再出现 GPT/GLM 模型挂在 deepseek 供应商下；今日非缓存消费目标从约 `917.63 USD` 下调为约 `486.37 USD`，登录自动追加带小幅非整数波动且保持低于 `500 USD`。
+- 影响范围：`backend-java/src/main/java/com/taas/tools/DemoBillingSeedCommand.java`、`backend-java/src/main/java/com/taas/demo/DemoDailyUsageService.java`、`docs/DEMO_BILLING_SEED.md`、`CHANGELOG.md`。
+- 验证情况：已执行 `mvn -f backend-java/pom.xml -DskipTests compile`、`mvn -f backend-java/pom.xml test` 通过；`ReadLints` 检查相关 Java/Markdown 文件无新增诊断。
+- 运维动作：发版并重启后端后生效；如需替换已有供应商不匹配或金额过高的演示历史数据，可执行 `DEMO_APPEND_DAILY_RECORDS=NO scripts/seed-demo-billing.sh --apply` 完整重建。
+- 线上数据影响：后续 AIoT 演示造数会新增或更新正式命名的供应商配置（OpenAI、Anthropic、DeepSeek、GLM）并写入匹配的请求日志；不影响其他租户业务数据。
+- 风险控制：供应商映射限定演示造数和演示账号自动追加；`--dry-run` 不写入供应商配置；金额目标保留小数且低于 500 USD。
+
 ### 2026-05-16 14:47 演示数据：去除整齐整数痕迹
 
 - 改动内容：将 AIoT 演示造数中的默认初始余额、充值到账、最低余额保护、充值金额、预算、模型单价和缓存节省 Token 调整为不整齐或带小数的值，避免界面出现 `500000000`、`6800.00`、`5000.0000` 等明显整数/整齐数字；登录自动追加与手动造数保持同一套非整齐模型单价和最低余额值。
