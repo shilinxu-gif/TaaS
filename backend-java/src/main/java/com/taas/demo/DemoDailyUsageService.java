@@ -226,6 +226,7 @@ public class DemoDailyUsageService {
 
   private void insertRequest(
       String tenantId, String userId, String appKeyId, ProviderRow provider, DemoRequest request) {
+    request = uniqueTokenConsumption(tenantId, request);
     String logId = Ids.cuidLike("log");
     jdbcTemplate.update(
         """
@@ -250,9 +251,9 @@ public class DemoDailyUsageService {
             .addValue("requestId", "req_" + Ids.shortHex(8))
             .addValue("traceId", "trace_" + Ids.shortHex(8))
             .addValue("model", request.model())
-            .addValue("promptTokens", request.cacheHit() ? 0 : request.promptTokens())
-            .addValue("completionTokens", request.cacheHit() ? 0 : request.completionTokens())
-            .addValue("totalTokens", request.cacheHit() ? 0 : request.totalTokens())
+            .addValue("promptTokens", request.promptTokens())
+            .addValue("completionTokens", request.completionTokens())
+            .addValue("totalTokens", request.totalTokens())
             .addValue("latencyMs", request.latencyMs())
             .addValue("cacheHit", request.cacheHit())
             .addValue("routingPrimary", provider.providerType())
@@ -265,15 +266,17 @@ public class DemoDailyUsageService {
             .addValue("savedPromptTokens", request.cacheHit() ? request.promptTokens() : null)
             .addValue("savedCompletionTokens", request.cacheHit() ? request.completionTokens() : null)
             .addValue("createdAt", ts(request.createdAt())));
-    jdbcTemplate.update(
-        "insert into usage_records (id, log_id, tenant_id, period, total_tokens, created_at) values (:id, :logId, :tenantId, :period, :totalTokens, :createdAt)",
-        new MapSqlParameterSource()
-            .addValue("id", Ids.cuidLike("usage"))
-            .addValue("logId", logId)
-            .addValue("tenantId", tenantId)
-            .addValue("period", MoneyUtils.dayPeriod(request.createdAt()))
-            .addValue("totalTokens", request.cacheHit() ? 0 : request.totalTokens())
-            .addValue("createdAt", ts(request.createdAt())));
+    if (!request.cacheHit()) {
+      jdbcTemplate.update(
+          "insert into usage_records (id, log_id, tenant_id, period, total_tokens, created_at) values (:id, :logId, :tenantId, :period, :totalTokens, :createdAt)",
+          new MapSqlParameterSource()
+              .addValue("id", Ids.cuidLike("usage"))
+              .addValue("logId", logId)
+              .addValue("tenantId", tenantId)
+              .addValue("period", MoneyUtils.dayPeriod(request.createdAt()))
+              .addValue("totalTokens", request.totalTokens())
+              .addValue("createdAt", ts(request.createdAt())));
+    }
     jdbcTemplate.update(
         """
         insert into billing_records (
@@ -303,6 +306,76 @@ public class DemoDailyUsageService {
                     ? "智能设备诊断问答缓存命中"
                     : "智能设备诊断问答 - " + request.model() + " via " + provider.slug())
             .addValue("createdAt", ts(request.createdAt())));
+  }
+
+  private DemoRequest uniqueTokenConsumption(String tenantId, DemoRequest request) {
+    int promptTokens = request.promptTokens();
+    int completionTokens = request.completionTokens();
+    int totalTokens = request.totalTokens();
+    for (int attempt = 0; attempt < 32; attempt++) {
+      if (!hasSameDailyTotalTokens(tenantId, request.createdAt(), totalTokens)) {
+        BigDecimal amountUsd =
+            amountUsd(
+                promptTokens,
+                completionTokens,
+                request.inputUsdPerMillion(),
+                request.outputUsdPerMillion());
+        return new DemoRequest(
+            request.model(),
+            request.inputUsdPerMillion(),
+            request.outputUsdPerMillion(),
+            promptTokens,
+            completionTokens,
+            totalTokens,
+            request.latencyMs(),
+            request.cacheHit(),
+            request.retryCount(),
+            amountUsd,
+            request.createdAt(),
+            request.idempotencyKey());
+      }
+      int delta = 7_919 + attempt * 1_013;
+      completionTokens = Math.addExact(completionTokens, delta);
+      totalTokens = Math.addExact(promptTokens, completionTokens);
+    }
+    throw new IllegalStateException("Unable to generate unique demo token consumption");
+  }
+
+  private boolean hasSameDailyTotalTokens(String tenantId, Instant createdAt, int totalTokens) {
+    Instant dayStart =
+        LocalDate.ofInstant(createdAt, ZoneOffset.UTC).atStartOfDay().toInstant(ZoneOffset.UTC);
+    Integer count =
+        jdbcTemplate.queryForObject(
+            """
+            select count(*)
+            from api_request_logs
+            where tenant_id = :tenantId
+              and created_at >= :dayStart
+              and created_at < :dayEnd
+              and total_tokens = :totalTokens
+            """,
+            new MapSqlParameterSource()
+                .addValue("tenantId", tenantId)
+                .addValue("dayStart", ts(dayStart))
+                .addValue("dayEnd", ts(dayStart.plusSeconds(86_400)))
+                .addValue("totalTokens", totalTokens),
+            Integer.class);
+    return count != null && count > 0;
+  }
+
+  private BigDecimal amountUsd(
+      int promptTokens,
+      int completionTokens,
+      BigDecimal inputUsdPerMillion,
+      BigDecimal outputUsdPerMillion) {
+    return BigDecimal.valueOf(promptTokens)
+        .divide(BigDecimal.valueOf(1_000_000), 6, RoundingMode.HALF_UP)
+        .multiply(inputUsdPerMillion)
+        .add(
+            BigDecimal.valueOf(completionTokens)
+                .divide(BigDecimal.valueOf(1_000_000), 6, RoundingMode.HALF_UP)
+                .multiply(outputUsdPerMillion))
+        .setScale(6, RoundingMode.HALF_UP);
   }
 
   private BigDecimal dailyTargetSpendUsd() {

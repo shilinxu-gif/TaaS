@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### 2026-05-16 14:34 演示用量：避免重复 Token 消耗
+
+- 改动内容：演示造数脚本与演示账号登录自动追加逻辑在插入请求前检查同租户当天是否已有相同 `total_tokens`，如冲突则自动微调 completion tokens，保证用量页展示的 Token 消耗数值不重复；缓存命中记录继续保留 saved tokens 用于展示节省金额，但不再向 `usage_records` 写入 0 Token 消耗行。
+- 影响范围：`backend-java/src/main/java/com/taas/tools/DemoBillingSeedCommand.java`、`backend-java/src/main/java/com/taas/demo/DemoDailyUsageService.java`、`docs/DEMO_BILLING_SEED.md`、`CHANGELOG.md`。
+- 验证情况：已执行 `mvn -f backend-java/pom.xml -DskipTests compile`、`mvn -f backend-java/pom.xml test` 通过；`ReadLints` 检查相关 Java/Markdown 文件无新增诊断。
+- 运维动作：发版并重启后端后生效；如需修正已存在的重复演示数据，可执行 `DEMO_APPEND_DAILY_RECORDS=NO scripts/seed-demo-billing.sh --apply` 完整重建。
+- 线上数据影响：仅影响后续 AIoT 演示造数和登录自动追加生成的数据；不修改既有线上记录，不影响其他租户。
+- 风险控制：唯一性检查限定在同租户同一天；仅在发现冲突时小幅增加 completion tokens 并重算金额，缓存命中仍不计入实际用量汇总。
+
 ### 2026-05-16 14:23 演示账号登录后自动追加当天消耗
 
 - 改动内容：新增 `DemoDailyUsageService`，在 `aiot@redtea.com` 登录成功后自动检查 AIoT 租户当天是否已有登录自动追加记录；若没有，则自动追加一批当天不同 USD/Token 消耗和缓存命中记录，并从当前余额扣减本次用量。`AuthService.login` 调用该服务，异常仅记录日志，不阻断登录。

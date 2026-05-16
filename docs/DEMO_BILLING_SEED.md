@@ -63,6 +63,8 @@ npm run seed:demo-billing
 
 `aiot@redtea.com` 登录成功后，后端会自动检查当前 AIoT 租户当天是否已有登录自动追加记录；如果没有，会自动追加一批当天不同的 USD 和 Token 消耗记录，并从当前余额扣减本次用量。该自动逻辑只对 `aiot@redtea.com` 且租户 slug 为 `aiot` 生效，不影响其他账号。
 
+用量页展示的 `总计 Token` 会避免重复数值：插入演示请求前会检查同租户当天已存在的 Token 总量，如冲突则自动微调 completion tokens；缓存命中记录仍保留 saved tokens 用于展示节省金额，但不会向 `usage_records` 写入 0 Token 的消耗行。
+
 ## 安全约束
 
 - `scripts/seed-demo-billing.sh` 默认 `--dry-run` 不写库，只有 `--apply` 会自动带上正式写入确认变量。
