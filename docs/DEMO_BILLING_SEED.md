@@ -67,7 +67,7 @@ npm run seed:demo-billing
 
 演示数据避免使用过于整齐的数字：金额、预算、模型单价使用带小数的值，Token 余额、充值到账、缓存节省和消耗量使用不整齐的整数值，减少界面上出现 `500000000`、`6800.00`、`5000.0000` 这类明显造数痕迹。
 
-用量页展示的 `总计 Token` 会避免重复数值：插入演示请求前会检查同租户当天已存在的 Token 总量，如冲突则自动微调 completion tokens；缓存命中记录仍保留 saved tokens 用于展示节省金额，但不会向 `usage_records` 写入 0 Token 的消耗行。
+用量页展示的每条演示请求会控制在百万以内：`prompt_tokens`、`completion_tokens`、`total_tokens` 均小于 `1000000`，并避免 `00` 结尾的整齐 Token 数。插入演示请求前会检查同租户当天已存在的模型、输入 Token、输出 Token、总 Token 和金额组合，如冲突则自动微调 Token 后重新计算金额；缓存命中记录仍保留 saved tokens 用于展示节省金额，但不会向 `usage_records` 写入 0 Token 的消耗行。
 
 ## 安全约束
 

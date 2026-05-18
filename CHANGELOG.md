@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### 2026-05-18 14:48 演示用量：限制单条 Token 并增强去重
+
+- 改动内容：手动演示造数和演示账号登录自动追加统一增加 Token 规范化，确保单条请求的 `prompt_tokens`、`completion_tokens`、`total_tokens` 均小于 `1000000`，并避免 `00` 结尾的整齐 Token 数；同日同租户去重从仅检查 `total_tokens` 扩展为检查模型、输入 Token、输出 Token、总 Token 和金额组合，冲突时自动微调 Token 并重算金额。
+- 影响范围：`backend-java/src/main/java/com/taas/tools/DemoBillingSeedCommand.java`、`backend-java/src/main/java/com/taas/demo/DemoDailyUsageService.java`、`docs/DEMO_BILLING_SEED.md`、`CHANGELOG.md`。
+- 验证情况：已执行 `mvn -f backend-java/pom.xml -DskipTests compile`、`mvn -f backend-java/pom.xml test` 通过；`ReadLints` 检查相关 Java/Markdown 文件无新增诊断；已抽查代码中不再使用旧的仅按 `total_tokens` 去重逻辑。
+- 运维动作：发版并重启后端后生效；如需替换已有超过百万或重复的演示历史数据，可执行 `DEMO_APPEND_DAILY_RECORDS=NO scripts/seed-demo-billing.sh --apply` 完整重建。
+- 线上数据影响：仅影响后续 AIoT 演示租户生成的请求日志、用量记录和账单金额；不影响其他租户，不自动修改既有历史数据。
+- 风险控制：限制逻辑仅作用于演示造数路径；金额按最终 Token 重算，避免账单与用量不一致。
+
 ### 2026-05-18 10:20 成本优化：修正缓存命中率百分比
 
 - 改动内容：修正控制台工作台和成本优化页缓存命中率计算公式，将 `命中数 * 1000 / 总请求数` 改为 `命中数 * 100 / 总请求数`，避免 `30 / 248` 被展示为 `121%`，正确显示为约 `12.1%`。

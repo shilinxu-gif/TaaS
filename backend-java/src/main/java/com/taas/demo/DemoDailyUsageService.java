@@ -22,6 +22,8 @@ public class DemoDailyUsageService {
   private static final String DEMO_EMAIL = "aiot@redtea.com";
   private static final String DEMO_TENANT_SLUG = "aiot";
   private static final String APP_KEY_NAME = "AIoT 生产调用密钥";
+  private static final int MAX_DEMO_TOTAL_TOKENS = 999_983;
+  private static final int MIN_DEMO_TOKEN_PART = 1_003;
   private static final BigDecimal MIN_DISPLAY_BALANCE_TOKENS = new BigDecimal("836482917");
   private static final List<String> APP_KEY_SCOPES =
       List.of("chat:complete", "usage:read", "billing:read", "admin:ops");
@@ -308,6 +310,9 @@ public class DemoDailyUsageService {
       promptTokens = split.promptTokens();
       completionTokens = split.completionTokens();
     }
+    TokenSplit normalized = normalizeTokenSplit(promptTokens, completionTokens, seq * 41);
+    promptTokens = normalized.promptTokens();
+    completionTokens = normalized.completionTokens();
     int totalTokens = promptTokens + completionTokens;
     Instant createdAt =
         LocalDate.now(ZoneOffset.UTC).atTime(9 + seq, (seq * 11) % 60).toInstant(ZoneOffset.UTC);
@@ -420,58 +425,73 @@ public class DemoDailyUsageService {
   }
 
   private DemoRequest uniqueTokenConsumption(String tenantId, DemoRequest request) {
-    int promptTokens = request.promptTokens();
-    int completionTokens = request.completionTokens();
-    int totalTokens = request.totalTokens();
-    for (int attempt = 0; attempt < 32; attempt++) {
-      if (!hasSameDailyTotalTokens(tenantId, request.createdAt(), totalTokens)) {
-        BigDecimal amountUsd =
-            amountUsd(
-                promptTokens,
-                completionTokens,
-                request.inputUsdPerMillion(),
-                request.outputUsdPerMillion());
-        return new DemoRequest(
-            request.model(),
-            request.inputUsdPerMillion(),
-            request.outputUsdPerMillion(),
-            promptTokens,
-            completionTokens,
-            totalTokens,
-            request.latencyMs(),
-            request.cacheHit(),
-            request.retryCount(),
-            amountUsd,
-            request.createdAt(),
-            request.idempotencyKey());
+    DemoRequest candidate = request;
+    for (int attempt = 0; attempt < 64; attempt++) {
+      if (!hasSameDailyDemoUsage(tenantId, candidate)) {
+        return candidate;
       }
-      int delta = 7_919 + attempt * 1_013;
-      completionTokens = Math.addExact(completionTokens, delta);
-      totalTokens = Math.addExact(promptTokens, completionTokens);
+      candidate = withTokenSplit(candidate, perturbTokenSplit(candidate, attempt));
     }
     throw new IllegalStateException("Unable to generate unique demo token consumption");
   }
 
-  private boolean hasSameDailyTotalTokens(String tenantId, Instant createdAt, int totalTokens) {
+  private boolean hasSameDailyDemoUsage(String tenantId, DemoRequest request) {
     Instant dayStart =
-        LocalDate.ofInstant(createdAt, ZoneOffset.UTC).atStartOfDay().toInstant(ZoneOffset.UTC);
+        LocalDate.ofInstant(request.createdAt(), ZoneOffset.UTC).atStartOfDay().toInstant(ZoneOffset.UTC);
     Integer count =
         jdbcTemplate.queryForObject(
             """
             select count(*)
-            from api_request_logs
-            where tenant_id = :tenantId
-              and created_at >= :dayStart
-              and created_at < :dayEnd
-              and total_tokens = :totalTokens
+            from api_request_logs l
+            left join billing_records b on b.log_id = l.id
+            where l.tenant_id = :tenantId
+              and l.created_at >= :dayStart
+              and l.created_at < :dayEnd
+              and l.model = :model
+              and l.prompt_tokens = :promptTokens
+              and l.completion_tokens = :completionTokens
+              and l.total_tokens = :totalTokens
+              and coalesce(b.amount_usd, 0) = :amountUsd
             """,
             new MapSqlParameterSource()
                 .addValue("tenantId", tenantId)
                 .addValue("dayStart", ts(dayStart))
                 .addValue("dayEnd", ts(dayStart.plusSeconds(86_400)))
-                .addValue("totalTokens", totalTokens),
+                .addValue("model", request.model())
+                .addValue("promptTokens", request.promptTokens())
+                .addValue("completionTokens", request.completionTokens())
+                .addValue("totalTokens", request.totalTokens())
+                .addValue("amountUsd", request.cacheHit() ? BigDecimal.ZERO : request.amountUsd()),
             Integer.class);
     return count != null && count > 0;
+  }
+
+  private DemoRequest withTokenSplit(DemoRequest request, TokenSplit split) {
+    BigDecimal amountUsd =
+        amountUsd(
+            split.promptTokens(),
+            split.completionTokens(),
+            request.inputUsdPerMillion(),
+            request.outputUsdPerMillion());
+    return new DemoRequest(
+        request.model(),
+        request.inputUsdPerMillion(),
+        request.outputUsdPerMillion(),
+        split.promptTokens(),
+        split.completionTokens(),
+        split.promptTokens() + split.completionTokens(),
+        request.latencyMs(),
+        request.cacheHit(),
+        request.retryCount(),
+        amountUsd,
+        request.createdAt(),
+        request.idempotencyKey());
+  }
+
+  private TokenSplit perturbTokenSplit(DemoRequest request, int attempt) {
+    int promptTokens = request.promptTokens() + 1_021 + attempt * 37;
+    int completionTokens = request.completionTokens() + 1_409 + attempt * 53;
+    return normalizeTokenSplit(promptTokens, completionTokens, request.retryCount() + attempt + 1);
   }
 
   private BigDecimal amountUsd(
@@ -521,7 +541,80 @@ public class DemoDailyUsageService {
             .longValue();
     int promptTokens = Math.toIntExact(Math.round(totalTokens * promptRatio.doubleValue()));
     int completionTokens = Math.toIntExact(totalTokens - promptTokens);
-    return new TokenSplit(promptTokens, completionTokens);
+    return normalizeTokenSplit(promptTokens, completionTokens, modelProfile.model().hashCode());
+  }
+
+  private TokenSplit normalizeTokenSplit(int promptTokens, int completionTokens, int salt) {
+    long prompt = Math.max(MIN_DEMO_TOKEN_PART, promptTokens);
+    long completion = Math.max(MIN_DEMO_TOKEN_PART, completionTokens);
+    long total = prompt + completion;
+    if (total > MAX_DEMO_TOTAL_TOKENS) {
+      double promptRatio = prompt / (double) total;
+      prompt = Math.max(MIN_DEMO_TOKEN_PART, Math.round(MAX_DEMO_TOTAL_TOKENS * promptRatio));
+      completion = MAX_DEMO_TOTAL_TOKENS - prompt;
+      if (completion < MIN_DEMO_TOKEN_PART) {
+        completion = MIN_DEMO_TOKEN_PART;
+        prompt = MAX_DEMO_TOTAL_TOKENS - completion;
+      }
+    }
+    prompt = avoidRoundEnding(prompt, salt + 17);
+    completion = avoidRoundEnding(completion, salt + 31);
+    while (prompt + completion > MAX_DEMO_TOTAL_TOKENS) {
+      long overflow = prompt + completion - MAX_DEMO_TOTAL_TOKENS;
+      if (completion >= prompt && completion - overflow - 37 >= MIN_DEMO_TOKEN_PART) {
+        completion -= overflow + 37;
+      } else {
+        prompt -= overflow + 37;
+      }
+      prompt = Math.max(MIN_DEMO_TOKEN_PART, avoidRoundEnding(prompt, salt + 43));
+      completion = Math.max(MIN_DEMO_TOKEN_PART, avoidRoundEnding(completion, salt + 59));
+    }
+    if ((prompt + completion) % 100 == 0) {
+      if (prompt + completion + 17 <= MAX_DEMO_TOTAL_TOKENS) {
+        completion += 17;
+      } else {
+        completion -= 17;
+      }
+    }
+    prompt = avoidRoundEnding(prompt, salt + 71);
+    completion = avoidRoundEnding(completion, salt + 83);
+    while (prompt + completion > MAX_DEMO_TOTAL_TOKENS) {
+      completion -= 29;
+      completion = avoidRoundEnding(completion, salt + 97);
+    }
+    if ((prompt + completion) % 100 == 0) {
+      completion += prompt + completion + 19 <= MAX_DEMO_TOTAL_TOKENS ? 19 : -19;
+    }
+    for (int attempt = 0; attempt < 8; attempt++) {
+      boolean valid =
+          prompt >= MIN_DEMO_TOKEN_PART
+              && completion >= MIN_DEMO_TOKEN_PART
+              && prompt + completion <= MAX_DEMO_TOTAL_TOKENS
+              && prompt % 100 != 0
+              && completion % 100 != 0
+              && (prompt + completion) % 100 != 0;
+      if (valid) {
+        return new TokenSplit(Math.toIntExact(prompt), Math.toIntExact(completion));
+      }
+      long delta = 13 + Math.floorMod(salt + attempt * 11, 61);
+      if (prompt % 100 == 0) {
+        prompt += prompt + completion + delta <= MAX_DEMO_TOTAL_TOKENS ? delta : -delta;
+      } else {
+        completion += prompt + completion + delta <= MAX_DEMO_TOTAL_TOKENS ? delta : -delta;
+      }
+    }
+    if (prompt % 100 == 0 || completion % 100 == 0 || (prompt + completion) % 100 == 0) {
+      throw new IllegalStateException("Unable to normalize demo token split");
+    }
+    return new TokenSplit(Math.toIntExact(prompt), Math.toIntExact(completion));
+  }
+
+  private long avoidRoundEnding(long value, int salt) {
+    if (value % 100 != 0) {
+      return value;
+    }
+    long delta = 11 + Math.floorMod(salt, 73);
+    return value + delta;
   }
 
   private ModelProfile modelProfile(int seq) {
