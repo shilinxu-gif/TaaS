@@ -194,7 +194,7 @@ export function Dashboard() {
           <div className="dash-kpi-value">
             ${formatCurrencyAmount(today.spendUsd, i18n.resolvedLanguage, {
               minimumFractionDigits: 2,
-              maximumFractionDigits: 6,
+              maximumFractionDigits: 2,
             })}
             <span className="dash-kpi-unit">USD</span>
           </div>
@@ -210,7 +210,7 @@ export function Dashboard() {
           <div className="dash-kpi-value dash-kpi-value--green">
             ${formatCurrencyAmount(today.cacheSavingsUsd, i18n.resolvedLanguage, {
               minimumFractionDigits: 2,
-              maximumFractionDigits: 6,
+              maximumFractionDigits: 2,
             })}
             <span className="dash-kpi-unit">USD</span>
           </div>

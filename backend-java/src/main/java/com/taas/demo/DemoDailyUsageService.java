@@ -292,7 +292,7 @@ public class DemoDailyUsageService {
         spendUsd = spendUsd.add(request.amountUsd());
       }
     }
-    return new UsageSummary(usageTokens, spendUsd.setScale(6, RoundingMode.HALF_UP));
+    return new UsageSummary(usageTokens, spendUsd.setScale(2, RoundingMode.HALF_UP));
   }
 
   private DemoRequest demoRequest(int seq, String batchKey) {
@@ -324,7 +324,7 @@ public class DemoDailyUsageService {
                 BigDecimal.valueOf(completionTokens)
                     .divide(BigDecimal.valueOf(1_000_000), 6, RoundingMode.HALF_UP)
                     .multiply(model.outputUsdPerMillion()))
-            .setScale(6, RoundingMode.HALF_UP);
+            .setScale(2, RoundingMode.HALF_UP);
     return new DemoRequest(
         model.model(),
         model.inputUsdPerMillion(),
@@ -506,7 +506,7 @@ public class DemoDailyUsageService {
             BigDecimal.valueOf(completionTokens)
                 .divide(BigDecimal.valueOf(1_000_000), 6, RoundingMode.HALF_UP)
                 .multiply(outputUsdPerMillion))
-        .setScale(6, RoundingMode.HALF_UP);
+        .setScale(2, RoundingMode.HALF_UP);
   }
 
   private BigDecimal dailyTargetSpendUsd() {

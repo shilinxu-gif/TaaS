@@ -558,7 +558,7 @@ export function Usage() {
                       $
                       {formatCurrencyAmount(r.costUsd, undefined, {
                         minimumFractionDigits: 2,
-                        maximumFractionDigits: 6,
+                        maximumFractionDigits: 2,
                       })}
                     </td>
                     <td>{cacheBadge(r.cacheHit, i18n.resolvedLanguage)}</td>
@@ -627,7 +627,7 @@ export function Usage() {
                   {selected.currency}{" "}
                   {formatCurrencyAmount(selected.costUsd, undefined, {
                     minimumFractionDigits: 2,
-                    maximumFractionDigits: 6,
+                    maximumFractionDigits: 2,
                   })}
                   {selected.billingType ? (
                     <span className="muted usage-dl-note">

@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### 2026-05-18 15:22 演示数据：修正成功率与费用精度
+
+- 改动内容：修正运营概览客户成功率计算倍率，避免 `100%` 被展示为 `1000%`；演示造数和登录自动追加写入的 USD 消费金额改为保留小数点后两位，前端仪表盘、用量、账单和运营页费用展示也统一最多两位小数。
+- 影响范围：`backend-java/src/main/java/com/taas/console/ConsoleService.java`、`backend-java/src/main/java/com/taas/infra/util/MoneyUtils.java`、`backend-java/src/main/java/com/taas/tools/DemoBillingSeedCommand.java`、`backend-java/src/main/java/com/taas/demo/DemoDailyUsageService.java`、`client/src/pages/Dashboard.tsx`、`client/src/pages/Usage.tsx`、`client/src/pages/Billing.tsx`、`client/src/pages/Ops.tsx`、`docs/DEMO_BILLING_SEED.md`、`CHANGELOG.md`。
+- 验证情况：已执行 `mvn -f backend-java/pom.xml -DskipTests compile`、`mvn -f backend-java/pom.xml test`、`npm run typecheck --prefix client`、`npm run build --prefix client` 通过；`ReadLints` 检查相关 Java/TSX/Markdown 文件无新增诊断；已抽查不再存在 `maximumFractionDigits: 6`、`setScale(6)` 和成功率 `1000` 倍率残留。
+- 运维动作：发版并重启前后端后生效；无需执行 SQL、迁移或清缓存。如需替换既有六位小数演示账单，可执行完整演示数据重建。
+- 线上数据影响：后续 AIoT 演示数据的 `billing_records.amount_usd/subtotal_usd` 使用两位小数；不自动修改既有账单数据，不影响其他租户。
+- 风险控制：仅调整百分比换算和展示/演示造数金额精度，保留原有请求、Token 与账单生成流程。
+
 ### 2026-05-18 14:48 演示用量：限制单条 Token 并增强去重
 
 - 改动内容：手动演示造数和演示账号登录自动追加统一增加 Token 规范化，确保单条请求的 `prompt_tokens`、`completion_tokens`、`total_tokens` 均小于 `1000000`，并避免 `00` 结尾的整齐 Token 数；同日同租户去重从仅检查 `total_tokens` 扩展为检查模型、输入 Token、输出 Token、总 Token 和金额组合，冲突时自动微调 Token 并重算金额。

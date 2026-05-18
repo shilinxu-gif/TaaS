@@ -329,7 +329,7 @@ class DemoBillingSeedRunner implements CommandLineRunner {
         options.days() * options.requestsPerDay(),
         cacheHits,
         usageTokens,
-        amountUsd.setScale(6, RoundingMode.HALF_UP),
+        amountUsd.setScale(2, RoundingMode.HALF_UP),
         finalBalance);
   }
 
@@ -785,7 +785,7 @@ class DemoBillingSeedRunner implements CommandLineRunner {
             BigDecimal.valueOf(completionTokens)
                 .divide(BigDecimal.valueOf(1_000_000), 6, RoundingMode.HALF_UP)
                 .multiply(outputUsdPerMillion))
-        .setScale(6, RoundingMode.HALF_UP);
+        .setScale(2, RoundingMode.HALF_UP);
   }
 
   private void insertFinanceRows(SeedOptions options, String tenantId) {
@@ -934,7 +934,7 @@ class DemoBillingSeedRunner implements CommandLineRunner {
                 BigDecimal.valueOf(completionTokens)
                     .divide(BigDecimal.valueOf(1_000_000), 6, RoundingMode.HALF_UP)
                     .multiply(modelProfile.outputUsdPerMillion()))
-            .setScale(6, RoundingMode.HALF_UP);
+            .setScale(2, RoundingMode.HALF_UP);
     return new DemoRequest(
         modelProfile.model(),
         modelProfile.inputUsdPerMillion(),

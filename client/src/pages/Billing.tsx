@@ -87,7 +87,7 @@ function PlanCard({
         <span className="bill-plan-price-val">
           ${formatCurrencyAmount(plan.pricePerMillionTokens, language, {
             minimumFractionDigits: 2,
-            maximumFractionDigits: 6,
+            maximumFractionDigits: 2,
           })}
         </span>
         <span className="bill-plan-price-unit muted">{text("/ 百万 tokens", "/ million tokens")}</span>
@@ -170,7 +170,7 @@ export function Billing() {
           <div className="bill-kpi-value">
             ${formatCurrencyAmount(summary.totalSpendUsd, i18n.resolvedLanguage, {
               minimumFractionDigits: 2,
-              maximumFractionDigits: 6,
+              maximumFractionDigits: 2,
             })}
           </div>
           <div className="bill-kpi-hint muted">{text("用量类型账单合计", "Sum of usage billing records")}</div>
@@ -194,7 +194,7 @@ export function Billing() {
           <div className="bill-kpi-value bill-kpi-value--save">
             ${formatCurrencyAmount(summary.estimatedSavingUsd, i18n.resolvedLanguage, {
               minimumFractionDigits: 2,
-              maximumFractionDigits: 6,
+              maximumFractionDigits: 2,
             })}
           </div>
           <div className="bill-kpi-hint muted">{text("缓存命中按单价折算", "Calculated from cache hits and unit pricing")}</div>
@@ -212,8 +212,8 @@ export function Billing() {
           {text("账单邮箱：", "Billing email: ")}{summary.billingEmail ?? text("未设置", "Not set")}
           {summary.monthlyBudgetUsd
             ? text(
-                ` · 月预算 $${formatCurrencyAmount(summary.monthlyBudgetUsd, i18n.resolvedLanguage, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}`,
-                ` · Monthly budget $${formatCurrencyAmount(summary.monthlyBudgetUsd, i18n.resolvedLanguage, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}`,
+                ` · 月预算 $${formatCurrencyAmount(summary.monthlyBudgetUsd, i18n.resolvedLanguage, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+                ` · Monthly budget $${formatCurrencyAmount(summary.monthlyBudgetUsd, i18n.resolvedLanguage, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
               )
             : ""}
         </p>
@@ -368,7 +368,7 @@ export function Billing() {
                     <td className="tabular-nums bill-td-amt">
                       {formatCurrencyAmount(r.amountUsd, i18n.resolvedLanguage, {
                         minimumFractionDigits: 2,
-                        maximumFractionDigits: 6,
+                        maximumFractionDigits: 2,
                       })}
                     </td>
                     <td>

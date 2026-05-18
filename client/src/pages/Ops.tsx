@@ -62,7 +62,7 @@ export function Ops() {
           <div className="bill-kpi-value bill-kpi-value--bal">
             ${formatCurrencyAmount(overview.spendUsdMonth, i18n.resolvedLanguage, {
               minimumFractionDigits: 2,
-              maximumFractionDigits: 6,
+              maximumFractionDigits: 2,
             })}
           </div>
         </article>

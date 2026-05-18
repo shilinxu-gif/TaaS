@@ -175,7 +175,7 @@ public class ConsoleService {
     BigDecimal customerSuccess =
         agg.requests24h() == 0
             ? BigDecimal.valueOf(100)
-            : BigDecimal.valueOf(((agg.requests24h() - agg.failed24h()) * 1000.0 / agg.requests24h()) / 10.0)
+            : BigDecimal.valueOf((agg.requests24h() - agg.failed24h()) * 100.0 / agg.requests24h())
                 .setScale(1, RoundingMode.HALF_UP);
 
     List<Map<String, Object>> risks = new ArrayList<>();
@@ -2171,7 +2171,7 @@ public class ConsoleService {
     return Map.of(
         "requests24h", requests == null ? 0 : requests,
         "failed24h", failed == null ? 0 : failed,
-        "customerSuccessRate", (requests == null || requests == 0) ? 100.0 : BigDecimal.valueOf(((requests - (failed == null ? 0 : failed)) * 1000.0) / requests).setScale(1, RoundingMode.HALF_UP).doubleValue(),
+        "customerSuccessRate", (requests == null || requests == 0) ? 100.0 : BigDecimal.valueOf((requests - (failed == null ? 0 : failed)) * 100.0 / requests).setScale(1, RoundingMode.HALF_UP).doubleValue(),
         "spendUsdMonth", MoneyUtils.money(spend),
         "auditEvents24h", audits == null ? 0 : audits,
         "providers",

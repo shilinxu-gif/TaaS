@@ -34,7 +34,7 @@ public final class MoneyUtils {
     if (total <= 0) {
       return BigDecimal.valueOf(100);
     }
-    return BigDecimal.valueOf(ok * 1000.0 / total).setScale(1, RoundingMode.HALF_UP)
+    return BigDecimal.valueOf(ok * 100.0 / total).setScale(1, RoundingMode.HALF_UP)
         .stripTrailingZeros();
   }
 
