@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### 2026-05-18 15:29 前端金额：统一两位小数展示
+
+- 改动内容：将前端金额格式化默认值统一为小数点后两位，成本优化页“节省金额（估算）”、推荐模板节省金额、充值金额和用量计费快照单价不再展示三位以上小数。
+- 影响范围：`client/src/i18n/format.ts`、`client/src/pages/Optimization.tsx`、`client/src/pages/Usage.tsx`、`client/src/components/BillingRechargeSection.tsx`、`CHANGELOG.md`。
+- 验证情况：已执行 `npm run typecheck --prefix client`、`npm run build --prefix client` 通过；`ReadLints` 检查相关 TSX/TS/Markdown 文件无新增诊断；已抽查不再存在 `maximumFractionDigits` 大于 2 的金额展示配置。
+- 运维动作：发版并重启前端后生效；无需执行 SQL、迁移或清缓存。
+- 线上数据影响：无，仅调整金额展示精度，不修改数据库或后端接口数据。
+- 风险控制：仅收敛货币展示格式；Token、请求数、百分比等非金额格式不受影响。
+
 ### 2026-05-18 15:22 演示数据：修正成功率与费用精度
 
 - 改动内容：修正运营概览客户成功率计算倍率，避免 `100%` 被展示为 `1000%`；演示造数和登录自动追加写入的 USD 消费金额改为保留小数点后两位，前端仪表盘、用量、账单和运营页费用展示也统一最多两位小数。

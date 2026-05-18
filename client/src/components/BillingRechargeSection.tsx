@@ -114,9 +114,12 @@ function rechargeStatusBadgeClass(status: string): string {
 
 function formatMoneyRow(row: RechargeOrderRow): string {
   if (row.amountDisplay?.trim()) {
-    return row.amountDisplay;
+    const symbol = row.amountDisplay.trim().startsWith("$") ? "$" : row.amountDisplay.trim().startsWith("¥") ? "¥" : "";
+    return `${symbol}${formatCurrencyAmount(row.amount)}`;
   }
-  return row.currency === "USD" ? `$${row.amount}` : `¥${row.amount}`;
+  return row.currency === "USD"
+    ? `$${formatCurrencyAmount(row.amount)}`
+    : `¥${formatCurrencyAmount(row.amount)}`;
 }
 
 type FollowUp =
@@ -442,7 +445,7 @@ export function BillingRechargeSection({
                   <tr key={r.id}>
                     <td className="rc-mono">{r.orderNo}</td>
                     <td>{r.tenantName}</td>
-                    <td className="tabular-nums">{r.amountDisplay}</td>
+                    <td className="tabular-nums">{formatMoneyRow(r)}</td>
                     <td>{r.currency}</td>
                     <td>{payChannelLabel(r.payChannel, r.payChannelLabel)}</td>
                     <td>

@@ -638,8 +638,8 @@ export function Usage() {
                 <dt>{text("计费快照", "Billing Snapshot")}</dt>
                 <dd>
                   {text(
-                    `输入 $${selected.inputUnitPriceUsd} / 百万，输出 $${selected.outputUnitPriceUsd} / 百万`,
-                    `Input $${selected.inputUnitPriceUsd} / million, output $${selected.outputUnitPriceUsd} / million`,
+                    `输入 $${formatCurrencyAmount(selected.inputUnitPriceUsd)} / 百万，输出 $${formatCurrencyAmount(selected.outputUnitPriceUsd)} / 百万`,
+                    `Input $${formatCurrencyAmount(selected.inputUnitPriceUsd)} / million, output $${formatCurrencyAmount(selected.outputUnitPriceUsd)} / million`,
                   )}
                 </dd>
                 <dt>{text("缓存", "Cache")}</dt>

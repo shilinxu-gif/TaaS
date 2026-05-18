@@ -80,7 +80,7 @@ export function Optimization() {
           <span className="opt-hero-badge-val">
             ${formatCurrencyAmount(d.estimatedSavedUsd, i18n.resolvedLanguage, {
               minimumFractionDigits: 2,
-              maximumFractionDigits: 4,
+              maximumFractionDigits: 2,
             })}
           </span>
           <span className="opt-hero-badge-sub muted">{text("估算累计节省（USD）", "Estimated cumulative savings (USD)")}</span>
@@ -114,7 +114,7 @@ export function Optimization() {
             <span className="opt-money-sym">$</span>
             {formatCurrencyAmount(d.estimatedSavedUsd, i18n.resolvedLanguage, {
               minimumFractionDigits: 2,
-              maximumFractionDigits: 4,
+              maximumFractionDigits: 2,
             })}
           </div>
           <div className="opt-kpi-foot muted">{d.note}</div>
@@ -172,7 +172,7 @@ export function Optimization() {
                   <span className="opt-template-saved">
                     {text("约省 ", "Approx. ")}${formatCurrencyAmount(t.savedUsd, i18n.resolvedLanguage, {
                       minimumFractionDigits: 2,
-                      maximumFractionDigits: 4,
+                      maximumFractionDigits: 2,
                     })}
                   </span>
                 </div>

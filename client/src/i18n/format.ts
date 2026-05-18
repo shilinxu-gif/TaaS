@@ -34,5 +34,9 @@ export function formatCurrencyAmount(
   if (Number.isNaN(numeric)) {
     return String(value);
   }
-  return formatNumber(numeric, language, options);
+  return formatNumber(numeric, language, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+    ...options,
+  });
 }
