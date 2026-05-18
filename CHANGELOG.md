@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### 2026-05-18 10:20 成本优化：修正缓存命中率百分比
+
+- 改动内容：修正控制台工作台和成本优化页缓存命中率计算公式，将 `命中数 * 1000 / 总请求数` 改为 `命中数 * 100 / 总请求数`，避免 `30 / 248` 被展示为 `121%`，正确显示为约 `12.1%`。
+- 影响范围：`backend-java/src/main/java/com/taas/console/ConsoleService.java`、`CHANGELOG.md`。
+- 验证情况：已执行 `mvn -f backend-java/pom.xml -DskipTests compile`、`mvn -f backend-java/pom.xml test` 通过；`ReadLints` 检查相关 Java/Markdown 文件无新增诊断。
+- 运维动作：发版并重启后端后生效；无需执行 SQL、迁移或清缓存。
+- 线上数据影响：无，仅修正接口返回的百分比展示值，不修改任何业务数据。
+- 风险控制：仅调整比例换算倍数，保留原有命中数和分母统计口径。
+
 ### 2026-05-16 14:55 演示数据：供应商与模型匹配并降低日消费
 
 - 改动内容：演示造数和演示账号登录自动追加改为按模型选择对应供应商，`deepseekv4`、`gpt-5.4`、`claude-opus-4-7`、`GLM-5` 分别对应 DeepSeek、OpenAI、Anthropic、GLM，不再出现 GPT/GLM 模型挂在 deepseek 供应商下；今日非缓存消费目标从约 `917.63 USD` 下调为约 `486.37 USD`，登录自动追加带小幅非整数波动且保持低于 `500 USD`。

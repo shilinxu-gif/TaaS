@@ -168,7 +168,7 @@ public class ConsoleService {
             ? BigDecimal.ZERO
             : BigDecimal.valueOf(
                     (cacheHits == null ? 0 : cacheHits)
-                        * 1000.0
+                        * 100.0
                         / ((cacheHits == null ? 0 : cacheHits)
                             + (nonCacheRequests == null ? 0 : nonCacheRequests)))
                 .setScale(1, RoundingMode.HALF_UP);
@@ -958,7 +958,11 @@ public class ConsoleService {
       promptTemplates = List.of();
     }
     long total = (hits == null ? 0 : hits) + (misses == null ? 0 : misses);
-    BigDecimal hitRate = total == 0 ? BigDecimal.ZERO : BigDecimal.valueOf((hits == null ? 0 : hits) * 1000.0 / total).setScale(1, RoundingMode.HALF_UP);
+    BigDecimal hitRate =
+        total == 0
+            ? BigDecimal.ZERO
+            : BigDecimal.valueOf((hits == null ? 0 : hits) * 100.0 / total)
+                .setScale(1, RoundingMode.HALF_UP);
     BigDecimal savedUsd = estimateCacheSavings(principal.tenantId(), since);
     return Map.of(
         "windowDays", 30,
