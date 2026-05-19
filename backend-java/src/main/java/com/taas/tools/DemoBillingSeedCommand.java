@@ -917,7 +917,8 @@ class DemoBillingSeedRunner implements CommandLineRunner {
                   (9000 + (day % 7) * 2400 + seq * 1200 + burstTokens(day + 3, seq) / 2.0)
                       * dayFactor);
     }
-    TokenSplit normalized = normalizeTokenSplit(promptTokens, completionTokens, day * 97 + seq * 13);
+    TokenSplit normalized =
+        normalizeTokenSplit(promptTokens, completionTokens, day * 97 + seq * 13 + modelProfile.model().hashCode());
     promptTokens = normalized.promptTokens();
     completionTokens = normalized.completionTokens();
     int totalTokens = promptTokens + completionTokens;
@@ -1016,26 +1017,27 @@ class DemoBillingSeedRunner implements CommandLineRunner {
             .longValue();
     int promptTokens = Math.toIntExact(Math.round(totalTokens * promptRatio.doubleValue()));
     int completionTokens = Math.toIntExact(totalTokens - promptTokens);
-    return normalizeTokenSplit(promptTokens, completionTokens, modelProfile.model().hashCode());
+    return new TokenSplit(promptTokens, completionTokens);
   }
 
   private TokenSplit normalizeTokenSplit(int promptTokens, int completionTokens, int salt) {
     long prompt = Math.max(MIN_DEMO_TOKEN_PART, promptTokens);
     long completion = Math.max(MIN_DEMO_TOKEN_PART, completionTokens);
+    long tokenLimit = demoTokenLimit(salt);
     long total = prompt + completion;
-    if (total > MAX_DEMO_TOTAL_TOKENS) {
+    if (total > tokenLimit) {
       double promptRatio = prompt / (double) total;
-      prompt = Math.max(MIN_DEMO_TOKEN_PART, Math.round(MAX_DEMO_TOTAL_TOKENS * promptRatio));
-      completion = MAX_DEMO_TOTAL_TOKENS - prompt;
+      prompt = Math.max(MIN_DEMO_TOKEN_PART, Math.round(tokenLimit * promptRatio));
+      completion = tokenLimit - prompt;
       if (completion < MIN_DEMO_TOKEN_PART) {
         completion = MIN_DEMO_TOKEN_PART;
-        prompt = MAX_DEMO_TOTAL_TOKENS - completion;
+        prompt = tokenLimit - completion;
       }
     }
     prompt = avoidRoundEnding(prompt, salt + 17);
     completion = avoidRoundEnding(completion, salt + 31);
-    while (prompt + completion > MAX_DEMO_TOTAL_TOKENS) {
-      long overflow = prompt + completion - MAX_DEMO_TOTAL_TOKENS;
+    while (prompt + completion > tokenLimit) {
+      long overflow = prompt + completion - tokenLimit;
       if (completion >= prompt && completion - overflow - 37 >= MIN_DEMO_TOKEN_PART) {
         completion -= overflow + 37;
       } else {
@@ -1045,7 +1047,7 @@ class DemoBillingSeedRunner implements CommandLineRunner {
       completion = Math.max(MIN_DEMO_TOKEN_PART, avoidRoundEnding(completion, salt + 59));
     }
     if ((prompt + completion) % 100 == 0) {
-      if (prompt + completion + 17 <= MAX_DEMO_TOTAL_TOKENS) {
+      if (prompt + completion + 17 <= tokenLimit) {
         completion += 17;
       } else {
         completion -= 17;
@@ -1053,12 +1055,12 @@ class DemoBillingSeedRunner implements CommandLineRunner {
     }
     prompt = avoidRoundEnding(prompt, salt + 71);
     completion = avoidRoundEnding(completion, salt + 83);
-    while (prompt + completion > MAX_DEMO_TOTAL_TOKENS) {
+    while (prompt + completion > tokenLimit) {
       completion -= 29;
       completion = avoidRoundEnding(completion, salt + 97);
     }
     if ((prompt + completion) % 100 == 0) {
-      completion += prompt + completion + 19 <= MAX_DEMO_TOTAL_TOKENS ? 19 : -19;
+      completion += prompt + completion + 19 <= tokenLimit ? 19 : -19;
     }
     for (int attempt = 0; attempt < 8; attempt++) {
       boolean valid =
@@ -1073,15 +1075,21 @@ class DemoBillingSeedRunner implements CommandLineRunner {
       }
       long delta = 13 + Math.floorMod(salt + attempt * 11, 61);
       if (prompt % 100 == 0) {
-        prompt += prompt + completion + delta <= MAX_DEMO_TOTAL_TOKENS ? delta : -delta;
+        prompt += prompt + completion + delta <= tokenLimit ? delta : -delta;
       } else {
-        completion += prompt + completion + delta <= MAX_DEMO_TOTAL_TOKENS ? delta : -delta;
+        completion += prompt + completion + delta <= tokenLimit ? delta : -delta;
       }
     }
     if (prompt % 100 == 0 || completion % 100 == 0 || (prompt + completion) % 100 == 0) {
       throw new IllegalStateException("Unable to normalize demo token split");
     }
     return new TokenSplit(Math.toIntExact(prompt), Math.toIntExact(completion));
+  }
+
+  private long demoTokenLimit(int salt) {
+    long spread = Math.floorMod((long) salt * 7_919L + 104_729L, 260_000);
+    long limit = MAX_DEMO_TOTAL_TOKENS - spread;
+    return avoidRoundEnding(Math.max(720_013L, limit), salt + 109);
   }
 
   private long avoidRoundEnding(long value, int salt) {

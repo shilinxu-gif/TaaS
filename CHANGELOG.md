@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### 2026-05-19 09:40 演示用量：避免百万内压顶重复 Token
+
+- 改动内容：修正演示用量 Token 规范化逻辑，按金额反推的超大请求不再先用模型固定参数压到同一个 `999983` 总量；改为在最终规范化阶段按日期、序号和模型计算不同的百万以内目标上限，避免大量出现 `579990` 这类重复输入 Token。
+- 影响范围：`backend-java/src/main/java/com/taas/tools/DemoBillingSeedCommand.java`、`backend-java/src/main/java/com/taas/demo/DemoDailyUsageService.java`、`docs/DEMO_BILLING_SEED.md`、`CHANGELOG.md`。
+- 验证情况：已执行 `mvn -f backend-java/pom.xml -DskipTests compile`、`mvn -f backend-java/pom.xml test` 通过；`ReadLints` 检查相关 Java/Markdown 文件无新增诊断。
+- 运维动作：发版并重启后端后生效；如需替换已生成的重复演示历史数据，可执行 `DEMO_APPEND_DAILY_RECORDS=NO scripts/seed-demo-billing.sh --apply` 完整重建。
+- 线上数据影响：仅影响后续 AIoT 演示租户生成的请求日志、用量记录和账单金额；不自动修改既有历史数据，不影响其他租户。
+- 风险控制：仍保留单条输入、输出和总 Token 均小于 `1000000` 且不以 `00` 结尾的约束，并继续按最终 Token 重算金额。
+
 ### 2026-05-18 15:29 前端金额：统一两位小数展示
 
 - 改动内容：将前端金额格式化默认值统一为小数点后两位，成本优化页“节省金额（估算）”、推荐模板节省金额、充值金额和用量计费快照单价不再展示三位以上小数。
